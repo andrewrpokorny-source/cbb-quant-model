@@ -5,9 +5,10 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import timedelta
 import os
 
-# --- CONFIG ---
-DATA_FILE = "cbb_training_data_processed.csv"
-OUTPUT_FILE = "performance_log.csv"
+# --- PATH SETUP (The Fix) ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
+OUTPUT_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 WEEKS_BACK = 4
 
 def train_model_at_date(df, cutoff_date):
@@ -56,7 +57,7 @@ def run_backtest():
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values('date')
     except:
-        print("❌ Data missing. Run features.py first."); return
+        print(f"❌ Data missing at: {DATA_FILE}"); return
 
     # Define Time Range
     end_date = df['date'].max()
@@ -75,7 +76,6 @@ def run_backtest():
         model, feats = train_model_at_date(df, current_date)
         
         # 2. Predict 'Next Week'
-        # CRITICAL FIX: Filter to is_home=1 to avoid double counting and confusion
         mask = (df['date'] >= current_date) & (df['date'] < next_week) & (df['is_home'] == 1)
         week_df = df[mask].copy()
         
@@ -95,31 +95,20 @@ def run_backtest():
         # Predict
         probs = model.predict_proba(X_test)[:, 1]
         
-        # --- THE LOGIC FIX ---
         week_df['prob_home'] = probs
         week_df['conf'] = week_df['prob_home'].apply(lambda x: max(x, 1-x))
         
-        # If Prob(Home) > 0.5: Pick Home.
-        # If Prob(Home) < 0.5: Pick Away.
-        
         conditions = [week_df['prob_home'] > 0.5, week_df['prob_home'] <= 0.5]
         
-        # Name of team we are betting ON
         week_df['picked_team'] = np.select(conditions, [week_df['team'], week_df['opponent']])
-        
-        # Spread we are getting (Home spread, or inverted Away spread)
         week_df['picked_spread'] = np.select(conditions, [week_df['spread'], -1 * week_df['spread']])
         
-        # Did we win?
-        # If picking Home: Win if ats_win == 1
-        # If picking Away: Win if ats_win == 0
         week_df['pick_correct'] = np.where(
             week_df['prob_home'] > 0.5, 
             week_df['ats_win'] == 1, 
             week_df['ats_win'] == 0
         )
         
-        # Log clean columns
         logs.append(week_df[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct']])
         
         current_date = next_week
@@ -136,6 +125,7 @@ def run_backtest():
     print(f"   -> 🏆 Realized Accuracy: {acc:.1%}")
     
     action_log.to_csv(OUTPUT_FILE, index=False)
+    print(f"   -> Saved to: {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     run_backtest()
