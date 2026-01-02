@@ -1,7 +1,3 @@
 venv/
 __pycache__/
 *.DS_Store
-cbb_training_data_raw.csv
-cbb_training_data_processed.csv
-daily_predictions.csv
-performance_log.csv
