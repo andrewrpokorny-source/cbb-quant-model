@@ -1,23 +1,103 @@
 Date/Time,Matchup,Spread,Pick,Conf,Rest
-01/02 07:00 PM,Quinnipiac @ Manhattan,6.5,Quinnipiac -6.5,0.579591063018049,5
-01/02 09:00 PM,West Virginia @ Iowa St.,-16.5,West Virginia +16.5,0.5750603157311305,5
-01/02 07:00 PM,USC @ Michigan,-21.5,USC +21.5,0.5731437481410653,5
-01/02 07:30 PM,Oregon @ Maryland,2.5,Oregon -2.5,0.5730213745142408,6
-01/02 07:00 PM,Jacksonville St. @ Delaware,2.5,Jacksonville St. -2.5,0.5724905933087093,5
-01/02 07:00 PM,New Haven @ Stonehill,1.5,New Haven -1.5,0.5640651030859848,7
-01/02 07:00 PM,Le Moyne @ Saint Francis,5.5,Le Moyne -5.5,0.5613311724784051,7
-01/02 07:00 PM,Robert Morris @ Detroit Mercy,2.5,Robert Morris -2.5,0.5550413657552948,5
-01/02 08:00 PM,Louisville @ Stanford,8.5,Louisville -8.5,0.5546820805980153,4
-01/02 08:00 PM,Ohio St. @ Rutgers,8.5,Ohio St. -8.5,0.5527608808345079,5
-01/02 09:00 PM,Michigan St. @ Nebraska,-2.5,Michigan St. +2.5,0.5485337949534004,4
-01/02 10:00 PM,Pepperdine @ Santa Clara,-20.5,Pepperdine +20.5,0.5422374742270841,4
-01/02 09:30 PM,Loyola Marymount @ Washington St.,-2.5,Loyola Marymount +2.5,0.5357509159809232,4
-01/02 03:00 PM,Mount St. Mary's @ Merrimack,-4.5,Mount St. Mary's +4.5,0.5328137713647754,4
-01/02 10:00 PM,San Diego @ San Francisco,-10.5,San Diego +10.5,0.5325055903107432,4
-01/02 09:00 PM,Seattle @ Gonzaga,-24.5,Seattle +24.5,0.5321418488467431,4
-01/02 10:00 PM,Portland St. @ Saint Mary's,-21.5,Portland St. +21.5,0.5128129256852216,4
-01/02 05:00 PM,Sam Houston St. @ Western Kentucky,-4.5,Sam Houston St. +4.5,0.5080917473049454,4
-01/02 07:30 PM,Louisiana Tech @ Middle Tennessee,-6.5,Middle Tennessee -6.5,0.505272958103983,5
-01/02 10:00 PM,Oregon St. @ Pacific,-4.5,Pacific -4.5,0.5044477554718162,4
-01/02 07:30 PM,Fairleigh Dickinson @ Mercyhurst,-5.5,Fairleigh Dickinson +5.5,0.504371125400148,7
-01/02 07:00 PM,Kennesaw St. @ Liberty,-7.5,Liberty -7.5,0.5004795666045156,6
+01/03 01:00 PM,Auburn @ Georgia,4.5,Auburn -4.5,0.5996750252047317,5
+01/02 10:00 PM,San Diego @ San Francisco,11.5,San Diego -11.5,0.5916389187267826,4
+01/02 07:00 PM,USC @ Michigan,21.5,USC -21.5,0.5906245395673394,5
+01/02 09:00 PM,Michigan St. @ Nebraska,2.5,Michigan St. -2.5,0.586251903012676,4
+01/02 09:30 PM,Loyola Marymount @ Washington St.,2.5,Loyola Marymount -2.5,0.585741713480116,4
+01/02 09:00 PM,West Virginia @ Iowa St.,16.5,West Virginia -16.5,0.5778134109247921,5
+01/02 07:30 PM,Fairleigh Dickinson @ Mercyhurst,5.5,Fairleigh Dickinson -5.5,0.5768855329882829,7
+01/03 04:00 PM,San Jose St. @ Utah St.,0.0,San Jose St. -0.0,0.5747112895843092,4
+01/03 08:00 PM,Wyoming @ New Mexico,0.0,Wyoming -0.0,0.5738554493105914,5
+01/03 07:00 PM,UC Irvine @ Cal St. Fullerton,0.0,UC Irvine -0.0,0.572366479911228,3
+01/02 05:00 PM,Sam Houston St. @ Western Kentucky,4.5,Sam Houston St. -4.5,0.570424247926563,4
+01/02 07:00 PM,Kennesaw St. @ Liberty,7.5,Kennesaw St. -7.5,0.5688182058755198,6
+01/02 07:30 PM,Louisiana Tech @ Middle Tennessee,6.5,Louisiana Tech -6.5,0.5682882554723434,5
+01/02 07:00 PM,New Haven @ Stonehill,1.5,New Haven -1.5,0.5640651030859849,7
+01/03 05:00 PM,Colorado @ Arizona St.,0.0,Colorado -0.0,0.5630252627076269,7
+01/03 04:00 PM,LSU @ Texas A&M,0.0,LSU -0.0,0.5617973565830898,5
+01/03 03:30 PM,Georgia Southern @ Old Dominion,0.0,Georgia Southern -0.0,0.5615170363945445,3
+01/03 12:00 PM,VCU @ Duquesne,0.0,VCU -0.0,0.5609263337774384,4
+01/03 04:30 PM,Stephen F. Austin @ Louisiana Monroe,0.0,Stephen F. Austin -0.0,0.5603405216818038,2
+01/03 02:00 PM,Seton Hall @ Central Arkansas,0.0,Seton Hall -0.0,0.5603220832901977,2
+01/03 01:00 PM,Oklahoma St. @ Texas Tech,10.5,Oklahoma St. -10.5,0.5601664805119564,6
+01/03 04:00 PM,UC Santa Barbara @ Cal St. Northridge,0.0,UC Santa Barbara -0.0,0.5600564147671047,2
+01/02 03:00 PM,Mount St. Mary's @ Merrimack,0.0,Mount St. Mary's -0.0,0.5587236085057654,4
+01/03 04:00 PM,Arizona St. @ Utah St.,-18.5,Arizona St. +18.5,0.5586997612376718,4
+01/03 04:00 PM,Coppin St. @ Delaware St.,0.0,Coppin St. -0.0,0.5580978351581461,5
+01/03 06:00 PM,Monmouth @ Towson,0.0,Monmouth -0.0,0.5577626822182222,3
+01/03 04:30 PM,Southern Indiana @ Lindenwood,0.0,Southern Indiana -0.0,0.557411685704902,2
+01/02 09:00 PM,Seattle @ Gonzaga,24.5,Seattle -24.5,0.5563280398694462,4
+01/03 04:30 PM,Morehead St. @ SIU Edwardsville,0.0,Morehead St. -0.0,0.5551211192785861,2
+01/03 02:00 PM,Dayton @ Loyola Chicago,0.0,Dayton -0.0,0.554465797102859,3
+01/03 01:00 PM,Wofford @ The Citadel,0.0,Wofford -0.0,0.5537134808225996,4
+01/03 05:00 PM,Houston Christian @ Incarnate Word,0.0,Houston Christian -0.0,0.5524495902607114,4
+01/03 01:00 PM,Georgia Southern @ Coastal Carolina,0.0,Georgia Southern -0.0,0.5521423150014917,2
+01/02 10:00 PM,Oregon St. @ Pacific,4.5,Oregon St. -4.5,0.5511415639443802,4
+01/03 02:00 PM,UNC Asheville @ Charleston Southern,0.0,UNC Asheville -0.0,0.5511150213209588,3
+01/03 06:00 PM,Texas Southern @ Southern Utah,0.0,Texas Southern -0.0,0.5509336592766483,5
+01/03 05:30 PM,Texas A&M Corpus Chris @ UT Rio Grande Valley,0.0,Texas A&M Corpus Chris -0.0,0.5480154584582824,3
+01/03 08:30 PM,UT Arlington @ Southern Utah,0.0,UT Arlington -0.0,0.5468916800197514,6
+01/03 05:00 PM,Cal St. Bakersfield @ UC Davis,0.0,Cal St. Bakersfield -0.0,0.5466431677069435,2
+01/02 10:00 PM,Portland St. @ Saint Mary's,21.5,Portland St. -21.5,0.5441559076919782,4
+01/03 04:00 PM,East Texas A&M @ Nicholls St.,0.0,East Texas A&M -0.0,0.5430562957713827,3
+01/03 09:00 PM,Cal Poly @ Long Beach St.,0.0,Cal Poly -0.0,0.5420250615207332,7
+01/03 05:00 PM,Prairie View A&M @ Grambling St.,0.0,Prairie View A&M -0.0,0.5397185927138084,7
+01/03 05:00 PM,Minnesota @ Northwestern,0.0,Minnesota -0.0,0.5396235896410457,4
+01/03 04:30 PM,Morgan St. @ Maryland Eastern Shore,0.0,Morgan St. -0.0,0.5394922404828839,7
+01/03 02:00 PM,South Carolina St. @ Presbyterian,0.0,South Carolina St. -0.0,0.5385182756566206,7
+01/03 12:00 PM,Clemson @ Pittsburgh,0.0,Clemson -0.0,0.5383105860552766,4
+01/03 08:00 PM,Northern Arizona @ Montana St.,0.0,Northern Arizona -0.0,0.5382338557574574,3
+01/03 05:00 PM,North Florida @ Lipscomb,0.0,North Florida -0.0,0.5380497153261032,2
+01/03 04:30 PM,New Orleans @ Northwestern St.,0.0,New Orleans -0.0,0.5380113574158274,3
+01/03 02:00 PM,Bowling Green @ Massachusetts,0.0,Bowling Green -0.0,0.5370942146234585,4
+01/03 03:00 PM,Memphis @ Rice,0.0,Memphis -0.0,0.5369596514904753,3
+01/03 02:00 PM,Baylor @ TCU,0.0,Baylor -0.0,0.5366936388075741,5
+01/02 10:00 PM,Pepperdine @ Santa Clara,20.5,Pepperdine -20.5,0.5360307488963173,4
+01/03 04:30 PM,Norfolk St. @ North Carolina Central,0.0,Norfolk St. -0.0,0.5337590366399918,5
+01/03 04:00 PM,Mercer @ East Tennessee St.,0.0,Mercer -0.0,0.5332704367686463,4
+01/02 07:00 PM,Jacksonville St. @ Delaware,-2.5,Jacksonville St. +2.5,0.5330972227918305,5
+01/03 06:00 PM,Wichita St. @ Charlotte,0.0,Wichita St. -0.0,0.5330601241835249,4
+01/03 04:00 PM,North Carolina A&T @ Stony Brook,0.0,North Carolina A&T -0.0,0.532906437774078,3
+01/03 10:00 PM,Boise St. @ San Diego St.,0.0,Boise St. -0.0,0.529911582011696,5
+01/03 04:45 PM,Western Illinois @ Southeast Missouri St.,0.0,Western Illinois -0.0,0.529785644001096,2
+01/03 05:00 PM,Lafayette @ Loyola Marymount,0.0,Lafayette -0.0,0.5297059094099132,4
+01/03 02:00 PM,La Salle @ George Washington,0.0,George Washington +0.0,0.5296207021393448,3
+01/03 02:00 PM,Eastern Kentucky @ West Georgia,0.0,Eastern Kentucky -0.0,0.5295325894586164,2
+01/03 04:00 PM,Jacksonville @ Austin Peay,0.0,Jacksonville -0.0,0.5272555968853487,2
+01/03 07:00 PM,Hampton @ UNC Wilmington,0.0,Hampton -0.0,0.5235578331003194,4
+01/03 03:00 PM,Florida Gulf Coast @ North Alabama,0.0,Florida Gulf Coast -0.0,0.5230616968432948,2
+01/03 04:00 PM,Samford @ UNC Greensboro,0.0,Samford -0.0,0.522975098385837,2
+01/03 06:30 PM,Alabama A&M @ Arkansas Pine Bluff,0.0,Alabama A&M -0.0,0.5223184971043675,7
+01/02 07:30 PM,Oregon @ Maryland,-2.5,Oregon +2.5,0.5206066197053317,6
+01/03 02:00 PM,Ohio St. @ Eastern Michigan,0.0,Ohio St. -0.0,0.5192940634638341,4
+01/03 04:00 PM,Howard @ South Carolina St.,0.0,South Carolina St. +0.0,0.5186542476050747,4
+01/03 04:00 PM,Utah Valley @ Abilene Christian,0.0,Utah Valley -0.0,0.5180391415026446,2
+01/03 07:00 PM,Illinois @ Penn St.,-18.5,Penn St. -18.5,0.5177719483237598,6
+01/03 03:00 PM,Toledo @ Central Michigan,0.0,Toledo -0.0,0.5168980134645045,4
+01/03 02:15 PM,North Carolina A&T @ SMU,-1.5,North Carolina A&T +1.5,0.5167617227890053,6
+01/03 04:00 PM,Alcorn St. @ Jackson St.,0.0,Alcorn St. -0.0,0.5163501238926623,5
+01/02 07:00 PM,Le Moyne @ Saint Francis,-5.5,Le Moyne +5.5,0.5162639986683176,7
+01/03 06:00 PM,Mississippi St. @ Texas Southern,0.0,Mississippi St. -0.0,0.5160360071447352,7
+01/03 02:00 PM,Vanderbilt @ South Carolina,-18.5,Vanderbilt +18.5,0.5157237787914717,4
+01/03 02:00 PM,Longwood @ High Point,0.0,Longwood -0.0,0.5144733755694548,3
+01/03 04:00 PM,Tennessee St. @ Little Rock,0.0,Tennessee St. -0.0,0.5143630024438411,2
+01/03 12:00 PM,Virginia Tech @ Wake Forest,0.0,Wake Forest +0.0,0.5141476742753741,3
+01/03 08:00 PM,Purdue @ Wisconsin,-8.5,Purdue +8.5,0.5125021173217357,5
+01/03 08:00 PM,Colorado St. @ Grand Canyon,0.0,Grand Canyon +0.0,0.5124381061034325,7
+01/03 06:00 PM,Davidson @ Saint Joseph's,0.0,Davidson -0.0,0.5122470555451064,3
+01/03 01:30 PM,BYU @ Kansas St.,-9.5,BYU +9.5,0.5119958898113566,6
+01/02 07:00 PM,Robert Morris @ Detroit Mercy,-2.5,Robert Morris +2.5,0.5106782156639598,5
+01/03 02:00 PM,Houston Christian @ Cincinnati,-9.5,Houston Christian +9.5,0.5104346689071939,5
+01/03 08:30 PM,Florida St. @ Missouri,-7.5,Missouri -7.5,0.5101249920807486,7
+01/02 08:00 PM,Ohio St. @ Rutgers,-8.5,Ohio St. +8.5,0.5092318670002582,5
+01/02 07:00 PM,Quinnipiac @ Manhattan,-6.5,Quinnipiac +6.5,0.5088396274418429,5
+01/03 04:00 PM,Rhode Island @ George Mason,0.0,Rhode Island -0.0,0.5080887120318469,3
+01/02 08:00 PM,Louisville @ Stanford,-8.5,Stanford -8.5,0.5067448858121112,4
+01/03 03:30 PM,Florida A&M @ Bethune Cookman,0.0,Florida A&M -0.0,0.5066006553425988,5
+01/03 02:00 PM,Hofstra @ Drexel,0.0,Hofstra -0.0,0.5048746896575876,3
+01/03 04:00 PM,Oral Roberts @ North Dakota St.,0.0,Oral Roberts -0.0,0.5030616252259277,3
+01/03 12:00 PM,Providence @ St. John's,0.0,Providence -0.0,0.502907521715933,3
+01/03 03:30 PM,Mississippi @ Oklahoma St.,0.0,Mississippi -0.0,0.5022162876022968,5
+01/03 02:00 PM,Boston College @ Georgia Tech,0.0,Boston College -0.0,0.5017971720894608,3
+01/03 02:00 PM,South Dakota St. @ North Dakota St.,0.0,South Dakota St. -0.0,0.5005619308282732,3
+01/03 06:00 PM,Alabama St. @ Mississippi Valley St.,0.0,Mississippi Valley St. +0.0,0.5002401933831356,5
