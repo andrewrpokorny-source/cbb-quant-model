@@ -11,7 +11,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
-
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
 TEAM_MAP = {
@@ -57,7 +56,7 @@ def get_latest_stats(df):
     return latest_stats
 
 def fetch_schedule():
-    print("   -> 📅 Fetching schedule (48-Hour Lookahead)...")
+    print("   -> 📅 Fetching schedule (With Raw Odds Check)...")
     games = []
     
     for days_ahead in [0, 1]:
@@ -81,44 +80,37 @@ def fetch_schedule():
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
-                # PARSING ODDS (THE FIX)
+                # ODDS PARSING
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
-                spread_val = 0.0
+                raw_odds = details # Capture the raw text!
                 
+                spread_val = 0.0
                 try:
                     if details and details != '0' and details != 'EVEN':
                         parts = details.split()
-                        # FORCE POSITIVE VALUE
-                        val = abs(float(parts[-1])) 
-                        fav = " ".join(parts[:-1]) # e.g., "Vandy"
+                        val = abs(float(parts[-1]))
+                        fav = " ".join(parts[:-1])
                         
-                        # Identify who is favored
                         home_abbr = home_tm.get('abbreviation', '')
-                        
-                        # CHECK FOR HOME TEAM MATCH
-                        # We check Name, Abbreviation, and Short Name to be safe
                         is_home_fav = (fav == home_abbr) or (fav == home) or (fav in home)
                         
                         if is_home_fav:
-                            # Home is Favorite -> Spread is NEGATIVE
                             spread_val = -val
                         else:
-                            # Away is Favorite -> Spread is POSITIVE (from Home perspective)
                             spread_val = val
                 except: 
                     spread_val = 0.0
 
-                # Filter out 0.0 spreads
-                if spread_val == 0.0:
-                    continue
+                if spread_val == 0.0: continue
                 
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
                         'id': game_id,
                         'home_raw': home, 'away_raw': away, 
-                        'spread': spread_val, 'date': game_date
+                        'spread': spread_val, 'date': game_date,
+                        'raw_odds': raw_odds # Pass it through
                     })
         except: pass
             
@@ -133,7 +125,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (POLARITY FIX) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (DEBUG MODE) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
@@ -144,7 +136,7 @@ def main():
     team_stats = get_latest_stats(df_hist)
     schedule = fetch_schedule()
     
-    print(f"   -> Found {len(schedule)} actionable games.")
+    print(f"   -> Found {len(schedule)} games.")
     predictions = []
     
     for g in schedule:
@@ -166,34 +158,17 @@ def main():
             if c not in input_df.columns: input_df[c] = 0.0
         
         input_df.columns = input_df.columns.astype(str)
-        
         prob = model.predict_proba(input_df)[0][1]
         conf = max(prob, 1-prob)
         
-        # --- DISPLAY LOGIC ---
-        # g['spread'] is Home Spread.
-        # -18.5 means Home is Favored by 18.5
-        # +18.5 means Home is Underdog by 18.5 (Away is Favored)
-        
+        # Display Logic
         if prob > 0.5:
-            # Picking HOME
-            if g['spread'] < 0:
-                # Home is Favorite (-18.5). Display: "Home -18.5"
-                pick_str = f"{home} {g['spread']}"
-            else:
-                # Home is Underdog (+18.5). Display: "Home +18.5"
-                pick_str = f"{home} +{g['spread']}"
+            sign = "+" if g['spread'] > 0 else ""
+            pick_str = f"{home} {sign}{g['spread']}"
         else:
-            # Picking AWAY
-            # Away Spread = -1 * Home Spread
             away_spread = -1 * g['spread']
-            
-            if away_spread < 0:
-                 # Away is Favorite (-18.5). Display: "Away -18.5"
-                 pick_str = f"{away} {away_spread}"
-            else:
-                 # Away is Underdog (+18.5). Display: "Away +18.5"
-                 pick_str = f"{away} +{away_spread}"
+            sign = "+" if away_spread > 0 else ""
+            pick_str = f"{away} {sign}{away_spread}"
 
         try:
             local_ts = g['date'].tz_convert('US/Eastern')
@@ -207,6 +182,7 @@ def main():
             "Spread": g['spread'],
             "Pick": pick_str,
             "Conf": conf,
+            "Raw Odds": g['raw_odds'], # <--- NEW DEBUG COL
             "Rest": row['rest_days']
         })
 
