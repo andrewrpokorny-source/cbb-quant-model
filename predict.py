@@ -81,7 +81,7 @@ def fetch_schedule():
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
-                # PARSING ODDS
+                # PARSING ODDS (THE FIX)
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
                 spread_val = 0.0
@@ -89,24 +89,27 @@ def fetch_schedule():
                 try:
                     if details and details != '0' and details != 'EVEN':
                         parts = details.split()
-                        val = float(parts[-1]) # e.g., 18.5
+                        # FORCE POSITIVE VALUE
+                        val = abs(float(parts[-1])) 
                         fav = " ".join(parts[:-1]) # e.g., "Vandy"
                         
                         # Identify who is favored
                         home_abbr = home_tm.get('abbreviation', '')
                         
-                        # Logic: Spread is always from Home perspective
-                        # If Home is favored: Spread is Negative (e.g., -18.5)
-                        # If Away is favored: Spread is Positive (e.g., +18.5)
+                        # CHECK FOR HOME TEAM MATCH
+                        # We check Name, Abbreviation, and Short Name to be safe
+                        is_home_fav = (fav == home_abbr) or (fav == home) or (fav in home)
                         
-                        if fav == home_abbr or fav == home or fav in home:
+                        if is_home_fav:
+                            # Home is Favorite -> Spread is NEGATIVE
                             spread_val = -val
                         else:
+                            # Away is Favorite -> Spread is POSITIVE (from Home perspective)
                             spread_val = val
                 except: 
                     spread_val = 0.0
 
-                # FILTER: Skip games with 0.0 spread (No line posted yet)
+                # Filter out 0.0 spreads
                 if spread_val == 0.0:
                     continue
                 
@@ -130,7 +133,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (SMART FILTER) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (POLARITY FIX) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
@@ -141,7 +144,7 @@ def main():
     team_stats = get_latest_stats(df_hist)
     schedule = fetch_schedule()
     
-    print(f"   -> Found {len(schedule)} actionable games (Lines Posted).")
+    print(f"   -> Found {len(schedule)} actionable games.")
     predictions = []
     
     for g in schedule:
@@ -167,23 +170,30 @@ def main():
         prob = model.predict_proba(input_df)[0][1]
         conf = max(prob, 1-prob)
         
-        # --- ROBUST PICK STRING GENERATION ---
-        # g['spread'] is the HOME SPREAD.
-        # If g['spread'] = -18.5 (Home Favored by 18.5)
-        # If g['spread'] = 18.5 (Home Underdog by 18.5, aka Away Favored by 18.5)
+        # --- DISPLAY LOGIC ---
+        # g['spread'] is Home Spread.
+        # -18.5 means Home is Favored by 18.5
+        # +18.5 means Home is Underdog by 18.5 (Away is Favored)
         
         if prob > 0.5:
-            # We are picking the HOME TEAM
-            # If spread is -18.5, we display "Home -18.5"
-            # If spread is 18.5, we display "Home +18.5"
-            sign = "+" if g['spread'] > 0 else ""
-            pick_str = f"{home} {sign}{g['spread']}"
+            # Picking HOME
+            if g['spread'] < 0:
+                # Home is Favorite (-18.5). Display: "Home -18.5"
+                pick_str = f"{home} {g['spread']}"
+            else:
+                # Home is Underdog (+18.5). Display: "Home +18.5"
+                pick_str = f"{home} +{g['spread']}"
         else:
-            # We are picking the AWAY TEAM
-            # We need the AWAY SPREAD, which is -1 * HOME SPREAD
+            # Picking AWAY
+            # Away Spread = -1 * Home Spread
             away_spread = -1 * g['spread']
-            sign = "+" if away_spread > 0 else ""
-            pick_str = f"{away} {sign}{away_spread}"
+            
+            if away_spread < 0:
+                 # Away is Favorite (-18.5). Display: "Away -18.5"
+                 pick_str = f"{away} {away_spread}"
+            else:
+                 # Away is Underdog (+18.5). Display: "Away +18.5"
+                 pick_str = f"{away} +{away_spread}"
 
         try:
             local_ts = g['date'].tz_convert('US/Eastern')
