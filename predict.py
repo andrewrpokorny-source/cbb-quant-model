@@ -7,13 +7,11 @@ from datetime import datetime, timedelta
 from difflib import get_close_matches
 
 # --- CONFIG ---
-# Use absolute paths for safety (matches app.py logic)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 
-# Base URL (we will append dates dynamically)
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
 TEAM_MAP = {
@@ -62,7 +60,6 @@ def fetch_schedule():
     print("   -> 📅 Fetching schedule (48-Hour Lookahead)...")
     games = []
     
-    # Loop for Today and Tomorrow
     for days_ahead in [0, 1]:
         target_date = datetime.now() + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
@@ -77,41 +74,50 @@ def fetch_schedule():
                 status = event['status']['type']['state']
                 if status == 'post': continue 
                 
-                # Real Date/Time
-                game_date_str = event['date'] 
-                game_date = pd.to_datetime(game_date_str)
+                game_date = pd.to_datetime(event['date'])
                 
                 if not comp.get('competitors'): continue
                 home_tm = comp['competitors'][0]['team']
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
+                # PARSING ODDS
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
                 spread_val = 0.0
                 
                 try:
-                    if details and details != '0':
+                    if details and details != '0' and details != 'EVEN':
                         parts = details.split()
-                        val = float(parts[-1])
+                        val = float(parts[-1]) # e.g., 18.5
+                        fav = " ".join(parts[:-1]) # e.g., "Vandy"
+                        
+                        # Identify who is favored
                         home_abbr = home_tm.get('abbreviation', '')
-                        fav = " ".join(parts[:-1])
-                        if fav == home_abbr or fav == home or fav in home: spread_val = -val 
-                        else: spread_val = val
-                except: pass
+                        
+                        # Logic: Spread is always from Home perspective
+                        # If Home is favored: Spread is Negative (e.g., -18.5)
+                        # If Away is favored: Spread is Positive (e.g., +18.5)
+                        
+                        if fav == home_abbr or fav == home or fav in home:
+                            spread_val = -val
+                        else:
+                            spread_val = val
+                except: 
+                    spread_val = 0.0
+
+                # FILTER: Skip games with 0.0 spread (No line posted yet)
+                if spread_val == 0.0:
+                    continue
                 
-                # Deduplicate: Avoid adding the same game twice if API overlaps
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
                         'id': game_id,
-                        'home_raw': home, 
-                        'away_raw': away, 
-                        'spread': spread_val, 
-                        'date': game_date
+                        'home_raw': home, 'away_raw': away, 
+                        'spread': spread_val, 'date': game_date
                     })
-        except: 
-            print(f"      Warning: Failed to fetch data for {date_str}")
+        except: pass
             
     return sorted(games, key=lambda x: x['date'])
 
@@ -124,7 +130,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (48-HOUR LOOKAHEAD) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (SMART FILTER) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
@@ -135,7 +141,7 @@ def main():
     team_stats = get_latest_stats(df_hist)
     schedule = fetch_schedule()
     
-    print(f"   -> Found {len(schedule)} upcoming games.")
+    print(f"   -> Found {len(schedule)} actionable games (Lines Posted).")
     predictions = []
     
     for g in schedule:
@@ -148,7 +154,6 @@ def main():
         h_stats = team_stats[home]; a_stats = team_stats[away]
         
         last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
-        # Use simple date diff ignoring timezone for rest calculation
         row['rest_days'] = min((g['date'].replace(tzinfo=None) - last_date).days, 7)
         row = calculate_production_features(row, h_stats, a_stats)
         
@@ -162,10 +167,23 @@ def main():
         prob = model.predict_proba(input_df)[0][1]
         conf = max(prob, 1-prob)
         
+        # --- ROBUST PICK STRING GENERATION ---
+        # g['spread'] is the HOME SPREAD.
+        # If g['spread'] = -18.5 (Home Favored by 18.5)
+        # If g['spread'] = 18.5 (Home Underdog by 18.5, aka Away Favored by 18.5)
+        
         if prob > 0.5:
-            pick_str = f"{home} {g['spread']}" if g['spread'] < 0 else f"{home} +{g['spread']}"
+            # We are picking the HOME TEAM
+            # If spread is -18.5, we display "Home -18.5"
+            # If spread is 18.5, we display "Home +18.5"
+            sign = "+" if g['spread'] > 0 else ""
+            pick_str = f"{home} {sign}{g['spread']}"
         else:
-             pick_str = f"{away} +{-1 * g['spread']}" if g['spread'] < 0 else f"{away} {-1 * g['spread']}"
+            # We are picking the AWAY TEAM
+            # We need the AWAY SPREAD, which is -1 * HOME SPREAD
+            away_spread = -1 * g['spread']
+            sign = "+" if away_spread > 0 else ""
+            pick_str = f"{away} {sign}{away_spread}"
 
         try:
             local_ts = g['date'].tz_convert('US/Eastern')
