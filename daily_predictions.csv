@@ -1,33 +1,55 @@
 Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest
-01/06 08:30 PM,Lindenwood @ SIU Edwardsville,1.5,Lindenwood -1.5,0.5936405589988902,LIN -1.5,6
-01/07 07:00 PM,Connecticut @ Providence,9.5,Connecticut -9.5,0.5913096441154653,CONN -9.5,7
-01/07 08:00 PM,Iowa St. @ Baylor,4.5,Iowa St. -4.5,0.5844340726878738,ISU -4.5,7
-01/07 09:00 PM,Davidson @ Loyola Chicago,1.5,Davidson -1.5,0.5749279546686793,DAV -1.5,7
-01/07 08:00 PM,South Florida @ North Texas,4.5,South Florida -4.5,0.5655932757562538,USF -4.5,7
-01/06 09:00 PM,New Mexico @ Colorado St.,1.5,New Mexico -1.5,0.5560844498696647,UNM -1.5,7
-01/07 07:00 PM,Miami FL @ Wake Forest,1.5,Miami FL -1.5,0.5488913719463209,MIA -1.5,7
-01/07 08:30 PM,Washington @ Purdue,-16.5,Washington +16.5,0.5433217197026001,PUR -16.5,7
-01/06 07:00 PM,Cincinnati @ West Virginia,-1.5,Cincinnati +1.5,0.5419220365460018,WVU -1.5,7
-01/07 06:30 PM,Indiana @ Maryland,8.5,Indiana -8.5,0.5364495113565555,IU -8.5,7
-01/06 08:00 PM,Toledo @ Northern Illinois,7.5,Toledo -7.5,0.5331350232439137,TOL -7.5,7
-01/07 07:30 PM,Creighton @ Villanova,-6.5,Creighton +6.5,0.5310472063779073,VILL -6.5,7
-01/06 09:00 PM,Utah St. @ Air Force,21.5,Utah St. -21.5,0.5308197119352386,USU -21.5,7
-01/07 07:00 PM,Oklahoma St. @ Mississippi St.,-1.5,Oklahoma St. +1.5,0.529164273744698,MSST -1.5,7
-01/06 06:00 PM,Massachusetts @ Ohio St.,-3.5,Ohio St. -3.5,0.5254935045012722,OHIO -3.5,7
-01/06 07:00 PM,Syracuse @ Georgia Tech,2.5,Syracuse -2.5,0.521154428133709,SYR -2.5,7
-01/06 09:00 PM,Texas Tech @ Houston Christian,-6.5,Texas Tech +6.5,0.5171397207797407,HOU -6.5,7
-01/06 08:00 PM,George Washington @ Dayton,-3.5,George Washington +3.5,0.5138218122091857,DAY -3.5,7
-01/07 07:00 PM,Belmont @ Northern Iowa,-2.5,Belmont +2.5,0.513461883508536,UNI -2.5,7
-01/06 09:00 PM,Texas A&M @ Auburn,-6.5,Auburn -6.5,0.5130761069701367,AUB -6.5,7
-01/07 11:00 PM,Grand Canyon @ Boise St.,-8.5,Grand Canyon +8.5,0.5129991900429913,BOIS -8.5,7
-01/06 08:00 PM,UCF @ Oklahoma St.,-2.5,Oklahoma St. -2.5,0.5128476917735005,OKST -2.5,7
-01/07 07:00 PM,Stanford @ Virginia Tech,-5.5,Stanford +5.5,0.5115256207633667,VT -5.5,7
-01/06 07:00 PM,South Carolina @ LSU,-7.5,LSU -7.5,0.5113764451733679,LSU -7.5,7
-01/06 07:00 PM,Georgia @ Florida St.,-9.5,Georgia +9.5,0.5077760497630337,FLA -9.5,7
-01/06 09:00 PM,UC Irvine @ Wisconsin,-3.5,UC Irvine +3.5,0.507472415208098,WIS -3.5,7
-01/07 06:00 PM,UNC Greensboro @ Wofford,-5.5,UNC Greensboro +5.5,0.5074662177058046,WOF -5.5,7
-01/06 09:00 PM,Texas Southern @ Tennessee St.,-10.5,Tennessee St. -10.5,0.5067516576822308,TENN -10.5,7
-01/07 07:00 PM,Missouri @ Kentucky,-11.5,Missouri +11.5,0.5040403665874087,UK -11.5,7
-01/06 07:00 PM,Michigan @ Penn St.,21.5,Michigan -21.5,0.5014629748336503,MICH -21.5,7
-01/06 07:00 PM,Central Michigan @ Akron,-23.5,Central Michigan +23.5,0.5011819220759475,AKR -23.5,7
-01/07 07:00 PM,Saint Louis @ VCU,-1.5,VCU -1.5,0.5003721164166579,VCU -1.5,7
+01/06 07:00 PM,Duke @ Louisville,1.5,Duke -1.5,0.5933344793401831,DUKE -1.5,5
+01/07 07:00 PM,Connecticut @ Providence,9.5,Connecticut -9.5,0.5816856471123706,CONN -9.5,5
+01/07 09:00 PM,Davidson @ Loyola Chicago,1.5,Davidson -1.5,0.5772797806366303,DAV -1.5,5
+01/07 09:00 PM,Arkansas @ Mississippi,3.5,Arkansas -3.5,0.5731826208568285,ARK -3.5,5
+01/07 09:00 PM,Arizona St. @ BYU,-17.5,Arizona St. +17.5,0.5678677140204733,BYU -17.5,5
+01/07 08:00 PM,Iowa St. @ Baylor,4.5,Iowa St. -4.5,0.5669681964645932,ISU -4.5,5
+01/06 07:00 PM,St. John's @ Butler,4.5,St. John's -4.5,0.5661728121263803,SJU -4.5,4
+01/06 07:00 PM,Western Michigan @ Miami OH,-14.5,Western Michigan +14.5,0.563559668663033,M-OH -14.5,4
+01/06 08:30 PM,Lindenwood @ SIU Edwardsville,1.5,Lindenwood -1.5,0.5621085346193535,LIN -1.5,4
+01/07 08:00 PM,South Florida @ North Texas,4.5,South Florida -4.5,0.5613974381834084,USF -4.5,4
+01/07 05:00 PM,Furman @ Chattanooga,1.5,Furman -1.5,0.5611855438823704,FUR -1.5,4
+01/06 07:00 PM,Syracuse @ Georgia Tech,2.5,Syracuse -2.5,0.5582602512554768,SYR -2.5,4
+01/07 08:30 PM,Washington @ Purdue,-16.5,Washington +16.5,0.5562085655257341,PUR -16.5,5
+01/06 08:00 PM,Georgetown @ DePaul,-2.5,Georgetown +2.5,0.5483478260108187,DEP -2.5,4
+01/07 06:30 PM,Indiana @ Maryland,8.5,Indiana -8.5,0.5473624042757335,IU -8.5,5
+01/07 09:00 PM,Kansas St. @ Arizona St.,-20.5,Kansas St. +20.5,0.5467181169808912,ARIZ -20.5,5
+01/06 09:00 PM,TCU @ Kansas,-7.5,TCU +7.5,0.5387880765481815,KU -7.5,4
+01/06 08:00 PM,Iowa @ Minnesota,5.5,Iowa -5.5,0.5386727268307341,IOWA -5.5,4
+01/07 07:00 PM,Miami FL @ Wake Forest,1.5,Miami FL -1.5,0.536493972269227,MIA -1.5,5
+01/07 07:00 PM,Oklahoma St. @ Mississippi St.,-1.5,Oklahoma St. +1.5,0.5352058283406702,MSST -1.5,5
+01/07 11:00 PM,Grand Canyon @ Boise St.,-8.5,Grand Canyon +8.5,0.5335357814245739,BOIS -8.5,5
+01/06 09:00 PM,Utah St. @ Air Force,21.5,Utah St. -21.5,0.5324213176914586,USU -21.5,4
+01/07 09:00 PM,Alabama @ Vanderbilt,-4.5,Alabama +4.5,0.5308246347066112,VAN -4.5,5
+01/07 07:00 PM,Stanford @ Virginia Tech,-5.5,Stanford +5.5,0.5271705056341374,VT -5.5,5
+01/07 09:00 PM,Drake @ Bradley,-6.5,Drake +6.5,0.526297071184662,BRAD -6.5,4
+01/06 07:00 PM,Michigan @ Penn St.,22.5,Michigan -22.5,0.5262638250140077,MICH -22.5,4
+01/06 11:00 PM,San Diego St. @ Nevada,-1.5,San Diego St. +1.5,0.524973930075396,NEV -1.5,4
+01/06 09:00 PM,Texas Tech @ Houston,-6.5,Texas Tech +6.5,0.5246216000066513,HOU -6.5,4
+01/07 09:00 PM,Utah St. @ Colorado,-9.5,Colorado -9.5,0.5209934654268514,COLO -9.5,5
+01/06 07:00 PM,Eastern Michigan @ Ball St.,-1.5,Eastern Michigan +1.5,0.517610952592203,BALL -1.5,4
+01/07 09:00 PM,California @ Virginia,-12.5,California +12.5,0.5174524764047213,UVA -12.5,5
+01/06 07:00 PM,Cincinnati @ West Virginia,-1.5,Cincinnati +1.5,0.5169139215788978,WVU -1.5,5
+01/06 08:00 PM,UCF @ Oklahoma St.,-2.5,Oklahoma St. -2.5,0.5149030929306502,OKST -2.5,4
+01/06 08:00 PM,Toledo @ Northern Illinois,7.5,Toledo -7.5,0.5146820759613999,TOL -7.5,4
+01/06 07:00 PM,Central Michigan @ Akron,-23.5,Central Michigan +23.5,0.5143775331755651,AKR -23.5,4
+01/07 07:30 PM,Creighton @ Villanova,-6.5,Creighton +6.5,0.5131072237151699,VILL -6.5,5
+01/07 07:00 PM,Saint Louis @ VCU,-1.5,VCU -1.5,0.512911601433891,VCU -1.5,5
+01/06 07:00 PM,South Carolina @ LSU,-7.5,LSU -7.5,0.5118566305279849,LSU -7.5,4
+01/06 10:00 PM,UNLV @ Wyoming,-3.5,UNLV +3.5,0.5099501775814489,WYO -3.5,4
+01/07 06:00 PM,UNC Greensboro @ Wofford,-5.5,UNC Greensboro +5.5,0.5095317078184642,WOF -5.5,4
+01/06 06:00 PM,Massachusetts @ Ohio St.,-3.5,Massachusetts +3.5,0.5095021272039377,OHIO -3.5,1
+01/06 09:00 PM,UC Irvine @ Wisconsin,-3.5,UC Irvine +3.5,0.5092602445497957,WIS -3.5,4
+01/06 07:00 PM,Georgia @ Florida St.,-9.5,Florida St. -9.5,0.5091173158881783,FLA -9.5,4
+01/07 07:00 PM,Belmont @ Northern Iowa,-2.5,Belmont +2.5,0.5090149836596517,UNI -2.5,4
+01/06 07:00 PM,Bowling Green @ Kent St.,-2.5,Kent St. -2.5,0.5089596091694302,KENT -2.5,4
+01/07 09:00 PM,SMU @ Clemson,-4.5,SMU +4.5,0.508667254624924,CLEM -4.5,5
+01/07 07:00 PM,Missouri @ Kentucky,-11.5,Missouri +11.5,0.5069218865431608,UK -11.5,5
+01/06 08:00 PM,George Washington @ Dayton,-3.5,George Washington +3.5,0.50588762422007,DAY -3.5,4
+01/06 09:00 PM,Texas @ Tennessee,-10.5,Tennessee -10.5,0.5056827763411292,TENN -10.5,4
+01/07 07:00 PM,Xavier @ Marquette,-4.5,Marquette -4.5,0.5046372181029402,MARQ -4.5,4
+01/06 09:00 PM,Texas A&M @ Auburn,-6.5,Auburn -6.5,0.5040247350459208,AUB -6.5,4
+01/06 09:00 PM,New Mexico @ Colorado St.,1.5,Colorado St. +1.5,0.503249100365906,UNM -1.5,4
+01/06 10:00 PM,Fresno St. @ San Jose St.,-1.5,San Jose St. -1.5,0.5030798143739033,SJSU -1.5,4
+01/07 07:30 PM,Florida Atlantic @ UAB,-2.5,UAB -2.5,0.5024759095466147,UAB -2.5,4

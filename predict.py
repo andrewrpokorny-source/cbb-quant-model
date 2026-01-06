@@ -13,22 +13,90 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
+# --- EXPANDED TEAM MAP (V2.8: FINAL DRAKE FIX) ---
 TEAM_MAP = {
-    "UConn Huskies": "Connecticut", "Ole Miss Rebels": "Mississippi", "NC State Wolfpack": "North Carolina St.",
-    "Miami Hurricanes": "Miami FL", "USC Trojans": "USC", "TCU Horned Frogs": "TCU", "SMU Mustangs": "SMU",
-    "VCU Rams": "VCU", "LSU Tigers": "LSU", "BYU Cougars": "BYU", "UCF Knights": "UCF",
-    "St. John's Red Storm": "St. John's", "Saint Mary's Gaels": "Saint Mary's", "Loyola Chicago Ramblers": "Loyola Chicago",
-    "Michigan State Spartans": "Michigan St.", "Ohio State Buckeyes": "Ohio St.", "Iowa State Cyclones": "Iowa St.",
-    "Florida State Seminoles": "Florida St.", "Kansas State Wildcats": "Kansas St.", "Oklahoma State Cowboys": "Oklahoma St.",
-    "Oregon State Beavers": "Oregon St.", "Washington State Cougars": "Washington St.", "Arizona State Sun Devils": "Arizona St.",
-    "Mississippi State Bulldogs": "Mississippi St.", "Penn State Nittany Lions": "Penn St.", "Boise State Broncos": "Boise St.",
-    "San Diego State Aztecs": "San Diego St.", "Utah State Aggies": "Utah St.", "Colorado State Rams": "Colorado St.",
-    "Michigan Wolverines": "Michigan", "West Virginia Mountaineers": "West Virginia", "Gonzaga Bulldogs": "Gonzaga",
-    "Nebraska Cornhuskers": "Nebraska", "Seattle U Redhawks": "Seattle", "Louisville Cardinals": "Louisville",
-    "Stanford Cardinal": "Stanford", "Massachusetts Minutemen": "Massachusetts", "UMass Minutemen": "Massachusetts",
-    "Pittsburgh Panthers": "Pittsburgh", "Illinois Fighting Illini": "Illinois", "Wisconsin Badgers": "Wisconsin",
-    "Maryland Terrapins": "Maryland", "Rutgers Scarlet Knights": "Rutgers", "Northwestern Wildcats": "Northwestern",
-    "Purdue Boilermakers": "Purdue", "Indiana Hoosiers": "Indiana", "Minnesota Golden Gophers": "Minnesota"
+    "Drake Bulldogs": "Drake",  # <--- NEW FIX
+    "Butler Bulldogs": "Butler",
+    "Miami (OH) RedHawks": "Miami OH",
+    "Ball State Cardinals": "Ball St.",
+    "Kent State Golden Flashes": "Kent St.",
+    "Iowa Hawkeyes": "Iowa",
+    "DePaul Blue Demons": "DePaul",
+    "UNLV Rebels": "UNLV",
+    "Fresno State Bulldogs": "Fresno St.",
+    "Nevada Wolf Pack": "Nevada",
+    "Furman Paladins": "Furman",
+    "Marquette Golden Eagles": "Marquette",
+    "Xavier Musketeers": "Xavier",
+    "UAB Blazers": "UAB",
+    "Arkansas Razorbacks": "Arkansas",
+    "Duke Blue Devils": "Duke",
+    "Louisville Cardinals": "Louisville",
+    "North Carolina Tar Heels": "North Carolina",
+    "Kentucky Wildcats": "Kentucky",
+    "Kansas Jayhawks": "Kansas",
+    "Auburn Tigers": "Auburn",
+    "Alabama Crimson Tide": "Alabama",
+    "Tennessee Volunteers": "Tennessee",
+    "UConn Huskies": "Connecticut", 
+    "Ole Miss Rebels": "Mississippi", 
+    "NC State Wolfpack": "North Carolina St.",
+    "Miami Hurricanes": "Miami FL", 
+    "USC Trojans": "USC", 
+    "TCU Horned Frogs": "TCU", 
+    "SMU Mustangs": "SMU",
+    "VCU Rams": "VCU", 
+    "LSU Tigers": "LSU", 
+    "BYU Cougars": "BYU", 
+    "UCF Knights": "UCF",
+    "St. John's Red Storm": "St. John's", 
+    "Saint Mary's Gaels": "Saint Mary's", 
+    "Loyola Chicago Ramblers": "Loyola Chicago",
+    "Michigan State Spartans": "Michigan St.", 
+    "Ohio State Buckeyes": "Ohio St.", 
+    "Iowa State Cyclones": "Iowa St.",
+    "Florida State Seminoles": "Florida St.", 
+    "Kansas State Wildcats": "Kansas St.", 
+    "Oklahoma State Cowboys": "Oklahoma St.",
+    "Oregon State Beavers": "Oregon St.", 
+    "Washington State Cougars": "Washington St.", 
+    "Arizona State Sun Devils": "Arizona St.",
+    "Mississippi State Bulldogs": "Mississippi St.", 
+    "Penn State Nittany Lions": "Penn St.", 
+    "Boise State Broncos": "Boise St.",
+    "San Diego State Aztecs": "San Diego St.", 
+    "Utah State Aggies": "Utah St.", 
+    "Colorado State Rams": "Colorado St.",
+    "Michigan Wolverines": "Michigan", 
+    "West Virginia Mountaineers": "West Virginia", 
+    "Gonzaga Bulldogs": "Gonzaga",
+    "Nebraska Cornhuskers": "Nebraska", 
+    "Seattle U Redhawks": "Seattle", 
+    "Stanford Cardinal": "Stanford", 
+    "Massachusetts Minutemen": "Massachusetts", 
+    "UMass Minutemen": "Massachusetts",
+    "Pittsburgh Panthers": "Pittsburgh", 
+    "Illinois Fighting Illini": "Illinois", 
+    "Wisconsin Badgers": "Wisconsin",
+    "Maryland Terrapins": "Maryland", 
+    "Rutgers Scarlet Knights": "Rutgers", 
+    "Northwestern Wildcats": "Northwestern",
+    "Purdue Boilermakers": "Purdue", 
+    "Indiana Hoosiers": "Indiana", 
+    "Minnesota Golden Gophers": "Minnesota",
+    "Texas Longhorns": "Texas",
+    "Texas A&M Aggies": "Texas A&M",
+    "Texas Tech Red Raiders": "Texas Tech",
+    "Baylor Bears": "Baylor",
+    "Houston Cougars": "Houston",
+    "Virginia Cavaliers": "Virginia",
+    "Virginia Tech Hokies": "Virginia Tech",
+    "Clemson Tigers": "Clemson",
+    "Georgia Tech Yellow Jackets": "Georgia Tech",
+    "Wake Forest Demon Deacons": "Wake Forest",
+    "Syracuse Orange": "Syracuse",
+    "Boston College Eagles": "Boston College",
+    "Notre Dame Fighting Irish": "Notre Dame"
 }
 
 def find_best_match(name, known_teams):
@@ -80,10 +148,9 @@ def fetch_schedule():
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
-                # ODDS PARSING
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
-                raw_odds = details # Capture the raw text!
+                raw_odds = details 
                 
                 spread_val = 0.0
                 try:
@@ -110,7 +177,7 @@ def fetch_schedule():
                         'id': game_id,
                         'home_raw': home, 'away_raw': away, 
                         'spread': spread_val, 'date': game_date,
-                        'raw_odds': raw_odds # Pass it through
+                        'raw_odds': raw_odds
                     })
         except: pass
             
@@ -125,7 +192,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (DEBUG MODE) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (V2.8: FINAL) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
@@ -143,13 +210,19 @@ def main():
         home = find_best_match(g['home_raw'], known_teams)
         away = find_best_match(g['away_raw'], known_teams)
         
+        # DEBUG: Print if we still can't find a team
+        if not home: print(f"      ⚠️  Could not map home team: {g['home_raw']}")
+        if not away: print(f"      ⚠️  Could not map away team: {g['away_raw']}")
+        
         if not home or not away or home not in team_stats or away not in team_stats: continue
 
         row = {'is_home': 1, 'spread': g['spread']}
         h_stats = team_stats[home]; a_stats = team_stats[away]
         
         last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
-        row['rest_days'] = min((g['date'].replace(tzinfo=None) - last_date).days, 7)
+        rest = (g['date'].replace(tzinfo=None) - last_date).days
+        row['rest_days'] = min(rest, 7)
+        
         row = calculate_production_features(row, h_stats, a_stats)
         
         cols = model.feature_names_in_
@@ -161,7 +234,6 @@ def main():
         prob = model.predict_proba(input_df)[0][1]
         conf = max(prob, 1-prob)
         
-        # Display Logic
         if prob > 0.5:
             sign = "+" if g['spread'] > 0 else ""
             pick_str = f"{home} {sign}{g['spread']}"
@@ -182,7 +254,7 @@ def main():
             "Spread": g['spread'],
             "Pick": pick_str,
             "Conf": conf,
-            "Raw Odds": g['raw_odds'], # <--- NEW DEBUG COL
+            "Raw Odds": g['raw_odds'],
             "Rest": row['rest_days']
         })
 
