@@ -42,7 +42,10 @@ def run_backtest():
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
 
-    end_date = df['date'].max()
+    # --- THE FIX IS HERE ---
+    # We add 1 day to the max date to ensure the loop includes the final day's games
+    end_date = df['date'].max() + timedelta(days=1)
+    
     start_date = end_date - timedelta(weeks=WEEKS_BACK)
     
     print(f"   -> Testing Range: {start_date.date()} to {end_date.date()}")
@@ -52,7 +55,7 @@ def run_backtest():
     
     while current_date < end_date:
         next_week = current_date + timedelta(days=7)
-        # print(f"   -> Window: {current_date.date()} ...") # Reduced noise for UI
+        # print(f"   -> Window: {current_date.date()} ...") 
         
         model, feats = train_model_at_date(df, current_date)
         
