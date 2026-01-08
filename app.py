@@ -17,7 +17,7 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 st.set_page_config(page_title="CBB Quant Edge", page_icon="🏀", layout="centered")
 
 st.title("🏀 CBB Quant Edge")
-st.caption("v3.0 | Strategy: Efficiency Differentials | Mode: Spread Specialist")
+st.caption("v3.1 | Strategy: Efficiency Differentials | Mode: Spread Specialist")
 st.divider()
 
 tab1, tab2 = st.tabs(["📅 Daily Picks", "📈 Performance Dashboard"])
@@ -71,14 +71,29 @@ with tab2:
             profit = df_subset['units'].sum()
             return cnt, rate, profit
 
-        today = pd.Timestamp.now().normalize()
+        # --- TIMEZONE FIX (CRITICAL) ---
+        # Force "Today" to be US/Eastern, regardless of where the server is located (UTC)
+        try:
+            today = pd.Timestamp.now(tz='US/Eastern').normalize()
+        except:
+            # Fallback if tz database missing (rare)
+            today = pd.Timestamp.now().normalize() - timedelta(hours=5)
+            
         yesterday = today - timedelta(days=1)
         
+        # Filter Data
+        # We compare .date() to ignore timestamp hours
         df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
-        df_7 = hist[hist['date'] >= (today - timedelta(days=7))]
+        
+        # Last 7 Days (Today - 7)
+        start_7 = today - timedelta(days=7)
+        df_7 = hist[hist['date'].dt.date >= start_7.date()]
+        
         df_30 = hist 
         
-        st.subheader("📊 Performance Snapshots")
+        st.subheader(f"📊 Performance Snapshots")
+        st.caption(f"Reflecting stats as of: {yesterday.strftime('%b %d')}")
+        
         c1, c2, c3 = st.columns(3)
         
         cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
@@ -112,21 +127,13 @@ with tab2:
         ).properties(height=300)
         st.altair_chart(chart, use_container_width=True)
         
-        # --- FIXED SORTING & YEAR DISPLAY ---
         with st.expander("📜 View Full Bet History"):
             hist['Result'] = hist['pick_correct'].apply(lambda x: "✅ WIN" if x else "❌ LOSS")
-            
-            # 1. Format with Year (YYYY-MM-DD for clean sorting, or MM/DD/YYYY)
             hist['Date_Str'] = hist['date'].dt.strftime("%Y-%m-%d")
-            
             hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
             hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
             
-            # 2. Sort by the REAL datetime object (hist['date']) not the string
-            # This ensures Dec 31 comes before Jan 1
             df_display = hist.sort_values('date', ascending=False)
-            
-            # 3. Rename for display
             df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(columns={'Date_Str': 'Date', 'conf': 'Conf'})
             df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.1%}")
             
