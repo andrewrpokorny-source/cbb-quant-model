@@ -99,13 +99,10 @@ def fetch_games_for_date(target_date):
     return games
 
 def update_database():
-    print("--- 🔄 STRICT UPDATER (YESTERDAY ONLY) ---")
+    print("--- 🔄 STRICT UPDATER (SANITIZING TODAY) ---")
     
-    # We purposefully set start_date back to repair the gap, 
-    # but end_date is strictly YESTERDAY.
-    start_date = datetime(2026, 1, 2) 
-    
-    # STRICT CUTOFF: Yesterday Only. Ignore Today.
+    # 1. DOWNLOAD MISSING PAST GAMES (Jan 2 to Yesterday)
+    start_date = datetime(2026, 1, 2)
     end_date = datetime.now() - timedelta(days=1)
     
     current_date = start_date
@@ -117,29 +114,33 @@ def update_database():
         daily_games = fetch_games_for_date(current_date)
         new_games.extend(daily_games)
         current_date += timedelta(days=1)
+    
+    # 2. LOAD & SANITIZE DATABASE
+    if os.path.exists(DATA_FILE):
+        df_existing = pd.read_csv(DATA_FILE)
+        df_existing['date'] = pd.to_datetime(df_existing['date'])
         
-    if new_games:
-        print(f"💾 Found {len(new_games)} completed games.")
+        # --- THE SANITIZER ---
+        # Strictly delete any rows where date >= Today (Jan 7)
+        today_clean = pd.Timestamp.now().normalize()
+        df_clean = df_existing[df_existing['date'] < today_clean].copy()
         
-        if os.path.exists(DATA_FILE):
-            df_old = pd.read_csv(DATA_FILE)
-            df_old['date'] = pd.to_datetime(df_old['date'])
-            
-            # Clean overwrite for the rescue period
-            cutoff = pd.Timestamp("2026-01-02")
-            df_clean = df_old[df_old['date'] < cutoff].copy()
-            
+        # Also clean out the repair window to avoid dupes
+        repair_start = pd.Timestamp("2026-01-02")
+        df_clean = df_clean[df_clean['date'] < repair_start]
+        
+        if new_games:
             df_new = pd.DataFrame(new_games)
             df_new['date'] = pd.to_datetime(df_new['date'])
             
             df_combined = pd.concat([df_clean, df_new], ignore_index=True)
-            df_combined = df_combined.drop_duplicates(subset=['date', 'team'])
             df_combined = df_combined.sort_values('date')
-            
             df_combined.to_csv(DATA_FILE, index=False)
-            print("✅ Database updated.")
+            print("✅ Database sanitized & updated (Stopped at Yesterday).")
         else:
-            pd.DataFrame(new_games).to_csv(DATA_FILE, index=False)
+            # If no new games, just save the sanitized old file
+            df_clean.to_csv(DATA_FILE, index=False)
+            print("✅ Database sanitized (Removed Today's games).")
 
     run_pipeline()
 
