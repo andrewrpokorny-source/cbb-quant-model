@@ -20,14 +20,14 @@ def get_last_recorded_date():
         return datetime(2025, 11, 4)
 
 def fetch_games_for_date(target_date):
-    date_str = target_date.strftime("%Y%m%d")
-    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')} (Looking for Spreads)...")
+    date_str_url = target_date.strftime("%Y%m%d")
+    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
     
-    url = f"{BASE_URL}&dates={date_str}"
+    url = f"{BASE_URL}&dates={date_str_url}"
     try:
         res = requests.get(url).json()
     except:
-        print(f"      ⚠️  Connection failed for {date_str}")
+        print(f"      ⚠️  Connection failed for {date_str_url}")
         return []
 
     games = []
@@ -39,12 +39,17 @@ def fetch_games_for_date(target_date):
             home = comp['competitors'][0]
             away = comp['competitors'][1]
             
-            # --- ODDS PARSING (THE FIX) ---
+            # --- TIMEZONE FIX ---
+            utc_ts = pd.to_datetime(event['date'])
+            eastern_ts = utc_ts.tz_convert('US/Eastern')
+            game_date_str = eastern_ts.strftime("%Y-%m-%d")
+
+            # --- ODDS PARSING ---
             spread_val = 0.0
             try:
                 if comp.get('odds'):
                     odds = comp['odds'][0]
-                    details = odds.get('details', '0') # e.g. "DUKE -5.5"
+                    details = odds.get('details', '0')
                     
                     if details and details != '0' and details != 'EVEN':
                         parts = details.split()
@@ -56,38 +61,35 @@ def fetch_games_for_date(target_date):
                         
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         
-                        # Spread is always from Home Perspective in our DB
                         if is_home_fav:
-                            spread_val = -val # Home Fav (-5.5)
+                            spread_val = -val
                         else:
-                            spread_val = val  # Home Dog (+5.5)
+                            spread_val = val
             except:
                 spread_val = 0.0
             
-            # Home Row
             g = {
-                'date': target_date.strftime("%Y-%m-%d"),
+                'date': game_date_str,
                 'team': home['team']['displayName'],
                 'opponent': away['team']['displayName'],
                 'location': 'Home',
                 'team_score': int(home['score']),
                 'opp_score': int(away['score']),
                 'is_home': 1,
-                'spread': spread_val, # SAVING THE SPREAD
+                'spread': spread_val,
                 'ats_win': 0 
             }
             games.append(g)
             
-            # Away Row (Inverse Spread)
             g_away = {
-                'date': target_date.strftime("%Y-%m-%d"),
+                'date': game_date_str,
                 'team': away['team']['displayName'],
                 'opponent': home['team']['displayName'],
                 'location': 'Away',
                 'team_score': int(away['score']),
                 'opp_score': int(home['score']),
                 'is_home': 0,
-                'spread': -1 * spread_val, # INVERSE SPREAD
+                'spread': -1 * spread_val,
                 'ats_win': 0
             }
             games.append(g_away)
@@ -97,17 +99,19 @@ def fetch_games_for_date(target_date):
     return games
 
 def update_database():
-    print("--- 🔄 SMART AUTO-UPDATER (WITH ODDS FIX) ---")
+    print("--- 🔄 STRICT UPDATER (YESTERDAY ONLY) ---")
     
-    # FORCE RE-RUN: We purposely set the start date back to Jan 2 
-    # to overwrite the "bad" data we just downloaded.
+    # We purposefully set start_date back to repair the gap, 
+    # but end_date is strictly YESTERDAY.
     start_date = datetime(2026, 1, 2) 
+    
+    # STRICT CUTOFF: Yesterday Only. Ignore Today.
     end_date = datetime.now() - timedelta(days=1)
     
     current_date = start_date
     new_games = []
     
-    print(f"📉 Repairing Data Gap: {current_date.date()} to {end_date.date()}")
+    print(f"📉 Scanning from {current_date.date()} to {end_date.date()}")
     
     while current_date.date() <= end_date.date():
         daily_games = fetch_games_for_date(current_date)
@@ -115,13 +119,13 @@ def update_database():
         current_date += timedelta(days=1)
         
     if new_games:
-        print(f"💾 Saving {len(new_games)} repaired records...")
+        print(f"💾 Found {len(new_games)} completed games.")
         
         if os.path.exists(DATA_FILE):
             df_old = pd.read_csv(DATA_FILE)
             df_old['date'] = pd.to_datetime(df_old['date'])
             
-            # DELETE the bad rows from Jan 2 onwards so we don't have duplicates
+            # Clean overwrite for the rescue period
             cutoff = pd.Timestamp("2026-01-02")
             df_clean = df_old[df_old['date'] < cutoff].copy()
             
@@ -129,10 +133,11 @@ def update_database():
             df_new['date'] = pd.to_datetime(df_new['date'])
             
             df_combined = pd.concat([df_clean, df_new], ignore_index=True)
+            df_combined = df_combined.drop_duplicates(subset=['date', 'team'])
             df_combined = df_combined.sort_values('date')
             
             df_combined.to_csv(DATA_FILE, index=False)
-            print("✅ Database repaired successfully.")
+            print("✅ Database updated.")
         else:
             pd.DataFrame(new_games).to_csv(DATA_FILE, index=False)
 
