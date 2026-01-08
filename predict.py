@@ -13,16 +13,15 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
-# --- EXPANDED TEAM MAP (V2.9: MID-MAJOR FIX) ---
+# --- TEAM MAP ---
 TEAM_MAP = {
-    # NEW ADDITIONS (Jan 7 Slate)
     "St. Thomas-Minnesota Tommies": "St. Thomas MN",
     "Elon Phoenix": "Elon",
     "Campbell Fighting Camels": "Campbell",
     "App State Mountaineers": "Appalachian St.",
     "UT Martin Skyhawks": "UT Martin",
     "Denver Pioneers": "Denver",
-    "Omaha Mavericks": "Omaha", # Sometimes "Neb. Omaha" or "UNO"
+    "Omaha Mavericks": "Omaha",
     "Texas State Bobcats": "Texas St.",
     "Weber State Wildcats": "Weber St.",
     "Idaho State Bengals": "Idaho St.",
@@ -142,9 +141,10 @@ def get_latest_stats(df):
     return latest_stats
 
 def fetch_schedule():
-    print("   -> 📅 Fetching schedule (With Raw Odds Check)...")
+    print("   -> 📅 Fetching schedule (Showing ALL Today's Games)...")
     games = []
     
+    # We fetch Today (0) and Tomorrow (1)
     for days_ahead in [0, 1]:
         target_date = datetime.now() + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
@@ -155,17 +155,22 @@ def fetch_schedule():
             data = res.json()
             
             for event in data['events']:
-                comp = event['competitions'][0]
-                status = event['status']['type']['state']
-                if status == 'post': continue 
+                # GAME STATUS CHECK (Disabled to show final games)
+                # status = event['status']['type']['state']
+                # if status == 'post': continue 
                 
                 game_date = pd.to_datetime(event['date'])
+                
+                # --- FIX: DEFINE COMP BEFORE CHECKING IT ---
+                if not event.get('competitions'): continue
+                comp = event['competitions'][0]
                 
                 if not comp.get('competitors'): continue
                 home_tm = comp['competitors'][0]['team']
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
+                # ODDS CHECK
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
                 raw_odds = details 
@@ -210,7 +215,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (V2.9: MID-MAJORS) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (V3.1: DEBUGGED) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
@@ -227,10 +232,6 @@ def main():
     for g in schedule:
         home = find_best_match(g['home_raw'], known_teams)
         away = find_best_match(g['away_raw'], known_teams)
-        
-        # DEBUG: Print if we still can't find a team
-        if not home: print(f"      ⚠️  Could not map home team: {g['home_raw']}")
-        if not away: print(f"      ⚠️  Could not map away team: {g['away_raw']}")
         
         if not home or not away or home not in team_stats or away not in team_stats: continue
 
