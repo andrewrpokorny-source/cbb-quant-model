@@ -1,148 +1,141 @@
 import pandas as pd
 import requests
-import time
-import numpy as np
-import re
+import os
+import sys
+from datetime import datetime, timedelta
 
-def calculate_four_factors(fgm, fga, three_pm, fta, orb, opp_drb, to, poss):
-    efg = (fgm + 0.5 * three_pm) / fga if fga > 0 else 0
-    to_pct = to / poss if poss > 0 else 0
-    orb_pct = orb / (orb + opp_drb) if (orb + opp_drb) > 0 else 0
-    ftr = fta / fga if fga > 0 else 0
-    return efg * 100, to_pct * 100, orb_pct * 100, ftr * 100
+# --- CONFIG ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# We update the raw file, features.py handles the processed one
+DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv") 
+BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=1000&groups=50"
 
-def parse_lines(text_str):
-    """
-    Robust parser for Totals.
-    Finds numbers like 145, 145.5, 98.5.
-    Range 90-250 to be safe.
-    """
-    # Regex: Look for 2 or 3 digits, optional decimal.
-    # Exclude small numbers (spreads) by enforcing range check.
-    candidates = re.findall(r'\b(\d{2,3}\.?\d?)\b', str(text_str))
+def get_last_recorded_date():
+    """Finds the last date we have data for."""
+    if not os.path.exists(DATA_FILE):
+        # Default start date if file is missing (Start of season approx)
+        return datetime(2025, 11, 4) 
     
-    for c in candidates:
-        try:
-            val = float(c)
-            # Valid NCAA Totals range
-            if 90 <= val <= 250:
-                return val
-        except: continue
-    return np.nan
-
-def parse_spread_val(text_str, home_team):
     try:
-        part1 = text_str.split(',')[0].strip()
-        match = re.search(r'([+-]?\d+\.?\d*)$', part1)
-        if match:
-            raw = float(match.group(1))
-            if part1.startswith(home_team) or home_team in part1: return raw
-            else: return raw * -1
-        return np.nan
-    except: return np.nan
+        df = pd.read_csv(DATA_FILE)
+        df['date'] = pd.to_datetime(df['date'])
+        return df['date'].max().to_pydatetime()
+    except:
+        return datetime(2025, 11, 4)
 
-def fetch_cbb_data(years):
-    all_games = []
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://barttorvik.com/"
-    }
+def fetch_games_for_date(target_date):
+    """Fetches a single day of games from ESPN."""
+    date_str = target_date.strftime("%Y%m%d")
+    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
+    
+    url = f"{BASE_URL}&dates={date_str}"
+    try:
+        res = requests.get(url).json()
+    except:
+        print(f"      ⚠️  Connection failed for {date_str}")
+        return []
 
-    print(f"--- 🏀 FETCHING DATA (ROBUST TOTALS) ---")
-
-    for year in years:
-        print(f"   -> Downloading {year} season data...")
-        url = f"https://barttorvik.com/{year}_super_sked.json"
+    games = []
+    for event in res.get('events', []):
+        if event['status']['type']['state'] != 'post': continue # Only finished games
         
         try:
-            response = requests.get(url, headers=HEADERS)
-            data = response.json()
-            if not data: continue
+            comp = event['competitions'][0]
+            home = comp['competitors'][0]
+            away = comp['competitors'][1]
             
-            processed_rows = []
+            # Extract basic data needed for features.py
+            g = {
+                'date': target_date.strftime("%Y-%m-%d"),
+                'team': home['team']['displayName'],
+                'opponent': away['team']['displayName'],
+                'location': 'Home',
+                'team_score': int(home['score']),
+                'opp_score': int(away['score']),
+                'is_home': 1,
+                'ats_win': 0 # Placeholder, calculated later
+            }
+            # We add the "Home" perspective
+            games.append(g)
             
-            for row in data:
-                if len(row) < 50: continue
-                box = row[50]
-                if not isinstance(box, list) or len(box) < 34: continue
+            # We add the "Away" perspective
+            g_away = {
+                'date': target_date.strftime("%Y-%m-%d"),
+                'team': away['team']['displayName'],
+                'opponent': home['team']['displayName'],
+                'location': 'Away',
+                'team_score': int(away['score']),
+                'opp_score': int(home['score']),
+                'is_home': 0,
+                'ats_win': 0
+            }
+            games.append(g_away)
+            
+        except: continue
+        
+    return games
 
-                try:
-                    s1, s2 = float(box[18]), float(box[33])
-                    if s1 == 0 and s2 == 0: continue
-                    away_score, home_score = int(s1), int(s2)
-                    possessions = float(box[34]) if box[34] else 70.0
-                except: continue
+def update_database():
+    print("--- 🔄 SMART AUTO-UPDATER ---")
+    
+    last_date = get_last_recorded_date()
+    # Start checking from the day AFTER our last record
+    current_date = last_date + timedelta(days=1)
+    # Stop at Yesterday (since today's games aren't done)
+    end_date = datetime.now() - timedelta(days=1)
+    
+    # Correction: If we are running this late at night, we might want today's early games
+    # But usually safe to stick to "Yesterday" to ensure final scores.
+    
+    if current_date.date() > end_date.date():
+        print("✅ Data is already up to date!")
+        run_pipeline()
+        return
 
-                date = row[1]
-                away_name, home_name = box[2], box[3]
-                
-                # LINES
-                raw_str = str(row[4])
-                spread = parse_spread_val(raw_str, home_name)
-                total_line = parse_lines(raw_str)
-                
-                # We need valid spreads, but we can tolerate missing totals (fill with NaN)
-                if pd.isna(spread): continue
+    print(f"📉 Found Data Gap: {current_date.date()} to {end_date.date()}")
+    
+    new_games = []
+    while current_date.date() <= end_date.date():
+        daily_games = fetch_games_for_date(current_date)
+        new_games.extend(daily_games)
+        current_date += timedelta(days=1)
+        
+    if new_games:
+        print(f"💾 Saving {len(new_games)} new game records...")
+        
+        # Load existing
+        if os.path.exists(DATA_FILE):
+            df_old = pd.read_csv(DATA_FILE)
+            df_new = pd.DataFrame(new_games)
+            # Combine and remove duplicates
+            df_combined = pd.concat([df_old, df_new], ignore_index=True)
+            df_combined['date'] = pd.to_datetime(df_combined['date'])
+            df_combined = df_combined.drop_duplicates(subset=['date', 'team'])
+            df_combined = df_combined.sort_values('date')
+        else:
+            df_combined = pd.DataFrame(new_games)
+            
+        df_combined.to_csv(DATA_FILE, index=False)
+        print("✅ Database updated successfully.")
+    else:
+        print("⚠️  No new games found in gap (Off-season or API issue?).")
 
-                # Stats
-                a_fgm, a_fga, a_3pm, a_3pa = box[4], box[5], box[6], box[7]
-                a_fta, a_orb, a_to = box[9], box[10], box[16]
-                h_drb = box[26]
-                
-                h_fgm, h_fga, h_3pm, h_3pa = box[19], box[20], box[21], box[22]
-                h_fta, h_orb, h_to = box[24], box[25], box[31]
-                a_drb = box[11]
-                
-                a_factors = calculate_four_factors(a_fgm, a_fga, a_3pm, a_fta, a_orb, h_drb, a_to, possessions)
-                h_factors = calculate_four_factors(h_fgm, h_fga, h_3pm, h_fta, h_orb, a_drb, h_to, possessions)
-                
-                a_3pr = (a_3pa / a_fga * 100) if a_fga > 0 else 0
-                h_3pr = (h_3pa / h_fga * 100) if h_fga > 0 else 0
-                
-                # Common data
-                base = {
-                    "date": date, "season": year,
-                    "possessions": possessions, "total_line": total_line
-                }
-                
-                # AWAY ROW
-                r1 = base.copy()
-                r1.update({
-                    "team": away_name, "opponent": home_name, "is_home": 0,
-                    "team_score": away_score, "opp_score": home_score,
-                    "spread": spread * -1,
-                    "team_eFG": a_factors[0], "team_TO": a_factors[1], "team_ORB": a_factors[2], "team_FTR": a_factors[3], "team_3PR": a_3pr,
-                    "opp_eFG": h_factors[0], "opp_TO": h_factors[1], "opp_ORB": h_factors[2], "opp_FTR": h_factors[3], "opp_3PR": h_3pr
-                })
-                processed_rows.append(r1)
+    run_pipeline()
 
-                # HOME ROW
-                r2 = base.copy()
-                r2.update({
-                    "team": home_name, "opponent": away_name, "is_home": 1,
-                    "team_score": home_score, "opp_score": away_score,
-                    "spread": spread,
-                    "team_eFG": h_factors[0], "team_TO": h_factors[1], "team_ORB": h_factors[2], "team_FTR": h_factors[3], "team_3PR": h_3pr,
-                    "opp_eFG": a_factors[0], "opp_TO": a_factors[1], "opp_ORB": a_factors[2], "opp_FTR": a_factors[3], "opp_3PR": a_3pr
-                })
-                processed_rows.append(r2)
+def run_pipeline():
+    print("\n--- 🚀 TRIGGERING PIPELINE ---")
+    # This runs the rest of your system automatically
+    
+    print("1️⃣  Calculating Efficiency Stats (features.py)...")
+    if os.system("python3 features.py") != 0:
+        print("❌ Error in features.py"); return
 
-            df = pd.DataFrame(processed_rows)
-            df = df.drop_duplicates(subset=['date', 'team'])
-            all_games.append(df)
-            time.sleep(1)
-
-        except Exception as e:
-            print(f"      ❌ Error processing {year}: {e}")
-
-    if not all_games: return None
-    master_df = pd.concat(all_games, ignore_index=True)
-    master_df['date'] = pd.to_datetime(master_df['date'])
-    return master_df
+    print("2️⃣  Retraining Model (model.py)...")
+    if os.system("python3 model.py") != 0:
+        print("❌ Error in model.py"); return
+        
+    print("3️⃣  Generating Picks (predict.py)...")
+    os.system("python3 predict.py")
 
 if __name__ == "__main__":
-    YEARS = [2024, 2025, 2026]
-    df = fetch_cbb_data(YEARS)
-    if df is not None:
-        df.to_csv("cbb_training_data_raw.csv", index=False)
-        print(f"\n✅ SUCCESS: Saved {len(df)} games with ROBUST Totals.")
+    update_database()

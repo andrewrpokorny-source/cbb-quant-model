@@ -13,9 +13,27 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
-# --- EXPANDED TEAM MAP (V2.8: FINAL DRAKE FIX) ---
+# --- EXPANDED TEAM MAP (V2.9: MID-MAJOR FIX) ---
 TEAM_MAP = {
-    "Drake Bulldogs": "Drake",  # <--- NEW FIX
+    # NEW ADDITIONS (Jan 7 Slate)
+    "St. Thomas-Minnesota Tommies": "St. Thomas MN",
+    "Elon Phoenix": "Elon",
+    "Campbell Fighting Camels": "Campbell",
+    "App State Mountaineers": "Appalachian St.",
+    "UT Martin Skyhawks": "UT Martin",
+    "Denver Pioneers": "Denver",
+    "Omaha Mavericks": "Omaha", # Sometimes "Neb. Omaha" or "UNO"
+    "Texas State Bobcats": "Texas St.",
+    "Weber State Wildcats": "Weber St.",
+    "Idaho State Bengals": "Idaho St.",
+    "Louisiana Ragin' Cajuns": "Louisiana",
+    "UL Monroe Warhawks": "UL Monroe",
+    "Idaho Vandals": "Idaho",
+    "Montana Grizzlies": "Montana",
+    "UTEP Miners": "UTEP",
+    "California Baptist Lancers": "California Baptist",
+    "Utah Tech Trailblazers": "Utah Tech",
+    "Drake Bulldogs": "Drake",
     "Butler Bulldogs": "Butler",
     "Miami (OH) RedHawks": "Miami OH",
     "Ball State Cardinals": "Ball St.",
@@ -192,7 +210,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (V2.8: FINAL) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (V2.9: MID-MAJORS) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
