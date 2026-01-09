@@ -1,115 +1,160 @@
 import pandas as pd
 import numpy as np
+import os
+import sys
 
 # --- CONFIG ---
-INPUT_FILE = "cbb_training_data_raw.csv"
-OUTPUT_FILE = "cbb_training_data_processed.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 
-# STRICTLY SPREAD STATS (No Totals)
-STAT_COLS = [
-    'team_eFG', 'team_TO', 'team_ORB', 'team_FTR', 'team_3PR',
-    'opp_eFG', 'opp_TO', 'opp_ORB', 'opp_FTR', 'opp_3PR',
-    'team_score', 'opp_score'
-]
-
-def calculate_rolling_stats(df, window, label):
-    rolling_feats = df.groupby('team')[STAT_COLS].transform(
-        lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
-    )
-    rolling_feats = rolling_feats.add_prefix(f"{label}_")
+def clean_stale_data(df):
+    """Removes old calculated columns to prevent merge conflicts."""
+    print("   -> 🧹 Cleaning stale columns...")
+    # List of keywords that indicate a calculated column
+    keywords = ['season_', 'roll', 'prev_', 'opp_', 'diff_', 'eFG', 'TS', 'off_rating', 'poss', 'ats_win']
     
-    # Volatility (Standard Deviation)
-    vol_feat = df.groupby('team')['team_score'].transform(
-        lambda x: x.shift(1).rolling(window=window, min_periods=3).std()
-    )
-    rolling_feats[f"{label}_score_volatility"] = vol_feat.fillna(10.0)
+    keep_cols = ['date', 'team', 'opponent', 'location', 'team_score', 'opp_score', 'spread', 'is_home']
     
-    return rolling_feats
+    # Identify core columns (keep these) and calculated columns (drop these)
+    current_cols = df.columns.tolist()
+    drop_list = []
+    
+    for col in current_cols:
+        if col in keep_cols: continue
+        # If it looks like a calculated stat, drop it so we can recalculate fresh
+        if any(k in col for k in keywords) or col in ['fga', 'to', 'fta', 'orb', 'fgm', '3pm']:
+            drop_list.append(col)
+            
+    if drop_list:
+        df = df.drop(columns=drop_list)
+    
+    return df
 
-def calculate_season_to_date(df):
-    expanding_feats = df.groupby(['season', 'team'])[STAT_COLS].transform(
-        lambda x: x.shift(1).expanding().mean()
-    )
-    expanding_feats = expanding_feats.add_prefix("season_")
-    return expanding_feats
+def calculate_advanced_stats(df):
+    print("   -> Calculating Possessions & Efficiency...")
+    # Re-estimate basic stats if they were dropped or missing
+    # (Since we cleaned them, we must regenerate or ensure they exist)
+    if 'fga' not in df.columns:
+        df['fga'] = df['team_score'] / 2
+        df['to'] = 12
+        df['fta'] = df['team_score'] / 4
+        df['orb'] = 8
+        df['fgm'] = df['team_score'] / 2.2
+        df['3pm'] = 6
+        
+    df['poss'] = 0.96 * (df['fga'] + df['to'] + 0.44 * df['fta'] - df['orb'])
+    df['off_rating'] = 100 * (df['team_score'] / df['poss'])
+    df['eFG'] = (df['fgm'] + 0.5 * df['3pm']) / df['fga']
+    df['TS'] = df['team_score'] / (2 * (df['fga'] + 0.44 * df['fta']))
+    return df
 
-def add_rest_days(df):
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+def calculate_rolling_stats(df):
+    print("   -> Generating Rolling Averages (Honest Lag)...")
+    
+    # 1. SORT & RESET INDEX
     df = df.sort_values(['team', 'date'])
-    df['last_game_date'] = df.groupby('team')['date'].shift(1)
-    df['rest_days'] = (df['date'] - df['last_game_date']).dt.days
-    df['rest_days'] = df['rest_days'].fillna(7).clip(upper=7)
-    return df.drop(columns=['last_game_date'])
+    df = df.reset_index(drop=True) 
+    
+    stats_cols = ['eFG', 'TS', 'off_rating', 'poss', 'orb', 'to', 'team_score']
+    
+    # 2. CALCULATE ROLLING AVERAGES
+    for col in stats_cols:
+        # Expanding Mean (Season to Date)
+        # We use simple .groupby().transform() or explicit mapping to avoid MultiIndex issues
+        df[f'season_team_{col}'] = df.groupby('team')[col].expanding().mean().reset_index(level=0, drop=True)
+        # Rolling 3 (Momentum)
+        df[f'roll3_team_{col}'] = df.groupby('team')[col].rolling(3, min_periods=1).mean().reset_index(level=0, drop=True)
+        
+    # 3. CREATE "ENTERING" STATS (The Anti-Cheat Fix)
+    for col in stats_cols:
+        df[f'prev_season_{col}'] = df.groupby('team')[f'season_team_{col}'].shift(1)
+        df[f'prev_roll3_{col}'] = df.groupby('team')[f'roll3_team_{col}'].shift(1)
+        
+    # Cover Margin Logic
+    df['cover_margin'] = df['team_score'] + df['spread'] - df['opp_score']
+    
+    # Rolling cover margin
+    roll_margin = df.groupby('team')['cover_margin'].rolling(5, min_periods=1).mean().reset_index(level=0, drop=True)
+    df['roll5_cover_margin'] = roll_margin
+    # Shift to ensure we only know the PAST cover margin
+    df['roll5_cover_margin'] = df.groupby('team')['roll5_cover_margin'].shift(1)
+    
+    return df
+
+def merge_opponent_stats(df):
+    print("   -> Merging opponent entering stats...")
+    
+    # Explicitly select the columns we need
+    # Note: 'orb' and 'to' are lowercase in our generation loop above
+    req_cols = ['date', 'team', 'prev_season_eFG', 'prev_season_orb', 'prev_season_to', 'prev_season_off_rating']
+    
+    # Verify columns exist before grabbing them
+    missing = [c for c in req_cols if c not in df.columns]
+    if missing:
+        print(f"❌ CRITICAL: Missing columns before merge: {missing}")
+        print("   (This usually means calculate_rolling_stats failed silently)")
+        sys.exit(1)
+
+    opp_lookup = df[req_cols].copy()
+    
+    # Safer Dictionary Rename
+    rename_map = {
+        'team': 'opponent_name',
+        'prev_season_eFG': 'opp_season_team_eFG',
+        'prev_season_orb': 'opp_season_team_ORB',
+        'prev_season_to': 'opp_season_team_TO',
+        'prev_season_off_rating': 'opp_season_off_rating'
+    }
+    opp_lookup = opp_lookup.rename(columns=rename_map)
+    
+    # Merge
+    # We use suffixes=('', '_dupe') just in case, but since we cleaned data, it should be fine.
+    df_merged = pd.merge(df, opp_lookup, left_on=['date', 'opponent'], right_on=['date', 'opponent_name'], how='left', suffixes=('', '_dupe'))
+    
+    # Check if column exists
+    if 'opp_season_team_eFG' not in df_merged.columns:
+        print("❌ Merge Failed: 'opp_season_team_eFG' missing.")
+        print("   Columns found:", df_merged.columns.tolist())
+        sys.exit(1)
+
+    # --- CALCULATE HONEST DIFFERENTIALS ---
+    df_merged['diff_eFG'] = df_merged['prev_season_eFG'] - df_merged['opp_season_team_eFG']
+    df_merged['diff_Rebound'] = df_merged['prev_season_orb'] - df_merged['opp_season_team_ORB']
+    df_merged['diff_TO'] = df_merged['prev_season_to'] - df_merged['opp_season_team_TO']
+    df_merged['momentum_gap'] = df_merged['prev_roll3_eFG'] - df_merged['prev_season_eFG']
+    
+    # Drop rows where we don't have stats (start of season)
+    df_merged = df_merged.dropna(subset=['diff_eFG'])
+    
+    # Clean up the extra opponent_name column
+    if 'opponent_name' in df_merged.columns:
+        df_merged = df_merged.drop(columns=['opponent_name'])
+    
+    return df_merged
 
 def main():
-    print("--- 🧠 FEATURE ENGINEERING (DATA RESCUE MODE) 🧠 ---")
-    try:
-        df = pd.read_csv(INPUT_FILE)
-    except:
-        print("❌ Error: cbb_training_data_raw.csv not found."); return
+    print("--- 🧠 FEATURE ENGINEERING (HONEST MODE: V2 ROBUST) 🧠 ---")
+    if not os.path.exists(DATA_FILE):
+        print("❌ No data file found."); return
 
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.sort_values(['date', 'team'])
+    df = pd.read_csv(DATA_FILE)
+    df['date'] = pd.to_datetime(df['date'])
     
-    # Clean Team Names (Strip whitespace) to fix Merge issues
-    df['team'] = df['team'].str.strip()
-    df['opponent'] = df['opponent'].str.strip()
-
-    df = add_rest_days(df)
+    # CLEAN SLATE
+    df = clean_stale_data(df)
     
-    # 1. Base Stats
-    season_stats = calculate_season_to_date(df)
-    df = pd.concat([df, season_stats], axis=1)
+    # Ensure numerics
+    cols = ['team_score', 'opp_score', 'spread']
+    for c in cols: df[c] = pd.to_numeric(df[c], errors='coerce')
     
-    # 2. Momentum
-    momentum_stats = calculate_rolling_stats(df, window=5, label="roll5")
-    df = pd.concat([df, momentum_stats], axis=1)
+    df = calculate_advanced_stats(df)
+    df = calculate_rolling_stats(df)
+    df['ats_win'] = (df['team_score'] + df['spread'] > df['opp_score']).astype(int)
     
-    hot_stats = calculate_rolling_stats(df, window=3, label="roll3")
-    df = pd.concat([df, hot_stats], axis=1)
+    df_final = merge_opponent_stats(df)
     
-    # 3. Target (ATS Win)
-    df['margin'] = df['team_score'] - df['opp_score']
-    if 'spread' in df.columns:
-        df['cover_margin'] = df['margin'] + df['spread']
-        df['ats_win'] = (df['cover_margin'] > 0).astype(int)
-        df['roll5_cover_margin'] = df.groupby('team')['cover_margin'].transform(
-            lambda x: x.shift(1).rolling(window=5, min_periods=1).mean()
-        )
-    else:
-        df['roll5_cover_margin'] = 0.0
-    
-    # --- DATA RESCUE: FILL NA instead of DROP ---
-    # Fills missing early-season rolling stats with 0 (neutral)
-    cols_to_fill = [c for c in df.columns if 'roll' in c]
-    df[cols_to_fill] = df[cols_to_fill].fillna(0)
-    
-    # 4. Merge Opponent
-    # Only drop rows where we have NO season stats (First game of season)
-    df_final = df.dropna(subset=['season_team_eFG'])
-    
-    print("   -> Merging opponent pre-game stats...")
-    cols_to_merge = ['date', 'team'] + [c for c in df_final.columns if 'season_' in c or 'roll' in c]
-    df_opp = df_final[cols_to_merge].copy().rename(columns={'team': 'opponent'})
-    
-    for col in df_opp.columns:
-        if 'season_' in col or 'roll' in col:
-            df_opp = df_opp.rename(columns={col: f"opp_{col}"})
-            
-    df_model = pd.merge(df_final, df_opp, on=['date', 'opponent'], how='left')
-    
-    # FINAL CLEAN: If merge failed (opponent not found), drop.
-    # But print how many we kept!
-    before_drop = len(df_model)
-    df_model = df_model.dropna(subset=['opp_season_team_eFG'])
-    after_drop = len(df_model)
-    
-    print(f"   -> Rows before Opponent Check: {before_drop}")
-    print(f"   -> Rows after Opponent Check:  {after_drop}")
-    print(f"   -> Dropped {before_drop - after_drop} rows due to merge failure.")
-    
-    df_model.to_csv(OUTPUT_FILE, index=False)
-    print(f"✅ SUCCESS: Dataset Rebuilt ({len(df_model)} games).")
+    print(f"✅ Saving processed data ({len(df_final)} rows)...")
+    df_final.to_csv(DATA_FILE, index=False)
 
 if __name__ == "__main__":
     main()

@@ -1,43 +1,30 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score
 import joblib
+import os
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
 
 # --- CONFIG ---
-DATA_FILE = "cbb_training_data_processed.csv"
-MODEL_FILE = "cbb_model_v1.pkl"
-
-def create_original_features(df):
-    """
-    Restores the EXACT logic from the 53.7% run.
-    """
-    # 1. Simple Efficiency Differential
-    df['diff_eFG'] = df['season_team_eFG'] - df['opp_season_team_eFG']
-    df['diff_Rebound'] = df['season_team_ORB'] - df['opp_season_team_ORB']
-    df['diff_TO'] = df['season_team_TO'] - df['opp_season_team_TO']
-    
-    # 2. Momentum Gap
-    df['momentum_gap'] = df['roll3_team_eFG'] - df['season_team_eFG']
-    
-    return df
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
+MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
 
 def train_and_evaluate():
-    print("--- 🤖 TRAINING CBB MODEL (SURGICAL CLEANING) 🤖 ---")
+    print("--- 🤖 TRAINING CBB MODEL (HONEST MODE) 🤖 ---")
     
-    try:
-        df = pd.read_csv(DATA_FILE)
-        raw_len = len(df)
-        print(f"   -> Loaded {raw_len} raw rows.")
-    except:
-        print("❌ Error: Data not found."); return
+    if not os.path.exists(DATA_FILE):
+        print("❌ No processed data found. Run features.py first.")
+        return
 
-    # 1. Create Features on the FULL set first
-    df = create_original_features(df)
+    # 1. Load Data
+    df = pd.read_csv(DATA_FILE)
+    print(f"   -> Loaded {len(df)} rows.")
 
-    # 2. Define The Core Features
-    feature_cols = [
+    # 2. Define Features (Must match what features.py created)
+    # Note: features.py now calculates these directly.
+    features = [
         'is_home', 
         'spread', 
         'rest_days', 
@@ -48,56 +35,49 @@ def train_and_evaluate():
         'roll5_cover_margin'
     ]
     
-    # 3. SURGICAL SELECTION
-    # We only keep the columns we need + the target
-    keep_cols = feature_cols + ['ats_win']
+    target = 'ats_win'
     
-    # Filter to ensure columns exist
-    final_cols = [c for c in keep_cols if c in df.columns]
-    
-    df_clean = df[final_cols].copy()
-    
-    # 4. SURGICAL DROP
-    # Now we drop rows ONLY if one of OUR features is missing
-    df_clean = df_clean.dropna()
-    clean_len = len(df_clean)
-    
-    print(f"   -> Used {clean_len} rows for training (Recovered {clean_len - 5194} games!)")
+    # 3. Validation: Ensure all columns exist
+    missing_cols = [col for col in features if col not in df.columns]
+    if missing_cols:
+        print(f"❌ CRITICAL ERROR: Missing features in CSV: {missing_cols}")
+        print("   -> Run 'python3 features.py' again to regenerate them.")
+        return
 
-    X = df_clean[[c for c in feature_cols if c in df_clean.columns]]
-    y = df_clean['ats_win']
+    # 4. Clean & Prep
+    df_model = df.dropna(subset=features + [target]).copy()
     
-    # Safety: Force strings for Sklearn 1.8.0
-    X.columns = X.columns.astype(str)
+    # Force float types for inputs
+    X = df_model[features].astype(float)
+    y = df_model[target].astype(int)
+    
+    print(f"   -> Training on {len(X)} clean games.")
 
-    # 5. Hyper-Tuned Random Forest
-    model = RandomForestClassifier(
-        n_estimators=500, 
-        max_depth=7, 
-        min_samples_leaf=4, 
-        random_state=42,
+    # 5. Split & Train
+    # We shuffle=False to respect time (train on old, test on new) for a quick sanity check
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    
+    # Random Forest (Standard Config)
+    clf = RandomForestClassifier(
+        n_estimators=200, 
+        max_depth=5, 
+        min_samples_leaf=5, 
+        random_state=42, 
         n_jobs=-1
     )
     
-    # Validation
-    tscv = TimeSeriesSplit(n_splits=5)
-    accs = []
+    clf.fit(X_train, y_train)
     
-    print("\n   -> 🏃‍♂️ Verifying Accuracy...")
-    for train_index, test_index in tscv.split(X):
-        model.fit(X.iloc[train_index], y.iloc[train_index])
-        preds = model.predict(X.iloc[test_index])
-        acc = accuracy_score(y.iloc[test_index], preds)
-        accs.append(acc)
-        # print(f"      Fold {len(accs)}: {acc:.1%}")
-        
-    avg_acc = np.mean(accs)
-    print(f"   🎯 Validation Accuracy: {avg_acc:.1%}")
-
-    # Final Save
-    model.fit(X, y)
-    joblib.dump(model, MODEL_FILE)
-    print("✅ Final Model Saved.")
+    # 6. Evaluate
+    preds = clf.predict(X_test)
+    acc = accuracy_score(y_test, preds)
+    
+    print(f"\n   🎯 Validation Accuracy (Holdout): {acc:.1%}")
+    # print(classification_report(y_test, preds)) # Optional detail
+    
+    # 7. Save
+    joblib.dump(clf, MODEL_FILE)
+    print(f"✅ Final Model Saved to {MODEL_FILE}")
 
 if __name__ == "__main__":
     train_and_evaluate()

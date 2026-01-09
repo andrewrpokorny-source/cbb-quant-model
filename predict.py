@@ -130,6 +130,10 @@ def get_latest_stats(df):
     df = df.sort_values('date')
     latest_stats = {}
     teams = df['team'].unique()
+    
+    # Identify the correct lowercase columns from features.py
+    # We look for 'season_team_orb' (lowercase) not 'ORB'
+    
     for team in teams:
         last_game = df[df['team'] == team].iloc[-1]
         stats = {}
@@ -144,7 +148,6 @@ def fetch_schedule():
     print("   -> 📅 Fetching schedule (Showing ALL Today's Games)...")
     games = []
     
-    # We fetch Today (0) and Tomorrow (1)
     for days_ahead in [0, 1]:
         target_date = datetime.now() + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
@@ -155,13 +158,8 @@ def fetch_schedule():
             data = res.json()
             
             for event in data['events']:
-                # GAME STATUS CHECK (Disabled to show final games)
-                # status = event['status']['type']['state']
-                # if status == 'post': continue 
-                
                 game_date = pd.to_datetime(event['date'])
                 
-                # --- FIX: DEFINE COMP BEFORE CHECKING IT ---
                 if not event.get('competitions'): continue
                 comp = event['competitions'][0]
                 
@@ -170,7 +168,6 @@ def fetch_schedule():
                 away_tm = comp['competitors'][1]['team']
                 home = home_tm['displayName']; away = away_tm['displayName']
                 
-                # ODDS CHECK
                 odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
                 details = odds.get('details', '0')
                 raw_odds = details 
@@ -207,15 +204,32 @@ def fetch_schedule():
     return sorted(games, key=lambda x: x['date'])
 
 def calculate_production_features(row, h_stats, a_stats):
+    # UPDATED TO LOWERCASE KEYS based on features.py v2
+    # season_team_eFG, season_team_orb, season_team_to
+    
+    # 1. Effective Field Goal %
     row['diff_eFG'] = h_stats.get('season_team_eFG', 0) - a_stats.get('season_team_eFG', 0)
-    row['diff_Rebound'] = h_stats.get('season_team_ORB', 0) - a_stats.get('season_team_ORB', 0)
-    row['diff_TO'] = h_stats.get('season_team_TO', 0) - a_stats.get('season_team_TO', 0)
+    
+    # 2. Rebounds (LOWERCASE 'orb')
+    h_orb = h_stats.get('season_team_orb', 0) 
+    a_orb = a_stats.get('season_team_orb', 0)
+    row['diff_Rebound'] = h_orb - a_orb
+    
+    # 3. Turnovers (LOWERCASE 'to')
+    h_to = h_stats.get('season_team_to', 0)
+    a_to = a_stats.get('season_team_to', 0)
+    row['diff_TO'] = h_to - a_to
+    
+    # 4. Momentum
     row['momentum_gap'] = h_stats.get('roll3_team_eFG', 0) - h_stats.get('season_team_eFG', 0)
+    
+    # 5. Cover Margin
     row['roll5_cover_margin'] = h_stats.get('roll5_cover_margin', 0)
+    
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (V3.1: DEBUGGED) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (V3.2: LOWERCASE FIX) 🔮 ---")
     try:
         model = joblib.load(MODEL_FILE)
         df_hist = pd.read_csv(DATA_FILE)
