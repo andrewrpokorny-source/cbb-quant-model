@@ -39,7 +39,7 @@ def fetch_games_for_date(target_date):
             home = comp['competitors'][0]
             away = comp['competitors'][1]
             
-            # --- TIMEZONE FIX ---
+            # --- TIMEZONE FIX (US/Eastern) ---
             utc_ts = pd.to_datetime(event['date'])
             eastern_ts = utc_ts.tz_convert('US/Eastern')
             game_date_str = eastern_ts.strftime("%Y-%m-%d")
@@ -99,48 +99,51 @@ def fetch_games_for_date(target_date):
     return games
 
 def update_database():
-    print("--- 🔄 STRICT UPDATER (SANITIZING TODAY) ---")
+    print("--- 🔄 DAILY UPDATER (Jan 7 Recovery) ---")
     
-    # 1. DOWNLOAD MISSING PAST GAMES (Jan 2 to Yesterday)
-    start_date = datetime(2026, 1, 2)
+    # 1. Check where we left off (Likely Jan 6)
+    last_date = get_last_recorded_date()
+    
+    # 2. Set Start Date
+    # If last date is Jan 6, start is Jan 7.
+    current_date = last_date + timedelta(days=1)
+    
+    # 3. Set End Date (Yesterday)
+    # Since it is Jan 8, this will be Jan 7.
     end_date = datetime.now() - timedelta(days=1)
     
-    current_date = start_date
+    if current_date.date() > end_date.date():
+        print(f"✅ Data is up to date! (Last: {last_date.date()})")
+        run_pipeline()
+        return
+
+    print(f"📉 Downloading missing games: {current_date.date()} to {end_date.date()}")
+    
     new_games = []
-    
-    print(f"📉 Scanning from {current_date.date()} to {end_date.date()}")
-    
     while current_date.date() <= end_date.date():
         daily_games = fetch_games_for_date(current_date)
         new_games.extend(daily_games)
         current_date += timedelta(days=1)
-    
-    # 2. LOAD & SANITIZE DATABASE
-    if os.path.exists(DATA_FILE):
-        df_existing = pd.read_csv(DATA_FILE)
-        df_existing['date'] = pd.to_datetime(df_existing['date'])
         
-        # --- THE SANITIZER ---
-        # Strictly delete any rows where date >= Today (Jan 7)
-        today_clean = pd.Timestamp.now().normalize()
-        df_clean = df_existing[df_existing['date'] < today_clean].copy()
+    if new_games:
+        print(f"💾 Saving {len(new_games)} new games...")
         
-        # Also clean out the repair window to avoid dupes
-        repair_start = pd.Timestamp("2026-01-02")
-        df_clean = df_clean[df_clean['date'] < repair_start]
-        
-        if new_games:
+        if os.path.exists(DATA_FILE):
+            df_old = pd.read_csv(DATA_FILE)
             df_new = pd.DataFrame(new_games)
-            df_new['date'] = pd.to_datetime(df_new['date'])
             
-            df_combined = pd.concat([df_clean, df_new], ignore_index=True)
+            # Combine
+            df_combined = pd.concat([df_old, df_new], ignore_index=True)
+            df_combined['date'] = pd.to_datetime(df_combined['date'])
+            
+            # Deduplicate (Keep last)
+            df_combined = df_combined.drop_duplicates(subset=['date', 'team'], keep='last')
             df_combined = df_combined.sort_values('date')
+            
             df_combined.to_csv(DATA_FILE, index=False)
-            print("✅ Database sanitized & updated (Stopped at Yesterday).")
+            print("✅ Database updated.")
         else:
-            # If no new games, just save the sanitized old file
-            df_clean.to_csv(DATA_FILE, index=False)
-            print("✅ Database sanitized (Removed Today's games).")
+            pd.DataFrame(new_games).to_csv(DATA_FILE, index=False)
 
     run_pipeline()
 
@@ -152,8 +155,8 @@ def run_pipeline():
     print("2️⃣  Retraining Model...")
     os.system("python3 model.py")
         
-    print("3️⃣  Generating Picks...")
-    os.system("python3 predict.py")
+    print("3️⃣  Grading History...")
+    os.system("python3 backtest.py")
 
 if __name__ == "__main__":
     update_database()
