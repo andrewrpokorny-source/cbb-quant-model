@@ -21,7 +21,7 @@ def get_last_recorded_date():
 
 def fetch_games_for_date(target_date):
     date_str_url = target_date.strftime("%Y%m%d")
-    print(f"   -> 📥 Refreshing {target_date.strftime('%Y-%m-%d')}...")
+    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
     
     url = f"{BASE_URL}&dates={date_str_url}"
     try:
@@ -39,34 +39,23 @@ def fetch_games_for_date(target_date):
             home = comp['competitors'][0]
             away = comp['competitors'][1]
             
-            # --- TIMEZONE FIX (US/Eastern) ---
-            utc_ts = pd.to_datetime(event['date'])
-            eastern_ts = utc_ts.tz_convert('US/Eastern')
-            game_date_str = eastern_ts.strftime("%Y-%m-%d")
+            # NORMALIZE DATE (No Time)
+            game_date_str = target_date.strftime("%Y-%m-%d")
 
-            # --- ODDS PARSING ---
             spread_val = 0.0
             try:
                 if comp.get('odds'):
                     odds = comp['odds'][0]
                     details = odds.get('details', '0')
-                    
                     if details and details != '0' and details != 'EVEN':
                         parts = details.split()
                         val = abs(float(parts[-1]))
                         fav = " ".join(parts[:-1])
-                        
                         home_abbr = home['team'].get('abbreviation', '')
                         home_name = home['team'].get('displayName', '')
-                        
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
-                        
-                        if is_home_fav:
-                            spread_val = -val
-                        else:
-                            spread_val = val
-            except:
-                spread_val = 0.0
+                        spread_val = -val if is_home_fav else val
+            except: pass
             
             g = {
                 'date': game_date_str,
@@ -93,31 +82,38 @@ def fetch_games_for_date(target_date):
                 'ats_win': 0
             }
             games.append(g_away)
-            
         except: continue
         
     return games
 
 def update_database():
-    print("--- 🔄 SMART UPDATER (With 48hr Lookback) ---")
+    print("--- 🔄 AUTO-HEALING UPDATER ---")
     
-    # 1. Look back 2 days from the last record to ensure we catch everything
+    # 1. Determine Range
     last_date = get_last_recorded_date()
-    current_date = last_date - timedelta(days=2) 
+    # Start from the day AFTER the last record
+    start_date = last_date + timedelta(days=1)
     
-    # 2. End at Yesterday (Strictly ignore Today to avoid partial games)
+    # End Yesterday (Strictly ignore Today to avoid partial games)
     end_date = datetime.now() - timedelta(days=1)
     
-    print(f"📉 Scanning from {current_date.date()} to {end_date.date()}")
+    # If the database is somehow ahead of reality (timezones), cap it
+    if start_date.date() > end_date.date():
+        print(f"✅ Data is up to date! (Last: {last_date.date()})")
+        run_pipeline()
+        return
+
+    print(f"📉 Filling Gap: {start_date.date()} to {end_date.date()}")
     
     new_games = []
+    current_date = start_date
     while current_date.date() <= end_date.date():
         daily_games = fetch_games_for_date(current_date)
         new_games.extend(daily_games)
         current_date += timedelta(days=1)
         
     if new_games:
-        print(f"💾 Found {len(new_games)} games (updating records)...")
+        print(f"💾 Saving {len(new_games)} new games...")
         
         if os.path.exists(DATA_FILE):
             df_old = pd.read_csv(DATA_FILE)
@@ -125,10 +121,9 @@ def update_database():
             
             # Combine
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
-            df_combined['date'] = pd.to_datetime(df_combined['date'])
             
-            # DEDUPLICATE: Keep the 'last' entry (which is the new one we just downloaded)
-            # This effectively updates the scores for the last 2 days.
+            # NORMALIZE AND DEDUPLICATE
+            df_combined['date'] = pd.to_datetime(df_combined['date']).dt.strftime('%Y-%m-%d')
             df_combined = df_combined.drop_duplicates(subset=['date', 'team'], keep='last')
             df_combined = df_combined.sort_values('date')
             
