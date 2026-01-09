@@ -12,10 +12,9 @@ WEEKS_BACK = 4
 
 def train_model_at_date(df, cutoff_date):
     # 1. Filter for PAST games only
-    train_data = df[df['date'] < cutoff_date].dropna()
+    # We create a copy to avoid SettingWithCopy warnings
+    past_games = df[df['date'] < cutoff_date].copy()
     
-    # 2. Select Features (ALREADY CALCULATED in features.py)
-    # Note: We do NOT recalculate diff_Rebound here. We trust the CSV.
     features = [
         'is_home', 
         'spread', 
@@ -27,8 +26,19 @@ def train_model_at_date(df, cutoff_date):
         'roll5_cover_margin'
     ]
     
-    # Check if features exist (sanity check)
-    valid_feats = [f for f in features if f in train_data.columns]
+    # Check 1: Do we have the columns?
+    valid_feats = [f for f in features if f in past_games.columns]
+    if not valid_feats:
+        return None, None
+
+    # Check 2: Drop NaNs only for the features we need
+    # This keeps us from dropping rows just because unrelated columns are empty
+    train_data = past_games.dropna(subset=valid_feats + ['ats_win'])
+    
+    # Check 3: Do we have enough data to actually learn?
+    # Random Forest needs at least a decent sample size.
+    if len(train_data) < 50:
+        return None, None
     
     X = train_data[valid_feats]
     y = train_data['ats_win']
@@ -52,13 +62,11 @@ def run_backtest():
     df = df.sort_values('date')
 
     # --- CALCULATE REST DAYS (Dynamic) ---
-    # features.py calculates rolling stats, but rest_days is simpler to do here
     df['last_game'] = df.groupby('team')['date'].shift(1)
     df['rest_days'] = (df['date'] - df['last_game']).dt.days.fillna(7)
-    df['rest_days'] = df['rest_days'].clip(upper=7) # Cap at 7
+    df['rest_days'] = df['rest_days'].clip(upper=7) 
 
-    # End Date: Include Today/Yesterday so loop finishes
-    # This looks at the latest date in your CSV and adds 1 day to ensure that last day is included in the loop.
+    # End Date: Max date in file + 1 day to cover everything
     end_date = df['date'].max() + timedelta(days=1)
     start_date = end_date - timedelta(weeks=WEEKS_BACK)
     
@@ -73,32 +81,39 @@ def run_backtest():
         # Train on EVERYTHING before current_date
         model, feats = train_model_at_date(df, current_date)
         
+        # SAFETY: If not enough data, skip this week
+        if model is None:
+            print(f"      ⚠️  Not enough history to train for week of {current_date.date()}. Skipping.")
+            current_date = next_week
+            continue
+        
         # Test on THIS WEEK (current_date to next_week)
         mask = (df['date'] >= current_date) & (df['date'] < next_week) & (df['is_home'] == 1)
         week_df = df[mask].copy()
         
-        if len(week_df) == 0:
-            current_date = next_week
-            continue
+        if len(week_df) > 0:
+            # Drop rows in test set if they miss features (can't predict on partial data)
+            week_df = week_df.dropna(subset=feats)
             
-        # Predict
-        X_test = week_df[feats].fillna(0)
-        X_test.columns = X_test.columns.astype(str)
+            if len(week_df) > 0:
+                X_test = week_df[feats]
+                X_test.columns = X_test.columns.astype(str)
+                
+                probs = model.predict_proba(X_test)[:, 1]
+                
+                week_df['prob_home'] = probs
+                week_df['conf'] = week_df['prob_home'].apply(lambda x: max(x, 1-x))
+                
+                # Logic: If prob_home > 0.5, Pick Home. Else Pick Away.
+                conditions = [week_df['prob_home'] > 0.5, week_df['prob_home'] <= 0.5]
+                week_df['picked_team'] = np.select(conditions, [week_df['team'], week_df['opponent']])
+                week_df['picked_spread'] = np.select(conditions, [week_df['spread'], -1 * week_df['spread']])
+                
+                # Grade: Did the pick win?
+                week_df['pick_correct'] = np.where(week_df['prob_home'] > 0.5, week_df['ats_win'] == 1, week_df['ats_win'] == 0)
+                
+                logs.append(week_df[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct']])
         
-        probs = model.predict_proba(X_test)[:, 1]
-        
-        week_df['prob_home'] = probs
-        week_df['conf'] = week_df['prob_home'].apply(lambda x: max(x, 1-x))
-        
-        # Logic: If prob_home > 0.5, Pick Home. Else Pick Away.
-        conditions = [week_df['prob_home'] > 0.5, week_df['prob_home'] <= 0.5]
-        week_df['picked_team'] = np.select(conditions, [week_df['team'], week_df['opponent']])
-        week_df['picked_spread'] = np.select(conditions, [week_df['spread'], -1 * week_df['spread']])
-        
-        # Grade: Did the pick win?
-        week_df['pick_correct'] = np.where(week_df['prob_home'] > 0.5, week_df['ats_win'] == 1, week_df['ats_win'] == 0)
-        
-        logs.append(week_df[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct']])
         current_date = next_week
 
     if logs:

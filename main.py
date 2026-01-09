@@ -21,7 +21,7 @@ def get_last_recorded_date():
 
 def fetch_games_for_date(target_date):
     date_str_url = target_date.strftime("%Y%m%d")
-    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
+    print(f"   -> 📥 Refreshing {target_date.strftime('%Y-%m-%d')}...")
     
     url = f"{BASE_URL}&dates={date_str_url}"
     try:
@@ -99,25 +99,16 @@ def fetch_games_for_date(target_date):
     return games
 
 def update_database():
-    print("--- 🔄 DAILY UPDATER (Jan 7 Recovery) ---")
+    print("--- 🔄 SMART UPDATER (With 48hr Lookback) ---")
     
-    # 1. Check where we left off (Likely Jan 6)
+    # 1. Look back 2 days from the last record to ensure we catch everything
     last_date = get_last_recorded_date()
+    current_date = last_date - timedelta(days=2) 
     
-    # 2. Set Start Date
-    # If last date is Jan 6, start is Jan 7.
-    current_date = last_date + timedelta(days=1)
-    
-    # 3. Set End Date (Yesterday)
-    # Since it is Jan 8, this will be Jan 7.
+    # 2. End at Yesterday (Strictly ignore Today to avoid partial games)
     end_date = datetime.now() - timedelta(days=1)
     
-    if current_date.date() > end_date.date():
-        print(f"✅ Data is up to date! (Last: {last_date.date()})")
-        run_pipeline()
-        return
-
-    print(f"📉 Downloading missing games: {current_date.date()} to {end_date.date()}")
+    print(f"📉 Scanning from {current_date.date()} to {end_date.date()}")
     
     new_games = []
     while current_date.date() <= end_date.date():
@@ -126,7 +117,7 @@ def update_database():
         current_date += timedelta(days=1)
         
     if new_games:
-        print(f"💾 Saving {len(new_games)} new games...")
+        print(f"💾 Found {len(new_games)} games (updating records)...")
         
         if os.path.exists(DATA_FILE):
             df_old = pd.read_csv(DATA_FILE)
@@ -136,7 +127,8 @@ def update_database():
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
             df_combined['date'] = pd.to_datetime(df_combined['date'])
             
-            # Deduplicate (Keep last)
+            # DEDUPLICATE: Keep the 'last' entry (which is the new one we just downloaded)
+            # This effectively updates the scores for the last 2 days.
             df_combined = df_combined.drop_duplicates(subset=['date', 'team'], keep='last')
             df_combined = df_combined.sort_values('date')
             
@@ -152,10 +144,7 @@ def run_pipeline():
     print("1️⃣  Calculating Efficiency Stats...")
     os.system("python3 features.py")
 
-    print("2️⃣  Retraining Model...")
-    os.system("python3 model.py")
-        
-    print("3️⃣  Grading History...")
+    print("2️⃣  Grading History...")
     os.system("python3 backtest.py")
 
 if __name__ == "__main__":
