@@ -277,6 +277,10 @@ def calculate_production_features(row, h_stats, a_stats):
 def main():
     print("--- 🔮 PREDICTION ENGINE (V3.3: TIMEZONE + MATCHUP FIX) 🔮 ---")
     
+    # Get current Eastern time for dated file naming
+    eastern = pytz.timezone('US/Eastern')
+    now_eastern = datetime.now(eastern)
+    
     # Load model and data
     try:
         model = joblib.load(MODEL_FILE)
@@ -391,9 +395,18 @@ def main():
     # Save predictions
     if predictions:
         pred_df = pd.DataFrame(predictions).sort_values(by="Conf", ascending=False)
+        
+        # Save to current file (for app)
         pred_df.to_csv(OUTPUT_FILE, index=False)
+        
+        # ALSO save to dated archive file (for grading)
+        archive_file = OUTPUT_FILE.replace("daily_predictions.csv", 
+                                          f"predictions_{now_eastern.strftime('%Y%m%d')}.csv")
+        pred_df.to_csv(archive_file, index=False)
+        
         print(f"\n✅ SUCCESS: Generated {len(pred_df)} predictions")
         print(f"   Saved to: {OUTPUT_FILE}")
+        print(f"   Archive: {archive_file}")
         
         # Show summary
         print("\n📋 PREDICTION SUMMARY:")
