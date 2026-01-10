@@ -334,13 +334,15 @@ def main():
         h_stats = team_stats[home_matched]
         a_stats = team_stats[away_matched]
         
-        # Calculate rest days
-        last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
-        actual_rest = (g['date'].replace(tzinfo=None) - last_date).days
-        actual_rest = max(0, actual_rest)  # Ensure non-negative
+        # Calculate rest days for BOTH teams
+        home_last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
+        away_last_date = pd.to_datetime(a_stats.get('last_game_date', datetime.now()))
         
-        # For model: cap at 7 (if that's how it was trained)
-        row['rest_days'] = min(actual_rest, 7)
+        home_actual_rest = max(0, (g['date'].replace(tzinfo=None) - home_last_date).days)
+        away_actual_rest = max(0, (g['date'].replace(tzinfo=None) - away_last_date).days)
+        
+        # For model: use home team's rest, capped at 7 (if that's how it was trained)
+        row['rest_days'] = min(home_actual_rest, 7)
         
         # Add production features
         row = calculate_production_features(row, h_stats, a_stats)
@@ -362,10 +364,12 @@ def main():
         if prob > 0.5:
             sign = "+" if g['spread'] > 0 else ""
             pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # ← Original name
+            picked_team_rest = home_actual_rest  # Picked home team
         else:
             away_spread = -1 * g['spread']
             sign = "+" if away_spread > 0 else ""
             pick_str = f"{g['away_raw']} {sign}{away_spread}"  # ← Original name
+            picked_team_rest = away_actual_rest  # Picked away team
 
         # Format time in Eastern
         try:
@@ -382,7 +386,7 @@ def main():
             "Pick": pick_str,
             "Conf": conf,
             "Raw Odds": g['raw_odds'],
-            "Rest": actual_rest,  # ← Show ACTUAL rest days
+            "Rest": picked_team_rest,  # ← Show PICKED TEAM's rest days
             # Debug fields (optional)
             "Home_Matched": home_matched,
             "Away_Matched": away_matched
