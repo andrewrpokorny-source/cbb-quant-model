@@ -336,8 +336,11 @@ def main():
         
         # Calculate rest days
         last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
-        rest = (g['date'].replace(tzinfo=None) - last_date).days
-        row['rest_days'] = min(rest, 7)
+        actual_rest = (g['date'].replace(tzinfo=None) - last_date).days
+        actual_rest = max(0, actual_rest)  # Ensure non-negative
+        
+        # For model: cap at 7 (if that's how it was trained)
+        row['rest_days'] = min(actual_rest, 7)
         
         # Add production features
         row = calculate_production_features(row, h_stats, a_stats)
@@ -379,7 +382,7 @@ def main():
             "Pick": pick_str,
             "Conf": conf,
             "Raw Odds": g['raw_odds'],
-            "Rest": row['rest_days'],
+            "Rest": actual_rest,  # ← Show ACTUAL rest days
             # Debug fields (optional)
             "Home_Matched": home_matched,
             "Away_Matched": away_matched
