@@ -1,16 +1,142 @@
-Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest
-01/09 07:00 PM,Wright St. @ Detroit Mercy,5.5,Wright St. -5.5,0.5819138319521624,WRST -5.5,7
-01/08 10:00 PM,Pacific @ Portland St.,2.5,Pacific -2.5,0.5713372352278674,PAC -2.5,6
-01/09 08:00 PM,Akron @ Bowling Green,3.5,Akron -3.5,0.569329547731666,AKR -3.5,4
-01/08 10:00 PM,Seattle @ Oregon St.,5.5,Seattle -5.5,0.5518355812013771,SEA -5.5,5
-01/09 06:00 PM,Miami OH @ Toledo,1.5,Miami OH -1.5,0.5465173218692316,M-OH -1.5,3
-01/08 10:30 PM,Ohio St. @ Oregon,-1.5,Ohio St. +1.5,0.5387584833680372,ORE -1.5,4
-01/08 11:00 PM,San Francisco @ Loyola Marymount,-1.5,San Francisco +1.5,0.5370359650969774,LMU -1.5,5
-01/09 08:00 PM,Northern Kentucky @ Milwaukee,-3.5,Northern Kentucky +3.5,0.534348879322234,MILW -3.5,5
-01/09 07:00 PM,Saint Peter's @ Mount St. Mary's,-1.5,Saint Peter's +1.5,0.5341969991819308,MSM -1.5,6
-01/08 10:00 PM,Cal Poly @ Cal St. Northridge,-6.5,Cal Poly +6.5,0.5324255545089759,CSUN -6.5,6
-01/09 08:30 PM,USC @ Minnesota,-2.5,USC +2.5,0.5306755304050439,MINN -2.5,4
-01/08 11:30 PM,Santa Clara @ Gonzaga,-17.5,Santa Clara +17.5,0.5231579611468945,GONZ -17.5,5
-01/08 10:00 PM,Cal St. Fullerton @ UC San Diego,-13.5,Cal St. Fullerton +13.5,0.520046812485905,UCSD -13.5,6
-01/09 10:00 PM,UNLV @ Colorado St.,-7.5,Colorado St. -7.5,0.5099062077146436,CSU -7.5,4
-01/08 10:00 PM,Long Beach St. @ UC Irvine,-9.5,Long Beach St. +9.5,0.501903166774744,UCI -9.5,6
+Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest,Home_Matched,Away_Matched
+01/10 02:00 PM,Towson Tigers @ Northeastern Huskies,1.5,Towson Tigers -1.5,0.6145514113013513,TOW -1.5,7,Northeastern,Towson Tigers
+01/10 01:00 PM,Houston Cougars @ Baylor Bears,2.5,Houston Cougars -2.5,0.5905095561873858,HOU -2.5,7,Baylor,Houston
+01/10 09:00 PM,Utah State Aggies @ Boise State Broncos,2.5,Utah State Aggies -2.5,0.5878223692597979,USU -2.5,7,Boise St.,Utah St.
+01/10 04:30 PM,Texas A&M-Corpus Christi Islanders @ Northwestern State Demons,4.5,Texas A&M-Corpus Christi Islanders -4.5,0.5853204229607207,AMCC -4.5,5,Northwestern St.,Texas A&M Corpus Chris
+01/10 02:00 PM,Syracuse Orange @ Pittsburgh Panthers,1.5,Syracuse Orange -1.5,0.5842933077251944,SYR -1.5,7,Pittsburgh,Syracuse
+01/10 05:00 PM,Montana State Bobcats @ Idaho Vandals,1.5,Montana State Bobcats -1.5,0.5834897922057802,MTST -1.5,7,Idaho,Montana State Bobcats
+01/10 02:00 PM,Yale Bulldogs @ Princeton Tigers,7.5,Yale Bulldogs -7.5,0.5822669982659063,YALE -7.5,5,Princeton,Drake Bulldogs
+01/10 06:00 PM,Missouri Tigers @ Ole Miss Rebels,1.5,Missouri Tigers -1.5,0.5796156734485967,MIZ -1.5,7,Mississippi,Missouri Tigers
+01/10 01:00 PM,Troy Trojans @ Louisiana Ragin' Cajuns,9.5,Troy Trojans -9.5,0.5774066721324702,TROY -9.5,7,Louisiana,Troy Trojans
+01/10 01:00 PM,Wisconsin Badgers @ Michigan Wolverines,-17.5,Wisconsin Badgers +17.5,0.5713759270537307,MICH -17.5,4,Michigan,Wisconsin
+01/10 12:00 PM,Georgia Tech Yellow Jackets @ Miami Hurricanes,-14.5,Georgia Tech Yellow Jackets +14.5,0.5711700134427946,MIA -14.5,7,Miami FL,Georgia Tech
+01/10 04:30 PM,Howard Bison @ Maryland Eastern Shore Hawks,2.5,Howard Bison -2.5,0.5693338202114745,HOW -2.5,7,Maryland Eastern Shore,Howard
+01/10 05:00 PM,Hampton Pirates @ Charleston Cougars,-9.5,Hampton Pirates +9.5,0.5688900796182149,COFC -9.5,7,Charleston Southern,Hampton Pirates
+01/10 08:00 PM,UC San Diego Tritons @ UC Riverside Highlanders,10.5,UC San Diego Tritons -10.5,0.5674879669649655,UCSD -10.5,3,UC Riverside Highlanders,UC San Diego Tritons
+01/10 06:00 PM,Clemson Tigers @ Notre Dame Fighting Irish,3.5,Clemson Tigers -3.5,0.5673796119862597,CLEM -3.5,7,Notre Dame,Clemson
+01/10 07:00 PM,Campbell Fighting Camels @ Elon Phoenix,-4.5,Campbell Fighting Camels +4.5,0.5660755840327367,ELON -4.5,7,Elon,Campbell
+01/10 10:00 PM,BYU Cougars @ Utah Utes,13.5,BYU Cougars -13.5,0.5646933758934212,BYU -13.5,4,Utah Utes,BYU
+01/10 05:30 PM,Mississippi Valley State Delta Devils @ Prairie View A&M Panthers,-19.5,Mississippi Valley State Delta Devils +19.5,0.5643922844062311,PV -19.5,5,Prairie View A&M,Mississippi Valley St.
+01/10 02:00 PM,Queens University Royals @ North Florida Ospreys,9.5,Queens University Royals -9.5,0.5638694783458076,QUC -9.5,2,North Florida Ospreys,Queens University Royals
+01/10 04:30 PM,North Carolina Central Eagles @ Coppin State Eagles,6.5,North Carolina Central Eagles -6.5,0.5627187312006949,NCCU -6.5,2,Morehead State Eagles,North Carolina Central
+01/10 01:00 PM,Mercyhurst Lakers @ Wagner Seahawks,-1.5,Mercyhurst Lakers +1.5,0.5610004208922716,WAG -1.5,6,Wagner,Mercyhurst Lakers
+01/10 02:00 PM,Austin Peay Governors @ Stetson Hatters,9.5,Austin Peay Governors -9.5,0.5606691484619222,APSU -9.5,2,Stetson Hatters,Austin Peay Governors
+01/10 04:00 PM,Saint Louis Billikens @ La Salle Explorers,15.5,Saint Louis Billikens -15.5,0.5595852661455898,SLU -15.5,3,La Salle Explorers,Saint Louis Billikens
+01/10 01:00 PM,Eastern Michigan Eagles @ Western Michigan Broncos,1.5,Eastern Michigan Eagles -1.5,0.5595533792108981,EMU -1.5,4,Western Michigan,Eastern Michigan
+01/10 04:00 PM,Central Arkansas Bears @ Eastern Kentucky Colonels,2.5,Central Arkansas Bears -2.5,0.5584530768404001,CARK -2.5,2,Eastern Kentucky Colonels,Central Arkansas Bears
+01/10 04:30 PM,Tennessee Tech Golden Eagles @ Western Illinois Leathernecks,3.5,Tennessee Tech Golden Eagles -3.5,0.5580553698216204,TNTC -3.5,2,Western Illinois Leathernecks,Tennessee Tech Golden Eagles
+01/10 01:00 PM,App State Mountaineers @ Coastal Carolina Chanticleers,1.5,App State Mountaineers -1.5,0.5576118096677661,APP -1.5,2,Coastal Carolina Chanticleers,Appalachian St.
+01/10 05:00 PM,UC Davis Aggies @ Cal Poly Mustangs,1.5,UC Davis Aggies -1.5,0.5573406336342008,UCD -1.5,2,Cal Poly Mustangs,UC Davis Aggies
+01/10 07:00 PM,Texas Tech Red Raiders @ Colorado Buffaloes,6.5,Texas Tech Red Raiders -6.5,0.5567562293132136,TTU -6.5,4,Colorado Buffaloes,Texas Tech
+01/10 03:30 PM,Liberty Flames @ Sam Houston Bearkats,1.5,Liberty Flames -1.5,0.5565932564694578,LIB -1.5,2,Sam Houston Bearkats,Liberty Flames
+01/10 08:00 PM,Idaho State Bengals @ Northern Arizona Lumberjacks,4.5,Idaho State Bengals -4.5,0.5558489925580021,IDST -4.5,3,Northern Arizona Lumberjacks,Idaho St.
+01/10 01:00 PM,Western Carolina Catamounts @ The Citadel Bulldogs,7.5,Western Carolina Catamounts -7.5,0.5552645688798938,WCU -7.5,3,The Citadel Bulldogs,Western Carolina Catamounts
+01/10 12:00 PM,VCU Rams @ George Mason Patriots,2.5,VCU Rams -2.5,0.5544466224542074,VCU -2.5,3,George Mason Patriots,VCU
+01/10 02:00 PM,Denver Pioneers @ South Dakota Coyotes,1.5,Denver Pioneers -1.5,0.554244148754757,DEN -1.5,3,South Dakota Coyotes,Denver
+01/10 04:30 PM,Tennessee State Tigers @ Eastern Illinois Panthers,2.5,Tennessee State Tigers -2.5,0.5521510395053318,TNST -2.5,2,Eastern Illinois Panthers,Tennessee State Tigers
+01/10 03:30 PM,Southeast Missouri State Redhawks @ Morehead State Eagles,5.5,Southeast Missouri State Redhawks -5.5,0.5516413646286783,SEMO -5.5,2,Morehead State Eagles,Southeast Missouri State Redhawks
+01/10 04:00 PM,Arizona Wildcats @ TCU Horned Frogs,6.5,Arizona Wildcats -6.5,0.5513622211188509,ARIZ -6.5,4,TCU,Arizona Wildcats
+01/10 05:00 PM,Washington State Cougars @ Saint Mary's Gaels,-15.5,Washington State Cougars +15.5,0.5509286447688209,SMC -15.5,6,Saint Mary's,Washington St.
+01/10 06:00 PM,Belmont Bruins @ Drake Bulldogs,5.5,Belmont Bruins -5.5,0.5504006979713192,BEL -5.5,6,Drake,Belmont Bruins
+01/10 04:00 PM,Western Kentucky Hilltoppers @ UTEP Miners,3.5,Western Kentucky Hilltoppers -3.5,0.5502192717940078,WKU -3.5,6,UTEP,Western Kentucky Hilltoppers
+01/10 02:00 PM,Penn State Nittany Lions @ Purdue Boilermakers,-21.5,Penn State Nittany Lions +21.5,0.5498157282835556,PUR -21.5,7,Purdue,Penn St.
+01/10 02:00 PM,High Point Panthers @ Charleston Southern Buccaneers,9.5,High Point Panthers -9.5,0.5497257347141842,HPU -9.5,3,Charleston Southern Buccaneers,High Point Panthers
+01/10 06:00 PM,UT Rio Grande Valley Vaqueros @ East Texas A&M Lions,4.5,UT Rio Grande Valley Vaqueros -4.5,0.5495319237800229,RGV -4.5,5,East Texas A&M,UT Rio Grande Valley
+01/10 12:30 PM,DePaul Blue Demons @ UConn Huskies,-19.5,DePaul Blue Demons +19.5,0.549467547285638,CONN -19.5,6,Connecticut,DePaul
+01/10 06:00 PM,Houston Christian Huskies @ Stephen F. Austin Lumberjacks,-12.5,Houston Christian Huskies +12.5,0.548916681172601,SFA -12.5,5,Stephen F. Austin,Houston Christian
+01/10 05:00 PM,Arkansas-Pine Bluff Golden Lions @ Texas Southern Tigers,1.5,Arkansas-Pine Bluff Golden Lions -1.5,0.5467212833049369,UAPB -1.5,5,Texas Southern,Arkansas Pine Bluff
+01/10 04:00 PM,Oklahoma State Cowboys @ Iowa State Cyclones,-17.5,Oklahoma State Cowboys +17.5,0.5459881015278591,ISU -17.5,7,Iowa St.,Oklahoma St.
+01/10 05:00 PM,Tulane Green Wave @ UTSA Roadrunners,7.5,Tulane Green Wave -7.5,0.5452157887792592,TULN -7.5,3,UTSA Roadrunners,Tulane
+01/10 02:00 PM,VMI Keydets @ Furman Paladins,-12.5,VMI Keydets +12.5,0.5445407213126645,FUR -12.5,7,Furman,VMI Keydets
+01/10 12:00 PM,Kansas Jayhawks @ West Virginia Mountaineers,2.5,Kansas Jayhawks -2.5,0.5442328177202072,KU -2.5,4,West Virginia,Kansas
+01/10 06:00 PM,Seton Hall Pirates @ Georgetown Hoyas,2.5,Seton Hall Pirates -2.5,0.5441774045069092,HALL -2.5,4,Georgetown,Seton Hall
+01/10 02:30 PM,Villanova Wildcats @ Marquette Golden Eagles,3.5,Villanova Wildcats -3.5,0.5438950991866884,VILL -3.5,6,Marquette,Villanova Wildcats
+01/10 02:00 PM,Georgia Bulldogs @ South Carolina Gamecocks,4.5,Georgia Bulldogs -4.5,0.5433961222131112,UGA -4.5,4,South Carolina,Gonzaga Bulldogs
+01/10 12:00 PM,Boston College Eagles @ Louisville Cardinals,-20.5,Boston College Eagles +20.5,0.5432540239826541,LOU -20.5,4,Louisville,Boston College
+01/10 06:00 PM,Southern Jaguars @ Florida A&M Rattlers,3.5,Southern Jaguars -3.5,0.542952444060951,SOU -3.5,7,Florida A&M,Southern Utah
+01/10 08:00 PM,San Francisco Dons @ Pepperdine Waves,8.5,San Francisco Dons -8.5,0.5424229343613265,SF -8.5,3,Pepperdine Waves,San Francisco Dons
+01/10 03:00 PM,Kent State Golden Flashes @ Central Michigan Chippewas,9.5,Kent State Golden Flashes -9.5,0.5415282117774893,KENT -9.5,4,Central Michigan,Kent St.
+01/10 06:00 PM,UNC Wilmington Seahawks @ Stony Brook Seawolves,7.5,UNC Wilmington Seahawks -7.5,0.5414062327850286,UNCW -7.5,2,Stony Brook Seawolves,UNC Wilmington Seahawks
+01/10 04:30 PM,Norfolk State Spartans @ Delaware State Hornets,5.5,Norfolk State Spartans -5.5,0.5405578587144004,NORF -5.5,2,Delaware Blue Hens,Michigan State Spartans
+01/10 03:00 PM,Kansas State Wildcats @ Arizona State Sun Devils,-2.5,Kansas State Wildcats +2.5,0.5403320271342142,ASU -2.5,7,Arizona St.,Kansas St.
+01/10 03:00 PM,South Florida Bulls @ Tulsa Golden Hurricane,-2.5,South Florida Bulls +2.5,0.5401175415416666,TLSA -2.5,6,Tulsa,South Florida Bulls
+01/10 01:00 PM,LSU Tigers @ Vanderbilt Commodores,-14.5,LSU Tigers +14.5,0.5400597724769052,VAN -14.5,3,Vanderbilt Commodores,LSU
+01/10 08:00 PM,San José State Spartans @ Grand Canyon Lopes,-18.5,San José State Spartans +18.5,0.5379103725157641,GCU -18.5,4,Grand Canyon Lopes,Michigan State Spartans
+01/10 10:00 PM,Wyoming Cowboys @ Nevada Wolf Pack,-5.5,Wyoming Cowboys +5.5,0.5370013637551306,NEV -5.5,5,Nevada,Wyoming
+01/10 04:00 PM,Providence Friars @ Xavier Musketeers,2.5,Providence Friars -2.5,0.5364893038835985,PROV -2.5,7,Xavier,Providence Friars
+01/10 02:00 PM,William & Mary Tribe @ Drexel Dragons,3.5,William & Mary Tribe -3.5,0.5359426974506232,W&M -3.5,2,Drexel Dragons,William & Mary Tribe
+01/10 11:59 PM,UC Irvine Anteaters @ Hawai'i Rainbow Warriors,-4.5,UC Irvine Anteaters +4.5,0.535633679007208,HAW -4.5,7,Hawaii,UC Irvine Anteaters
+01/10 04:00 PM,UNC Greensboro Spartans @ East Tennessee State Buccaneers,-12.5,UNC Greensboro Spartans +12.5,0.5349465336643302,ETSU -12.5,3,East Tennessee State Buccaneers,UNC Greensboro Spartans
+01/10 02:00 PM,Buffalo Bulls @ Ohio Bobcats,-4.5,Buffalo Bulls +4.5,0.5337546799140056,OHIO -4.5,5,Ohio St.,Buffalo
+01/10 02:00 PM,UMass Lowell River Hawks @ Binghamton Bearcats,6.5,UMass Lowell River Hawks -6.5,0.5325957332849216,UML -6.5,2,Binghamton Bearcats,UMass Lowell River Hawks
+01/10 06:00 PM,Wake Forest Demon Deacons @ North Carolina Tar Heels,-10.5,Wake Forest Demon Deacons +10.5,0.5319350328197039,UNC -10.5,7,North Carolina,Wake Forest
+01/10 03:00 PM,Abilene Christian Wildcats @ UT Arlington Mavericks,-2.5,Abilene Christian Wildcats +2.5,0.5316803385654667,UTA -2.5,7,UT Arlington,Abilene Christian Wildcats
+01/10 04:30 PM,Little Rock Trojans @ Lindenwood Lions,-6.5,Little Rock Trojans +6.5,0.5311875347398121,LIN -6.5,4,Lindenwood,Little Rock Trojans
+01/10 02:15 PM,Stanford Cardinal @ Virginia Cavaliers,-11.5,Stanford Cardinal +11.5,0.5306527777227933,UVA -11.5,7,Virginia,Stanford
+01/10 04:00 PM,Utah Tech Trailblazers @ Utah Valley Wolverines,-13.5,Utah Tech Trailblazers +13.5,0.5304927421600031,UVU -13.5,2,Utah Valley Wolverines,Utah Tech
+01/10 04:00 PM,California Golden Bears @ Virginia Tech Hokies,-6.5,California Golden Bears +6.5,0.5300737265045223,VT -6.5,7,Virginia Tech,California Golden Bears
+01/10 02:00 PM,Winthrop Eagles @ South Carolina Upstate Spartans,5.5,Winthrop Eagles -5.5,0.5297124188206019,WIN -5.5,7,South Carolina St.,Winthrop Eagles
+01/10 02:00 PM,Lafayette Leopards @ Navy Midshipmen,-7.5,Lafayette Leopards +7.5,0.5262902364626996,NAVY -7.5,3,Navy Midshipmen,Lafayette Leopards
+01/10 08:00 PM,Weber State Wildcats @ Northern Colorado Bears,-5.5,Weber State Wildcats +5.5,0.5245334921101603,UNCO -5.5,3,Northern Colorado Bears,Weber St.
+01/10 04:00 PM,Old Dominion Monarchs @ James Madison Dukes,-7.5,Old Dominion Monarchs +7.5,0.523752185559918,JMU -7.5,3,James Madison Dukes,Old Dominion Monarchs
+01/10 03:00 PM,Delaware Blue Hens @ Louisiana Tech Bulldogs,-6.5,Delaware Blue Hens +6.5,0.523677721351061,LT -6.5,2,Louisiana Tech Bulldogs,Delaware Blue Hens
+01/10 10:00 PM,Loyola Marymount Lions @ Santa Clara Broncos,-10.5,Loyola Marymount Lions +10.5,0.5236104272287176,SCU -10.5,3,Santa Clara Broncos,Loyola Marymount Lions
+01/10 07:00 PM,Cal State Northridge Matadors @ Cal State Fullerton Titans,-2.5,Cal State Northridge Matadors +2.5,0.5230115338266514,CSUF -2.5,3,Cal State Fullerton Titans,Cal State Northridge Matadors
+01/10 07:00 PM,Cal State Bakersfield Roadrunners @ Long Beach State Beach,-6.5,Cal State Bakersfield Roadrunners +6.5,0.5229214230000614,LBSU -6.5,3,Long Beach State Beach,Cal State Bakersfield Roadrunners
+01/10 02:00 PM,Lehigh Mountain Hawks @ Colgate Raiders,-10.5,Lehigh Mountain Hawks +10.5,0.522894199708753,COLG -10.5,3,Colgate Raiders,Lehigh Mountain Hawks
+01/10 04:00 PM,South Carolina State Bulldogs @ Morgan State Bears,-3.5,South Carolina State Bulldogs +3.5,0.522679689946469,MORG -3.5,2,Oregon State Beavers,South Carolina St.
+01/10 01:00 PM,New Hampshire Wildcats @ UMBC Retrievers,-6.5,New Hampshire Wildcats +6.5,0.5226419445605386,UMBC -6.5,2,UMBC Retrievers,New Hampshire Wildcats
+01/10 11:10 PM,Fresno State Bulldogs @ San Diego State Aztecs,-14.5,Fresno State Bulldogs +14.5,0.5226085413357577,SDSU -14.5,5,San Diego St.,Fresno St.
+01/10 03:00 PM,Loyola Chicago Ramblers @ George Washington Revolutionaries,-14.5,Loyola Chicago Ramblers +14.5,0.5224929208582354,GW -14.5,4,George Washington,Loyola Chicago
+01/10 02:00 PM,Monmouth Hawks @ Hofstra Pride,-7.5,Monmouth Hawks +7.5,0.5224119546383994,HOF -7.5,2,Hofstra Pride,Monmouth Hawks
+01/10 03:00 PM,Presbyterian Blue Hose @ Longwood Lancers,-3.5,Presbyterian Blue Hose +3.5,0.52209088257872,LONG -3.5,3,Longwood Lancers,Presbyterian Blue Hose
+01/10 03:00 PM,Texas State Bobcats @ Arkansas State Red Wolves,-11.5,Texas State Bobcats +11.5,0.5219045016860131,ARST -11.5,3,Arkansas State Red Wolves,Texas St.
+01/10 05:00 PM,UIC Flames @ Illinois State Redbirds,-10.5,UIC Flames +10.5,0.5216863304842005,ILST -10.5,3,Illinois State Redbirds,UIC Flames
+01/10 01:00 PM,Evansville Purple Aces @ Indiana State Sycamores,-8.5,Evansville Purple Aces +8.5,0.5216863304842003,INST -8.5,3,Iowa State Cyclones,Evansville Purple Aces
+01/10 08:00 PM,Middle Tennessee Blue Raiders @ New Mexico State Aggies,-4.5,Middle Tennessee Blue Raiders +4.5,0.5215201546469973,NMSU -4.5,3,New Mexico State Aggies,Middle Tennessee Blue Raiders
+01/10 08:00 PM,North Dakota Fighting Hawks @ Kansas City Roos,-1.5,North Dakota Fighting Hawks +1.5,0.5212920491921611,KC -1.5,3,Kansas City Roos,North Dakota Fighting Hawks
+01/10 01:00 PM,Central Connecticut Blue Devils @ Le Moyne Dolphins,-1.5,Central Connecticut Blue Devils +1.5,0.5210275296374153,LEM -1.5,2,Le Moyne Dolphins,Central Connecticut Blue Devils
+01/10 05:00 PM,SE Louisiana Lions @ McNeese Cowboys,-16.5,SE Louisiana Lions +16.5,0.520577726544892,MCN -16.5,5,McNeese St.,Louisiana Monroe
+01/10 02:00 PM,Rhode Island Rams @ Davidson Wildcats,-3.5,Rhode Island Rams +3.5,0.5203133247539643,DAV -3.5,3,Davidson Wildcats,Rhode Island Rams
+01/10 02:00 PM,Wofford Terriers @ Mercer Bears,-5.5,Wofford Terriers +5.5,0.5202825540943861,MER -5.5,3,Mercer Bears,Wofford Terriers
+01/10 02:00 PM,North Alabama Lions @ Bellarmine Knights,-4.5,North Alabama Lions +4.5,0.5201126446094793,BELL -4.5,2,Bellarmine Knights,North Alabama Lions
+01/10 04:00 PM,Holy Cross Crusaders @ American University Eagles,-8.5,Holy Cross Crusaders +8.5,0.5199284543943195,AMER -8.5,3,American University Eagles,Holy Cross Crusaders
+01/10 02:30 PM,UNC Asheville Bulldogs @ Radford Highlanders,-5.5,UNC Asheville Bulldogs +5.5,0.5199256030335511,RAD -5.5,3,Radford Highlanders,UNC Asheville Bulldogs
+01/10 03:00 PM,New Mexico Lobos @ Air Force Falcons,17.5,New Mexico Lobos -17.5,0.5198564999697126,UNM -17.5,4,Air Force,New Mexico
+01/10 07:00 PM,San Diego Toreros @ Pacific Tigers,-7.5,San Diego Toreros +7.5,0.5197864904313406,PAC -7.5,3,Pacific Tigers,San Diego Toreros
+01/10 04:00 PM,Valparaiso Beacons @ Murray State Racers,-11.5,Valparaiso Beacons +11.5,0.5197565952374847,MUR -11.5,3,Murray State Racers,Valparaiso Beacons
+01/10 01:00 PM,Army Black Knights @ Boston University Terriers,-6.5,Army Black Knights +6.5,0.5194214023518235,BU -6.5,3,Boston University Terriers,Army Black Knights
+01/10 04:00 PM,Lipscomb Bisons @ Florida Gulf Coast Eagles,-1.5,Lipscomb Bisons +1.5,0.519263666189422,FGCU -1.5,2,Florida Gulf Coast Eagles,Lipscomb Bisons
+01/10 02:00 PM,Chicago State Cougars @ Stonehill Skyhawks,-4.5,Chicago State Cougars +4.5,0.5192408668524305,STO -4.5,2,Stonehill Skyhawks,Chicago State Cougars
+01/10 02:00 PM,Maine Black Bears @ NJIT Highlanders,-1.5,Maine Black Bears +1.5,0.5183859269466333,NJIT -1.5,2,NJIT Highlanders,Maine Black Bears
+01/10 07:00 PM,Incarnate Word Cardinals @ Lamar Cardinals,-1.5,Incarnate Word Cardinals +1.5,0.5183250659543358,LAM -1.5,4,Stanford Cardinal,Incarnate Word
+01/10 03:30 PM,Oklahoma Sooners @ Texas A&M Aggies,-4.5,Oklahoma Sooners +4.5,0.5179546709120277,TA&M -4.5,4,Texas A&M,Oklahoma Sooners
+01/10 05:00 PM,Montana Grizzlies @ Eastern Washington Eagles,-1.5,Montana Grizzlies +1.5,0.5178929513838433,EWU -1.5,2,Eastern Washington Eagles,Montana
+01/10 02:00 PM,St. John's Red Storm @ Creighton Bluejays,-1.5,St. John's Red Storm +1.5,0.5174569633706547,CREI -1.5,3,Creighton Bluejays,St. John's
+01/10 05:00 PM,Sacramento State Hornets @ Portland State Vikings,-10.5,Sacramento State Hornets +10.5,0.5174422861125865,PRST -10.5,1,Cleveland State Vikings,Sacramento St.
+01/10 08:00 PM,Oregon State Beavers @ Portland Pilots,-1.5,Oregon State Beavers +1.5,0.5168083934661862,PORT -1.5,3,Portland Pilots,Oregon St.
+01/10 04:30 PM,Samford Bulldogs @ Chattanooga Mocs,-1.5,Samford Bulldogs +1.5,0.5165250988471778,UTC -1.5,3,Chattanooga Mocs,Samford Bulldogs
+01/10 05:00 PM,Florida International Panthers @ Missouri State Bears,-2.5,Florida International Panthers +2.5,0.5163998833263583,MOST -2.5,3,Missouri State Bears,Florida International Panthers
+01/10 02:00 PM,Brown Bears @ Pennsylvania Quakers,-3.5,Brown Bears +3.5,0.5161975832343539,PENN -3.5,5,Penn,Baylor Bears
+01/10 05:00 PM,Jacksonville State Gamecocks @ Kennesaw State Owls,-5.5,Jacksonville State Gamecocks +5.5,0.5157032830176159,KENN -5.5,3,Kennesaw State Owls,Jacksonville State Gamecocks
+01/10 03:00 PM,West Georgia Wolves @ Jacksonville Dolphins,-1.5,West Georgia Wolves +1.5,0.515398945175624,JAX -1.5,2,Jacksonville Dolphins,West Georgia Wolves
+01/10 01:00 PM,Fairleigh Dickinson Knights @ New Haven Chargers,-1.5,Fairleigh Dickinson Knights +1.5,0.5148107098815063,NHVN -1.5,2,New Haven Chargers,Fairleigh Dickinson Knights
+01/10 02:00 PM,Harvard Crimson @ Columbia Lions,-7.5,Harvard Crimson +7.5,0.5142153205193318,COLU -7.5,5,Columbia,Harvard
+01/10 02:00 PM,Georgia Southern Eagles @ South Alabama Jaguars,-2.5,South Alabama Jaguars -2.5,0.5128968470920039,USA -2.5,7,South Alabama,Georgia Southern
+01/10 08:00 PM,Texas Longhorns @ Alabama Crimson Tide,-11.5,Alabama Crimson Tide -11.5,0.5115282202410141,ALA -11.5,7,Alabama,Texas
+01/10 12:00 PM,Fordham Rams @ St. Bonaventure Bonnies,-8.5,Fordham Rams +8.5,0.5100952065653447,SBU -8.5,3,St. Bonaventure Bonnies,Fordham Rams
+01/10 06:00 PM,Northern Iowa Panthers @ Bradley Braves,-4.5,Northern Iowa Panthers +4.5,0.5095343784981943,BRAD -4.5,3,Bradley Braves,Northern Iowa Panthers
+01/10 02:00 PM,Dartmouth Big Green @ Cornell Big Red,-8.5,Dartmouth Big Green +8.5,0.5090954884922468,COR -8.5,5,Cornell,Dartmouth
+01/10 03:30 PM,Ball State Cardinals @ Massachusetts Minutemen,-11.5,Ball State Cardinals +11.5,0.5086568976829492,MASS -11.5,4,Massachusetts,Ball St.
+01/10 05:00 PM,Loyola Maryland Greyhounds @ Bucknell Bison,-6.5,Loyola Maryland Greyhounds +6.5,0.5075663359951429,BUCK -6.5,3,Bucknell Bison,Loyola Maryland Greyhounds
+01/10 02:00 PM,SMU Mustangs @ Duke Blue Devils,-13.5,SMU Mustangs +13.5,0.5072737150243483,DUKE -13.5,4,Duke,SMU
+01/10 06:00 PM,Nicholls Colonels @ New Orleans Privateers,-1.5,Nicholls Colonels +1.5,0.506155941159947,UNO -1.5,5,New Orleans,Nicholls St.
+01/10 08:30 PM,Mississippi State Bulldogs @ Kentucky Wildcats,-10.5,Kentucky Wildcats -10.5,0.5045915394526399,UK -10.5,7,Kentucky,Mississippi St.
+01/10 05:00 PM,Alcorn State Braves @ Alabama A&M Bulldogs,-9.5,Alabama A&M Bulldogs -9.5,0.5026576063417799,AAMU -9.5,5,Alabama A&M,Oregon State Beavers
+01/10 08:00 PM,Maryland Terrapins @ UCLA Bruins,-11.5,Maryland Terrapins +11.5,0.5020957361295959,UCLA -11.5,7,UC Irvine,Maryland
+01/10 05:30 PM,Grambling Tigers @ Bethune-Cookman Wildcats,-4.5,Bethune-Cookman Wildcats -4.5,0.5020879902814147,BCU -4.5,7,Bethune Cookman,Grambling St.
+01/10 12:00 PM,Tennessee Volunteers @ Florida Gators,-4.5,Florida Gators -4.5,0.5016384620535013,FLA -4.5,7,Florida St.,Tennessee
+01/10 06:00 PM,Arkansas Razorbacks @ Auburn Tigers,-2.5,Auburn Tigers -2.5,0.5013280464901775,AUB -2.5,4,Auburn,Arkansas
+01/10 04:00 PM,Marshall Thundering Herd @ Georgia State Panthers,4.5,Marshall Thundering Herd -4.5,0.5009776146197188,MRSH -4.5,2,Georgia State Panthers,Marshall Thundering Herd
+01/10 12:00 PM,Nebraska Cornhuskers @ Indiana Hoosiers,-4.5,Nebraska Cornhuskers +4.5,0.500613900541634,IU -4.5,6,Indiana,Nebraska
+01/10 04:00 PM,Jackson State Tigers @ Alabama State Hornets,-5.5,Alabama State Hornets -5.5,0.5003347698843758,ALST -5.5,5,Alabama St.,Tennessee State Tigers
