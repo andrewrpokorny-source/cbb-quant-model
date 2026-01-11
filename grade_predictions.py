@@ -161,15 +161,37 @@ def grade_predictions():
     print(f"Grading date: {yesterday_date}\n")
     
     # 2. Check if we have predictions file
-    if not os.path.exists(PRED_FILE):
-        print("❌ No predictions file found (daily_predictions.csv)")
+    # Try dated file first (e.g., predictions_20260109.csv)
+    dated_pred_file = os.path.join(BASE_DIR, f"predictions_{yesterday_date.strftime('%Y%m%d')}.csv")
+    
+    if os.path.exists(dated_pred_file):
+        pred_source = dated_pred_file
+        print(f"✅ Found dated prediction file: {os.path.basename(dated_pred_file)}")
+    elif os.path.exists(PRED_FILE):
+        pred_source = PRED_FILE
+        print(f"⚠️  Using daily_predictions.csv (no dated file found)")
+        print(f"   Note: This may contain today's games instead of yesterday's")
+    else:
+        print("❌ No predictions file found")
+        print(f"   Looked for: {dated_pred_file}")
+        print(f"   Looked for: {PRED_FILE}")
         print("   Run predict.py to generate predictions first.")
         return
     
     # 3. Load predictions
     try:
-        preds = pd.read_csv(PRED_FILE)
-        print(f"✅ Loaded {len(preds)} predictions from file")
+        preds = pd.read_csv(pred_source)
+        total_preds = len(preds)
+        print(f"✅ Loaded {total_preds} predictions from file")
+        
+        # CRITICAL: Filter for actionable bets only (conf >= 53%)
+        CONFIDENCE_THRESHOLD = 0.53
+        preds = preds[preds['Conf'] >= CONFIDENCE_THRESHOLD].copy()
+        
+        print(f"   Filtered to {len(preds)} actionable bets (conf >= {CONFIDENCE_THRESHOLD:.0%})")
+        if len(preds) < total_preds:
+            print(f"   Skipped {total_preds - len(preds)} low-confidence predictions")
+            
     except Exception as e:
         print(f"❌ Error loading predictions: {e}")
         return
@@ -182,7 +204,7 @@ def grade_predictions():
     # (since predict.py overwrites daily_predictions.csv each time)
     # We'll match them to yesterday's completed games
     
-    print(f"\n📊 Predictions to grade: {len(preds)}")
+    print(f"\n📊 Predictions to grade: {len(preds)} (actionable bets only)")
     
     # 5. Fetch yesterday's completed games
     completed_games = fetch_completed_games(yesterday)
@@ -281,6 +303,7 @@ def grade_predictions():
         print(f"   Record: {wins}-{len(graded_df)-wins}")
         print(f"   Win Rate: {win_rate:.1%}")
         print(f"   Profit: {profit:+.2f} units")
+        print(f"   (Only includes bets with ≥53% confidence)")
     else:
         print("\n⚠️  No predictions were graded.")
         print("   This likely means the predictions file contains games for today/tomorrow.")
