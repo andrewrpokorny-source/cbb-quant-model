@@ -2,10 +2,21 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
+import json
 import os
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import pytz
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+from kalshi import KalshiClient, MarketMapper
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB
+from betting import calculate_line_shopping
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,117 +25,13 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
-# --- TEAM MAP ---
-TEAM_MAP = {
-    "St. Thomas-Minnesota Tommies": "St. Thomas MN",
-    "Elon Phoenix": "Elon",
-    "Campbell Fighting Camels": "Campbell",
-    "App State Mountaineers": "Appalachian St.",
-    "UT Martin Skyhawks": "UT Martin",
-    "Denver Pioneers": "Denver",
-    "Omaha Mavericks": "Omaha",
-    "Texas State Bobcats": "Texas St.",
-    "Weber State Wildcats": "Weber St.",
-    "Idaho State Bengals": "Idaho St.",
-    "Louisiana Ragin' Cajuns": "Louisiana",
-    "UL Monroe Warhawks": "UL Monroe",
-    "Idaho Vandals": "Idaho",
-    "Montana Grizzlies": "Montana",
-    "UTEP Miners": "UTEP",
-    "California Baptist Lancers": "California Baptist",
-    "Utah Tech Trailblazers": "Utah Tech",
-    "Drake Bulldogs": "Drake",
-    "Butler Bulldogs": "Butler",
-    "Miami (OH) RedHawks": "Miami OH",
-    "Ball State Cardinals": "Ball St.",
-    "Kent State Golden Flashes": "Kent St.",
-    "Iowa Hawkeyes": "Iowa",
-    "DePaul Blue Demons": "DePaul",
-    "UNLV Rebels": "UNLV",
-    "Fresno State Bulldogs": "Fresno St.",
-    "Nevada Wolf Pack": "Nevada",
-    "Furman Paladins": "Furman",
-    "Marquette Golden Eagles": "Marquette",
-    "Xavier Musketeers": "Xavier",
-    "UAB Blazers": "UAB",
-    "Arkansas Razorbacks": "Arkansas",
-    "Duke Blue Devils": "Duke",
-    "Louisville Cardinals": "Louisville",
-    "North Carolina Tar Heels": "North Carolina",
-    "Kentucky Wildcats": "Kentucky",
-    "Kansas Jayhawks": "Kansas",
-    "Auburn Tigers": "Auburn",
-    "Alabama Crimson Tide": "Alabama",
-    "Tennessee Volunteers": "Tennessee",
-    "UConn Huskies": "Connecticut", 
-    "Ole Miss Rebels": "Mississippi", 
-    "NC State Wolfpack": "North Carolina St.",
-    "Miami Hurricanes": "Miami FL", 
-    "USC Trojans": "USC", 
-    "TCU Horned Frogs": "TCU", 
-    "SMU Mustangs": "SMU",
-    "VCU Rams": "VCU", 
-    "LSU Tigers": "LSU", 
-    "BYU Cougars": "BYU", 
-    "UCF Knights": "UCF",
-    "St. John's Red Storm": "St. John's", 
-    "Saint Mary's Gaels": "Saint Mary's", 
-    "Loyola Chicago Ramblers": "Loyola Chicago",
-    "Michigan State Spartans": "Michigan St.", 
-    "Ohio State Buckeyes": "Ohio St.", 
-    "Iowa State Cyclones": "Iowa St.",
-    "Florida State Seminoles": "Florida St.", 
-    "Kansas State Wildcats": "Kansas St.", 
-    "Oklahoma State Cowboys": "Oklahoma St.",
-    "Oregon State Beavers": "Oregon St.", 
-    "Washington State Cougars": "Washington St.", 
-    "Arizona State Sun Devils": "Arizona St.",
-    "Mississippi State Bulldogs": "Mississippi St.", 
-    "Penn State Nittany Lions": "Penn St.", 
-    "Boise State Broncos": "Boise St.",
-    "San Diego State Aztecs": "San Diego St.", 
-    "Utah State Aggies": "Utah St.", 
-    "Colorado State Rams": "Colorado St.",
-    "Michigan Wolverines": "Michigan", 
-    "West Virginia Mountaineers": "West Virginia", 
-    "Gonzaga Bulldogs": "Gonzaga",
-    "Nebraska Cornhuskers": "Nebraska", 
-    "Seattle U Redhawks": "Seattle", 
-    "Stanford Cardinal": "Stanford", 
-    "Massachusetts Minutemen": "Massachusetts", 
-    "UMass Minutemen": "Massachusetts",
-    "Pittsburgh Panthers": "Pittsburgh", 
-    "Illinois Fighting Illini": "Illinois", 
-    "Wisconsin Badgers": "Wisconsin",
-    "Maryland Terrapins": "Maryland", 
-    "Rutgers Scarlet Knights": "Rutgers", 
-    "Northwestern Wildcats": "Northwestern",
-    "Purdue Boilermakers": "Purdue", 
-    "Indiana Hoosiers": "Indiana", 
-    "Minnesota Golden Gophers": "Minnesota",
-    "Texas Longhorns": "Texas",
-    "Texas A&M Aggies": "Texas A&M",
-    "Texas Tech Red Raiders": "Texas Tech",
-    "Baylor Bears": "Baylor",
-    "Houston Cougars": "Houston",
-    "Virginia Cavaliers": "Virginia",
-    "Virginia Tech Hokies": "Virginia Tech",
-    "Clemson Tigers": "Clemson",
-    "Georgia Tech Yellow Jackets": "Georgia Tech",
-    "Wake Forest Demon Deacons": "Wake Forest",
-    "Syracuse Orange": "Syracuse",
-    "Boston College Eagles": "Boston College",
-    "Notre Dame Fighting Irish": "Notre Dame",
-    "Northeastern Huskies": "Northeastern",
-    # --- Newly Added Schools (Jan 2026) ---
-    "Pennsylvania Quakers": "Penn",
-    "UAlbany Great Danes": "Albany NY",
-    "Tulsa Golden Hurricane": "Tulsa",
-    "Tulane Green Wave": "Tulane",
-    "Hawai'i Rainbow Warriors": "Hawaii",
-    "Wagner Seahawks": "Wagner",
-    "Long Island University Sharks": "Long Island"
-}
+# Module-level storage for predictions with line shopping data (for app.py access)
+_latest_predictions = None
+
+# --- TEAM MAP (loaded from config file) ---
+TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
+with open(TEAM_MAP_FILE, 'r') as f:
+    TEAM_MAP = json.load(f)
 
 def find_best_match(name, known_teams):
     """Match ESPN team name to historical data team name."""
@@ -151,17 +58,23 @@ def get_latest_stats(df):
     df = df.sort_values('date')
     latest_stats = {}
     teams = df['team'].unique()
-    
+
     for team in teams:
         last_game = df[df['team'] == team].iloc[-1]
         stats = {}
         for col in df.columns:
-            if any(x in col for x in ['season_', 'roll']):
+            if any(x in col for x in ['season_', 'roll', 'prev_', 'opp_win_pct']):
                 stats[col] = last_game[col]
         stats['last_game_date'] = last_game['date']
         stats['last_opponent'] = last_game.get('opponent', 'Unknown')
+        # V2 features
+        stats['prev_games_played'] = last_game.get('prev_games_played', 10)
+        stats['prev_volatility'] = last_game.get('prev_volatility', 10)
+        stats['prev_roll5_margin'] = last_game.get('prev_roll5_margin', 0)
+        stats['prev_blowout_rate'] = last_game.get('prev_blowout_rate', 0)
+        stats['prev_win_pct'] = last_game.get('prev_win_pct', 0.5)
         latest_stats[team] = stats
-    
+
     return latest_stats
 
 def fetch_schedule():
@@ -228,7 +141,7 @@ def fetch_schedule():
                             spread_val = -val
                         else:
                             spread_val = val
-                except: 
+                except (ValueError, IndexError):
                     spread_val = 0.0
 
                 # Skip games without spreads
@@ -251,31 +164,180 @@ def fetch_schedule():
             
     return sorted(games, key=lambda x: x['date'])
 
+def fetch_kalshi_markets():
+    """Fetch Kalshi NCAAB markets and build mapper."""
+    print("   -> Fetching Kalshi markets...")
+
+    api_key = os.getenv("KALSHI_API_KEY")
+    if not api_key:
+        print("      ⚠️  KALSHI_API_KEY not set. Skipping Kalshi integration.")
+        return None, None
+
+    try:
+        client = KalshiClient(api_key)
+        markets = client.get_ncaab_markets()
+
+        if markets:
+            print(f"      Found {len(markets)} NCAAB markets")
+            mapper = MarketMapper(markets)
+            return client, mapper
+        else:
+            print("      No NCAAB markets found")
+            return client, None
+    except Exception as e:
+        print(f"      ❌ Kalshi API error: {e}")
+        return None, None
+
+
+def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, model_prob, picked_team, picked_spread):
+    """
+    Get Kalshi market data and calculate edge.
+
+    Args:
+        picked_spread: The spread value for our pick (positive = underdog, negative = favorite)
+
+    Returns dict with Kalshi_Yes, Kalshi_No, Edge, Rating, Units, Kalshi_Side
+    """
+    from kalshi.market_mapper import extract_school_keyword
+
+    result = {
+        "Kalshi_Yes": None,
+        "Kalshi_No": None,
+        "Edge": None,
+        "Rating": None,
+        "Units": None,
+        "Kalshi_Ticker": None,
+        "Kalshi_Side": None,
+        "Kalshi_Title": None,
+    }
+
+    if not mapper:
+        return result
+
+    try:
+        # Find all spread markets for this game
+        all_markets = mapper.find_all_markets_for_game(home_team, away_team, game_date)
+        spread_markets = [m for m in all_markets if "SPREAD" in m.get("ticker", "")]
+
+        if not spread_markets:
+            return result
+
+        # Determine if we're betting favorite or underdog
+        is_underdog = picked_spread > 0  # Positive spread = underdog
+
+        # Find the opponent team
+        picked_keyword = extract_school_keyword(picked_team)
+        if picked_keyword in extract_school_keyword(home_team):
+            opponent = away_team
+        else:
+            opponent = home_team
+        opponent_keyword = extract_school_keyword(opponent)
+
+        # Find the right market:
+        # - If we pick underdog (+spread), bet NO on "opponent wins by over X"
+        # - If we pick favorite (-spread), bet YES on "picked_team wins by over X"
+        best_market = None
+        best_spread_diff = float('inf')
+
+        for market in spread_markets:
+            title = market.get("title", "").lower()
+            floor_strike = market.get("floor_strike", 0)
+
+            if is_underdog:
+                # We want opponent's spread market to bet NO
+                if opponent_keyword in title and "wins by" in title:
+                    spread_diff = abs(floor_strike - abs(picked_spread))
+                    if spread_diff < best_spread_diff:
+                        best_spread_diff = spread_diff
+                        best_market = market
+            else:
+                # We want our team's spread market to bet YES
+                if picked_keyword in title and "wins by" in title:
+                    spread_diff = abs(floor_strike - abs(picked_spread))
+                    if spread_diff < best_spread_diff:
+                        best_spread_diff = spread_diff
+                        best_market = market
+
+        if best_market:
+            prices = mapper.get_market_prices(best_market)
+            title = prices.get("title", "")
+            yes_price = prices.get("yes_price", 50)
+            no_price = prices.get("no_price", 50)
+
+            if is_underdog:
+                kalshi_side = "NO"
+                implied_prob = no_price / 100.0
+                bet_price = no_price
+            else:
+                kalshi_side = "YES"
+                implied_prob = yes_price / 100.0
+                bet_price = yes_price
+
+            # Calculate edge using the correct implied probability
+            edge = calculate_edge(model_prob, implied_prob)
+            rating = get_rating(edge)
+            units = recommended_units(edge, implied_prob)
+
+            result = {
+                "Kalshi_Yes": yes_price,
+                "Kalshi_No": no_price,
+                "Kalshi_Price": bet_price,
+                "Edge": edge,
+                "Edge_Pct": f"{edge * 100:+.1f}%",
+                "Rating": rating.value,
+                "Units": units,
+                "Kalshi_Ticker": prices.get("ticker", ""),
+                "Kalshi_Side": kalshi_side,
+                "Kalshi_Title": title,
+            }
+    except Exception as e:
+        print(f"      Kalshi matching error: {e}")
+
+    return result
+
+
 def calculate_production_features(row, h_stats, a_stats):
-    """Calculate features needed for prediction."""
+    """Calculate features needed for prediction (V2 with new features)."""
+    # --- Original Features ---
     # 1. Effective Field Goal %
     row['diff_eFG'] = h_stats.get('season_team_eFG', 0) - a_stats.get('season_team_eFG', 0)
-    
+
     # 2. Rebounds
-    h_orb = h_stats.get('season_team_orb', 0) 
+    h_orb = h_stats.get('season_team_orb', 0)
     a_orb = a_stats.get('season_team_orb', 0)
     row['diff_Rebound'] = h_orb - a_orb
-    
+
     # 3. Turnovers
     h_to = h_stats.get('season_team_to', 0)
     a_to = a_stats.get('season_team_to', 0)
     row['diff_TO'] = h_to - a_to
-    
+
     # 4. Momentum
     row['momentum_gap'] = h_stats.get('roll3_team_eFG', 0) - h_stats.get('season_team_eFG', 0)
-    
+
     # 5. Cover Margin
     row['roll5_cover_margin'] = h_stats.get('roll5_cover_margin', 0)
-    
+
+    # --- V2 Features ---
+    # 6. Games Played (home team's sample size)
+    row['prev_games_played'] = h_stats.get('prev_games_played', 10)
+
+    # 7. Opponent Win % (away team's quality)
+    row['opp_win_pct'] = a_stats.get('prev_win_pct', 0.5)
+
+    # 8. Blowout Rate (home team's dominance)
+    row['prev_blowout_rate'] = h_stats.get('prev_blowout_rate', 0)
+
+    # 9. Recent Margin (home team's recent performance)
+    row['prev_roll5_margin'] = h_stats.get('prev_roll5_margin', 0)
+
+    # 10. Volatility (home team's consistency)
+    row['prev_volatility'] = h_stats.get('prev_volatility', 10)
+
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (V3.3: TIMEZONE + MATCHUP FIX) 🔮 ---")
+    print("--- 🔮 PREDICTION ENGINE (V4: Enhanced Features + GB) 🔮 ---")
     
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
@@ -285,15 +347,15 @@ def main():
     try:
         model = joblib.load(MODEL_FILE)
         print(f"   ✅ Model loaded: {MODEL_FILE}")
-    except:
-        print("❌ Critical: Model not found. Run model.py first.")
+    except (FileNotFoundError, IOError, EOFError) as e:
+        print(f"❌ Critical: Model not found or corrupted. Run model.py first. ({e})")
         return
     
     try:
         df_hist = pd.read_csv(DATA_FILE)
         print(f"   ✅ Data loaded: {len(df_hist)} historical games")
-    except:
-        print("❌ Critical: Training data not found. Run main.py to download data.")
+    except (FileNotFoundError, IOError, pd.errors.EmptyDataError) as e:
+        print(f"❌ Critical: Training data not found or corrupted. Run main.py to download data. ({e})")
         return
 
     known_teams = df_hist['team'].unique()
@@ -311,7 +373,10 @@ def main():
     # Fetch schedule
     schedule = fetch_schedule()
     print(f"   -> Found {len(schedule)} games with spreads")
-    
+
+    # Fetch Kalshi markets
+    kalshi_client, kalshi_mapper = fetch_kalshi_markets()
+
     predictions = []
     skipped = []
     
@@ -351,10 +416,20 @@ def main():
         cols = model.feature_names_in_
         input_df = pd.DataFrame([row])
         for c in cols:
-            if c not in input_df.columns: 
+            if c not in input_df.columns:
                 input_df[c] = 0.0
-        
+
         input_df.columns = input_df.columns.astype(str)
+
+        # Fill any NaN values with defaults
+        input_df = input_df.fillna({
+            'diff_eFG': 0, 'diff_Rebound': 0, 'diff_TO': 0,
+            'momentum_gap': 0, 'roll5_cover_margin': 0,
+            'prev_games_played': 10, 'opp_win_pct': 0.5,
+            'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
+            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3
+        })
+        input_df = input_df.fillna(0)  # Catch any remaining NaNs
         
         # Make prediction
         prob = model.predict_proba(input_df)[0][1]
@@ -364,19 +439,49 @@ def main():
         if prob > 0.5:
             sign = "+" if g['spread'] > 0 else ""
             pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # ← Original name
+            picked_team = g['home_raw']
+            picked_spread = g['spread']  # Home team's spread
             picked_team_rest = home_actual_rest  # Picked home team
         else:
             away_spread = -1 * g['spread']
             sign = "+" if away_spread > 0 else ""
             pick_str = f"{g['away_raw']} {sign}{away_spread}"  # ← Original name
+            picked_team = g['away_raw']
+            picked_spread = away_spread  # Away team's spread
             picked_team_rest = away_actual_rest  # Picked away team
 
         # Format time in Eastern
         try:
             local_ts = g['date'].tz_convert('US/Eastern')
             time_str = local_ts.strftime("%m/%d %I:%M %p")
-        except:
+        except (TypeError, AttributeError):
             time_str = g['date'].strftime("%m/%d %I:%M %p")
+
+        # Get Kalshi edge data (now that we know the picked team)
+        kalshi_data = get_kalshi_edge(
+            kalshi_client,
+            kalshi_mapper,
+            g['home_raw'],
+            g['away_raw'],
+            g['date'],
+            g['spread'],
+            conf,  # Use confidence as model probability
+            picked_team,  # Pass picked team to determine YES/NO side
+            picked_spread,  # Pass the spread for our pick
+        )
+
+        # Calculate line shopping recommendations
+        # Build base features (everything except spread)
+        base_features = {k: v for k, v in row.items() if k != 'spread'}
+        is_home_pick = (prob > 0.5)  # Home pick if model probability > 0.5
+
+        line_shopping = calculate_line_shopping(
+            model,
+            base_features,
+            picked_spread,
+            picked_team,
+            is_home_pick,
+        )
 
         # CRITICAL FIX: Use ORIGINAL ESPN names for display
         prediction_row = {
@@ -387,39 +492,73 @@ def main():
             "Conf": conf,
             "Raw Odds": g['raw_odds'],
             "Rest": picked_team_rest,  # ← Show PICKED TEAM's rest days
-            # Debug fields (optional)
+            # Kalshi edge data
+            "Kalshi_Side": kalshi_data.get("Kalshi_Side"),
+            "Kalshi_Price": kalshi_data.get("Kalshi_Price"),
+            "Kalshi_Title": kalshi_data.get("Kalshi_Title"),
+            "Edge": kalshi_data.get("Edge"),
+            "Edge_Pct": kalshi_data.get("Edge_Pct"),
+            "Rating": kalshi_data.get("Rating"),
+            "Units": kalshi_data.get("Units"),
+            # Debug fields
             "Home_Matched": home_matched,
-            "Away_Matched": away_matched
+            "Away_Matched": away_matched,
+            "Kalshi_Ticker": kalshi_data.get("Kalshi_Ticker"),
+            # Line shopping data
+            "Breakeven_Spread": line_shopping.breakeven_spread,
+            "Line_Shopping_Data": line_shopping,
+            # Standard book edge (vs -110 odds, for non-Kalshi sportsbooks)
+            "Std_Edge": conf - STANDARD_IMPLIED_PROB,
+            "Std_Edge_Pct": f"{(conf - STANDARD_IMPLIED_PROB) * 100:+.1f}%",
+            "Std_Rating": get_rating(conf - STANDARD_IMPLIED_PROB).value,
+            "Std_Units": recommended_units(conf - STANDARD_IMPLIED_PROB, STANDARD_IMPLIED_PROB),
         }
-        
+
         # VALIDATION: Ensure pick mentions a team that's actually in the matchup
         pick_team_mentioned = pick_str.split()[0] + " " + pick_str.split()[1]
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:
             print(f"      ⚠️  WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
-        
+
         predictions.append(prediction_row)
 
     # Save predictions
     if predictions:
         pred_df = pd.DataFrame(predictions).sort_values(by="Conf", ascending=False)
-        
+
+        # Drop complex objects before CSV save (can't serialize)
+        csv_df = pred_df.drop(columns=["Line_Shopping_Data"], errors="ignore")
+
         # Save to current file (for app)
-        pred_df.to_csv(OUTPUT_FILE, index=False)
+        csv_df.to_csv(OUTPUT_FILE, index=False)
         
         # ALSO save to dated archive file (for grading)
-        archive_file = OUTPUT_FILE.replace("daily_predictions.csv", 
+        archive_file = OUTPUT_FILE.replace("daily_predictions.csv",
                                           f"predictions_{now_eastern.strftime('%Y%m%d')}.csv")
-        pred_df.to_csv(archive_file, index=False)
+        csv_df.to_csv(archive_file, index=False)
         
+        # Store predictions with line shopping data for app.py access
+        global _latest_predictions
+        _latest_predictions = pred_df
+
         print(f"\n✅ SUCCESS: Generated {len(pred_df)} predictions")
         print(f"   Saved to: {OUTPUT_FILE}")
         print(f"   Archive: {archive_file}")
-        
+
         # Show summary
         print("\n📋 PREDICTION SUMMARY:")
         for _, row in pred_df.head(5).iterrows():
             print(f"   {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
+
+        # Show value bets (GOOD or STRONG edge)
+        value_bets = pred_df[pred_df['Rating'].isin(['STRONG', 'GOOD'])]
+        if len(value_bets) > 0:
+            print(f"\nVALUE BETS ({len(value_bets)} found):")
+            for _, row in value_bets.iterrows():
+                side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
+                print(f"   [{row['Rating']}] {row['Pick']}")
+                print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']}")
+                print(f"      Recommended: {row['Units']:.1f}U")
     else:
         print("\n⚠️  No predictions generated.")
     
@@ -428,6 +567,11 @@ def main():
         print(f"\n⚠️  Skipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+def get_latest_predictions():
+    """Return the latest predictions DataFrame with line shopping data."""
+    return _latest_predictions
+
 
 if __name__ == "__main__":
     main()
