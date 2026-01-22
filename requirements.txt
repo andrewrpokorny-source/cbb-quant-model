@@ -5,3 +5,6 @@ requests
 scikit-learn
 joblib
 altair
+python-dotenv
+pytz
+cryptography

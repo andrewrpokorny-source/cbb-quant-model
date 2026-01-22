@@ -7,6 +7,8 @@ import backtest
 import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
+import pytz
+from betting import format_line_shopping_text
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,51 +18,549 @@ DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 
 st.set_page_config(page_title="CBB Quant Edge", page_icon="🏀", layout="centered")
 
-st.title("🏀 CBB Quant Edge")
-st.caption("v3.1 | Strategy: Efficiency Differentials | Mode: Spread Specialist")
-st.divider()
+# --- CUSTOM STYLING ---
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-tab1, tab2 = st.tabs(["📅 Daily Picks", "📈 Performance Dashboard"])
+/* Base styles */
+.stApp {
+    background-color: #faf9f6;
+}
+
+.main .block-container {
+    padding-top: 2rem;
+    max-width: 900px;
+}
+
+/* Typography overrides */
+h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    font-family: 'DM Sans', sans-serif !important;
+    color: #1a2e1a !important;
+    letter-spacing: -0.02em;
+}
+
+p, span, div, .stMarkdown {
+    font-family: 'DM Sans', sans-serif;
+}
+
+/* Header styling */
+.main-header {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #1a2e1a;
+    margin-bottom: 0;
+    letter-spacing: -0.03em;
+}
+
+.sub-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #6b7c6b;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+}
+
+/* Section headers */
+.section-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a2e1a;
+    margin: 1.5rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #1a4d2e;
+    display: inline-block;
+}
+
+/* Value bet cards */
+.bet-card {
+    background: #ffffff;
+    border: 1px solid #e5e5e0;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s ease;
+}
+
+.bet-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.bet-card.strong {
+    border-left: 4px solid #1a4d2e;
+}
+
+.bet-card.good {
+    border-left: 4px solid #c9a227;
+}
+
+.bet-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-bottom: 8px;
+}
+
+.bet-badge.strong {
+    background: #1a4d2e;
+    color: #ffffff;
+}
+
+.bet-badge.good {
+    background: #c9a227;
+    color: #1a2e1a;
+}
+
+.bet-pick {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #1a2e1a;
+    margin: 4px 0;
+}
+
+.bet-matchup {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    color: #6b7c6b;
+}
+
+.bet-stats {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0eb;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8a9a8a;
+}
+
+.stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #1a2e1a;
+}
+
+.stat-value.positive {
+    color: #1a4d2e;
+}
+
+/* Kalshi badge */
+.kalshi-row {
+    background: #f5f7f5;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: #1a2e1a;
+}
+
+.kalshi-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7c6b;
+    margin-right: 8px;
+}
+
+/* Summary bar */
+.summary-bar {
+    display: flex;
+    justify-content: flex-start;
+    gap: 2rem;
+    background: #ffffff;
+    border: 1px solid #e5e5e0;
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.summary-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1a4d2e;
+}
+
+.summary-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7c6b;
+    margin-top: 2px;
+}
+
+.summary-divider {
+    width: 1px;
+    background: #e5e5e0;
+}
+
+/* Bet header with time */
+.bet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.bet-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #8a9a8a;
+}
+
+/* Games table styling */
+.games-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #6b7c6b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Refresh button */
+.stButton > button {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    background: #1a4d2e;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1.25rem;
+    transition: background 0.2s ease;
+}
+
+.stButton > button:hover {
+    background: #2a5d3e;
+    color: white;
+}
+
+/* Expander styling */
+.streamlit-expanderHeader {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1a2e1a;
+    background: #f8f8f5;
+    border-radius: 6px;
+}
+
+/* Code blocks for line shopping */
+.stCodeBlock {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.8rem !important;
+    background: #f8f8f5 !important;
+    border: 1px solid #e5e5e0 !important;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0;
+    border-bottom: 2px solid #e5e5e0;
+}
+
+.stTabs [data-baseweb="tab"] {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    color: #6b7c6b;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #1a4d2e;
+    border-bottom: 2px solid #1a4d2e;
+}
+
+/* Metrics */
+.stMetric {
+    background: #ffffff;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e5e5e0;
+}
+
+.stMetric label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Divider */
+hr {
+    border: none;
+    border-top: 1px solid #e5e5e0;
+    margin: 1.5rem 0;
+}
+
+/* Dataframe */
+.stDataFrame {
+    font-family: 'DM Sans', sans-serif;
+}
+
+.stDataFrame [data-testid="stDataFrameResizable"] {
+    border: 1px solid #e5e5e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- AUTO-REFRESH PREDICTIONS ON STARTUP ---
+def should_refresh_predictions():
+    """Check if predictions need refreshing (stale or missing)"""
+    if not os.path.exists(PRED_FILE):
+        return True
+    try:
+        eastern = pytz.timezone('US/Eastern')
+        today = datetime.now(eastern).date()
+        file_mtime = datetime.fromtimestamp(os.path.getmtime(PRED_FILE))
+        file_date = file_mtime.date()
+        return file_date < today
+    except (OSError, ValueError, TypeError):
+        return True
+
+# Run predictions once on startup (always run to get line shopping data)
+if 'predictions_loaded' not in st.session_state:
+    with st.spinner("Loading predictions..."):
+        predict.main()
+    st.session_state.predictions_loaded = True
+
+# Get predictions with line shopping data
+predictions_with_line_shopping = predict.get_latest_predictions()
+
+# --- HEADER ---
+st.markdown('<div class="main-header">CBB Quant Edge</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis · v4.0</div>', unsafe_allow_html=True)
 
 # ==========================================
-# TAB 1: DAILY PICKS
+# MAIN CONTENT - No tabs, prioritized layout
 # ==========================================
-with tab1:
-    if os.path.exists(PRED_FILE):
-        df = pd.read_csv(PRED_FILE)
-        st.subheader(f"Today's Slate ({len(df)} Games)")
-        
-        if 'Conf' in df.columns:
-            df['Confidence'] = df['Conf'].apply(lambda x: f"{x:.1%}")
-        
-        display_cols = ['Date/Time', 'Matchup', 'Pick', 'Confidence', 'Rest']
-        if 'Raw Odds' in df.columns: display_cols.append('Raw Odds')
-        
-        valid_cols = [c for c in display_cols if c in df.columns]
+if os.path.exists(PRED_FILE):
+    df = pd.read_csv(PRED_FILE)
 
-        st.dataframe(df[valid_cols].style.map(lambda x: "font-weight: bold", subset=['Pick']), use_container_width=True, hide_index=True)
-        
-        if st.button("Refresh Predictions"):
-            with st.spinner("Running Engine..."):
-                predict.OUTPUT_FILE = PRED_FILE
-                predict.main()
-            st.rerun()
+    # --- SUMMARY BAR ---
+    if 'Std_Rating' in df.columns:
+        value_bets = df[
+            (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
+            (df['Rating'].isin(['STRONG', 'GOOD']))
+        ].copy()
+
+        num_value = len(value_bets)
+        total_units = value_bets['Std_Units'].sum() if num_value > 0 else 0
+        num_strong = len(value_bets[value_bets['Std_Rating'] == 'STRONG']) if num_value > 0 else 0
+
+        st.markdown(f'''
+        <div class="summary-bar">
+            <div class="summary-item">
+                <span class="summary-value">{num_value}</span>
+                <span class="summary-label">Value Bets</span>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-item">
+                <span class="summary-value">{total_units:.1f}U</span>
+                <span class="summary-label">To Deploy</span>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-item">
+                <span class="summary-value">{len(df)}</span>
+                <span class="summary-label">Games Today</span>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        # --- VALUE BETS SECTION ---
+        if num_value > 0:
+            st.markdown('<div class="section-title">Value Bets</div>', unsafe_allow_html=True)
+
+            # Use columns for side-by-side cards when 2+ bets
+            if num_value >= 2:
+                cols = st.columns(2)
+            else:
+                cols = [st.container()]
+
+            for i, (idx, row) in enumerate(value_bets.iterrows()):
+                col = cols[i % 2] if num_value >= 2 else cols[0]
+
+                with col:
+                    std_rating = row.get('Std_Rating', 'MARGINAL')
+                    is_strong = std_rating == 'STRONG'
+
+                    card_class = "strong" if is_strong else "good"
+                    badge_class = "strong" if is_strong else "good"
+                    badge_text = "Strong" if is_strong else "Good"
+
+                    std_edge_pct = row.get('Std_Edge_Pct', 'N/A')
+                    std_units = row.get('Std_Units', 0)
+                    conf = row['Conf']
+                    game_time = row.get('Date/Time', '')
+
+                    # Breakeven spread
+                    breakeven = row.get('Breakeven_Spread', None)
+                    breakeven_str = f"{breakeven:+.1f}" if breakeven and pd.notna(breakeven) else "—"
+
+                    # Kalshi info
+                    kalshi_side = row.get('Kalshi_Side')
+                    kalshi_price = row.get('Kalshi_Price')
+                    has_kalshi = pd.notna(kalshi_side) and kalshi_side
+
+                    kalshi_html = ""
+                    if has_kalshi:
+                        kalshi_edge = row.get('Edge_Pct', 'N/A')
+                        kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}</div>'
+
+                    st.markdown(f'''
+                    <div class="bet-card {card_class}">
+                        <div class="bet-header">
+                            <div class="bet-badge {badge_class}">{badge_text}</div>
+                            <div class="bet-time">{game_time}</div>
+                        </div>
+                        <div class="bet-pick">{row['Pick']}</div>
+                        <div class="bet-matchup">{row['Matchup']}</div>
+                        <div class="bet-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Model</span>
+                                <span class="stat-value">{conf:.1%}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Edge</span>
+                                <span class="stat-value positive">{std_edge_pct}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Units</span>
+                                <span class="stat-value">{std_units:.1f}U</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Breakeven</span>
+                                <span class="stat-value">{breakeven_str}</span>
+                            </div>
+                        </div>
+                        {kalshi_html}
+                    </div>
+                    ''', unsafe_allow_html=True)
+
+                    # Line Shopping - show inline, not hidden
+                    line_shopping_data = None
+                    if predictions_with_line_shopping is not None:
+                        match = predictions_with_line_shopping[
+                            predictions_with_line_shopping['Matchup'] == row['Matchup']
+                        ]
+                        if len(match) > 0 and 'Line_Shopping_Data' in match.columns:
+                            line_shopping_data = match.iloc[0].get('Line_Shopping_Data')
+
+                    if line_shopping_data is not None:
+                        with st.expander("Line Shopping", expanded=True):
+                            st.code(format_line_shopping_text(line_shopping_data), language=None)
+
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+    # --- ALL PICKS SECTION ---
+    st.markdown(f'<div class="section-title">Full Slate</div>', unsafe_allow_html=True)
+
+    # Filter options
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        show_filter = st.selectbox(
+            "Show",
+            ["All Games", "Value Bets Only", "Strong Only"],
+            label_visibility="collapsed"
+        )
+
+    # Apply filter
+    if 'Std_Rating' in df.columns:
+        if show_filter == "Value Bets Only":
+            display_df = df[df['Std_Rating'].isin(['STRONG', 'GOOD'])].copy()
+        elif show_filter == "Strong Only":
+            display_df = df[df['Std_Rating'] == 'STRONG'].copy()
+        else:
+            display_df = df.copy()
     else:
-        st.warning("⚠️ No predictions found.")
-        if st.button("Run Prediction Engine"):
-            with st.spinner("Calculating..."):
+        display_df = df.copy()
+
+    if 'Conf' in display_df.columns:
+        display_df['Confidence'] = display_df['Conf'].apply(lambda x: f"{x:.1%}")
+
+    table_cols = ['Date/Time', 'Pick', 'Confidence', 'Std_Edge_Pct', 'Std_Units']
+    valid_cols = [c for c in table_cols if c in display_df.columns]
+
+    # Rename for display
+    table_df = display_df[valid_cols].copy()
+    table_df = table_df.rename(columns={
+        'Date/Time': 'Time',
+        'Std_Edge_Pct': 'Edge',
+        'Std_Units': 'Units'
+    })
+
+    st.dataframe(
+        table_df,
+        use_container_width=True,
+        hide_index=True,
+        height=400,
+        column_config={
+            "Time": st.column_config.TextColumn("Time", width="small"),
+            "Pick": st.column_config.TextColumn("Pick", width="large"),
+            "Confidence": st.column_config.TextColumn("Conf", width="small"),
+            "Edge": st.column_config.TextColumn("Edge", width="small"),
+            "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
+        }
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("Refresh"):
+            with st.spinner("Running model..."):
                 predict.OUTPUT_FILE = PRED_FILE
                 predict.main()
             st.rerun()
 
-# ==========================================
-# TAB 2: PERFORMANCE DASHBOARD
-# ==========================================
-with tab2:
+else:
+    st.warning("No predictions found.")
+    if st.button("Run Prediction Engine"):
+        with st.spinner("Calculating..."):
+            predict.OUTPUT_FILE = PRED_FILE
+            predict.main()
+        st.rerun()
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# --- PERFORMANCE SECTION (collapsible) ---
+with st.expander("📈 Performance History"):
     if os.path.exists(PERF_FILE):
         hist = pd.read_csv(PERF_FILE)
         hist['date'] = pd.to_datetime(hist['date'])
-        
+
         def get_metrics(df_subset):
             if len(df_subset) == 0: return 0, 0.0, 0.0
             df_subset = df_subset.copy()
@@ -71,95 +571,95 @@ with tab2:
             profit = df_subset['units'].sum()
             return cnt, rate, profit
 
-        # --- TIMEZONE FIX (CRITICAL) ---
-        # Force "Today" to be US/Eastern, regardless of where the server is located (UTC)
         try:
             today = pd.Timestamp.now(tz='US/Eastern').normalize()
-        except:
-            # Fallback if tz database missing (rare)
+        except (pytz.exceptions.UnknownTimeZoneError, TypeError):
             today = pd.Timestamp.now().normalize() - timedelta(hours=5)
-            
+
         yesterday = today - timedelta(days=1)
-        
-        # Filter Data
-        # We compare .date() to ignore timestamp hours
-        df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
-        
-        # Last 7 Days (Today - 7)
         start_7 = today - timedelta(days=7)
+
+        df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
         df_7 = hist[hist['date'].dt.date >= start_7.date()]
-        
-        df_30 = hist 
-        
-        st.subheader(f"📊 Performance Snapshots")
-        st.caption(f"Reflecting stats as of: {yesterday.strftime('%b %d')}")
-        
+        df_30 = hist
+
+        st.markdown('<div class="section-title">Performance</div>', unsafe_allow_html=True)
+        st.caption(f"Stats as of {yesterday.strftime('%B %d, %Y')}")
+
         c1, c2, c3 = st.columns(3)
-        
+
         cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
-        c1.markdown("### Yesterday")
-        c1.metric("Bets", cnt_y)
-        c1.metric("Profit", f"{prof_y:+.2f} U", delta_color="normal")
-        c1.metric("Win Rate", f"{rate_y:.1%}")
-        
+        c1.metric("Yesterday", f"{prof_y:+.1f}U", f"{cnt_y} bets · {rate_y:.0%} win")
+
         cnt_7, rate_7, prof_7 = get_metrics(df_7)
-        c2.markdown("### Last 7 Days")
-        c2.metric("Bets", cnt_7)
-        c2.metric("Profit", f"{prof_7:+.2f} U", delta_color="normal")
-        c2.metric("Win Rate", f"{rate_7:.1%}")
+        c2.metric("Last 7 Days", f"{prof_7:+.1f}U", f"{cnt_7} bets · {rate_7:.0%} win")
 
         cnt_30, rate_30, prof_30 = get_metrics(df_30)
-        c3.markdown("### Last 30 Days")
-        c3.metric("Bets", cnt_30)
-        c3.metric("Profit", f"{prof_30:+.2f} U", delta_color="normal")
-        c3.metric("Win Rate", f"{rate_30:.1%}")
-        
-        st.divider()
+        c3.metric("All Time", f"{prof_30:+.1f}U", f"{cnt_30} bets · {rate_30:.0%} win")
 
-        st.subheader("💰 30-Day Profit Trend")
+        st.markdown("<hr>", unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Profit Trend</div>', unsafe_allow_html=True)
         hist['units'] = hist['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
         hist['cumulative_units'] = hist['units'].cumsum()
-        
-        chart = alt.Chart(hist).mark_line(color='#4CAF50').encode(
-            x=alt.X('date', title='Date'), 
-            y=alt.Y('cumulative_units', title='Total Units Won'), 
-            tooltip=['date', 'cumulative_units']
-        ).properties(height=300)
+
+        chart = alt.Chart(hist).mark_area(
+            line={'color': '#1a4d2e'},
+            color=alt.Gradient(
+                gradient='linear',
+                stops=[
+                    alt.GradientStop(color='rgba(26, 77, 46, 0.1)', offset=0),
+                    alt.GradientStop(color='rgba(26, 77, 46, 0.3)', offset=1)
+                ],
+                x1=1, x2=1, y1=1, y2=0
+            )
+        ).encode(
+            x=alt.X('date:T', title=None, axis=alt.Axis(format='%b %d', labelAngle=0)),
+            y=alt.Y('cumulative_units:Q', title='Units'),
+            tooltip=[
+                alt.Tooltip('date:T', title='Date', format='%b %d'),
+                alt.Tooltip('cumulative_units:Q', title='Total Units', format='.1f')
+            ]
+        ).properties(height=280).configure_axis(
+            grid=True,
+            gridColor='#e5e5e0',
+            domainColor='#e5e5e0'
+        ).configure_view(
+            strokeWidth=0
+        )
         st.altair_chart(chart, use_container_width=True)
-        
-        with st.expander("📜 View Full Bet History"):
-            hist['Result'] = hist['pick_correct'].apply(lambda x: "✅ WIN" if x else "❌ LOSS")
-            hist['Date_Str'] = hist['date'].dt.strftime("%Y-%m-%d")
+
+        with st.expander("View Bet History"):
+            hist['Result'] = hist['pick_correct'].apply(lambda x: "✓ Win" if x else "✗ Loss")
+            hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
             hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
             hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
-            
+
             df_display = hist.sort_values('date', ascending=False)
-            df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(columns={'Date_Str': 'Date', 'conf': 'Conf'})
-            df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.1%}")
-            
+            df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(
+                columns={'Date_Str': 'Date', 'conf': 'Conf'}
+            )
+            df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
+
             st.dataframe(df_display, use_container_width=True, hide_index=True)
-        
+
     else:
-        st.info("⚠️ Performance log missing.")
-        if st.button("Run Backtest Simulation"):
-            log_placeholder = st.empty()
-            with st.spinner("Training models (approx 60s)..."):
+        st.info("No performance data yet.")
+        if st.button("Run Backtest"):
+            with st.spinner("Training models..."):
                 f = io.StringIO()
                 try:
                     with redirect_stdout(f):
                         backtest.DATA_FILE = DATA_FILE
                         backtest.OUTPUT_FILE = PERF_FILE
                         backtest.run_backtest()
-                    output = f.getvalue()
-                    log_placeholder.code(output)
                     if os.path.exists(PERF_FILE):
                         st.success("Done!")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Backtest Crash: {e}")
+                    st.error(f"Error: {e}")
 
-with st.expander("🛠 System Check"):
-    st.write(f"**Current Directory:** `{os.getcwd()}`")
-    st.write(f"**Data File:** `{DATA_FILE}`")
+with st.expander("System"):
+    st.caption(f"Data: {DATA_FILE}")
     if os.path.exists(DATA_FILE):
-        st.caption(f"Data Size: {os.path.getsize(DATA_FILE) / 1024:.1f} KB")
+        st.caption(f"Size: {os.path.getsize(DATA_FILE) / 1024:.0f} KB")

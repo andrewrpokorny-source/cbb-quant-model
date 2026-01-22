@@ -1,0 +1,22 @@
+[project]
+name = "cbb-quant-model"
+version = "2.0.0"
+description = "College Basketball Spread Prediction Model"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "joblib",
+    "requests",
+    "pytz",
+    "streamlit",
+    "altair",
+    "cryptography>=46.0.3",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+train = "model:train_and_evaluate"
+predict = "predict:main"
+features = "features:main"
