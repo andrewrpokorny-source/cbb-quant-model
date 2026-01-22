@@ -5,3 +5,4 @@ __pycache__/
 # Secrets
 .env
 *.pem
+IMPROVEMENT_PLAN.md
