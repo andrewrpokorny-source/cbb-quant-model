@@ -7,8 +7,3 @@ __pycache__/
 *.pem
 IMPROVEMENT_PLAN.md
 betting_history.csv
-
-# Predictions and results
-daily_predictions.csv
-predictions_*.csv
-*results*.csv
