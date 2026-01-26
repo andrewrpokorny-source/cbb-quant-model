@@ -5,10 +5,11 @@ College basketball spread prediction model using machine learning.
 ## Setup
 
 ```bash
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Install dependencies
 uv sync
-# or
-pip install -r requirements.txt
 
 # Copy env template (optional, for Kalshi integration)
 cp .env.example .env
@@ -18,10 +19,10 @@ cp .env.example .env
 
 ### Generate Predictions
 ```bash
-python predict.py
+uv run python predict.py
 ```
 
 ### Run Dashboard
 ```bash
-streamlit run app.py
+uv run streamlit run app.py
 ```

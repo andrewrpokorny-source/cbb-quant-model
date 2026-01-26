@@ -259,7 +259,9 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                         best_market = market
 
         if best_market:
-            prices = mapper.get_market_prices(best_market)
+            # Fetch fresh prices from API (not cached data)
+            ticker = best_market.get("ticker", "")
+            prices = client.get_market_prices(ticker) if ticker else mapper.get_market_prices(best_market)
             title = prices.get("title", "")
             yes_price = prices.get("yes_price", 50)
             no_price = prices.get("no_price", 50)
