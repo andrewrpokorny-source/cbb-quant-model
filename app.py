@@ -4,6 +4,7 @@ import os
 import altair as alt
 import predict
 import backtest
+import settle_bets
 import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ from betting import format_line_shopping_text
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PRED_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
 PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
+BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 
 st.set_page_config(page_title="CBB Quant Edge", page_icon="🏀", layout="centered")
@@ -552,6 +554,55 @@ else:
             predict.OUTPUT_FILE = PRED_FILE
             predict.main()
         st.rerun()
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# --- BETTING LOG SECTION ---
+if os.path.exists(BET_HIST_FILE):
+    bet_hist = pd.read_csv(BET_HIST_FILE)
+    pending_bets = bet_hist[bet_hist["result"] == "pending"]
+    pending_count = len(pending_bets)
+
+    with st.expander(f"Betting Log ({pending_count} pending)"):
+        if pending_count > 0:
+            st.markdown(f'<div class="section-title">Pending Bets ({pending_count})</div>', unsafe_allow_html=True)
+            pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
+            pending_display["wager"] = pending_display["wager"].apply(lambda x: f"${x:.2f}")
+            st.dataframe(pending_display, use_container_width=True, hide_index=True)
+
+            if st.button("Settle Bets"):
+                with st.spinner("Settling pending bets via ESPN scores..."):
+                    summary = settle_bets.settle_pending_bets()
+                st.success(f"Settled {summary['settled']} bets. {summary['still_pending']} still pending.")
+                if summary["details"]:
+                    with st.expander("Settlement Details"):
+                        for d in summary["details"]:
+                            st.text(d)
+                st.rerun()
+
+        # Recent history
+        settled = bet_hist[bet_hist["result"].isin(["win", "loss", "void"])]
+        if len(settled) > 0:
+            st.markdown('<div class="section-title">Recent Bets</div>', unsafe_allow_html=True)
+            recent = settled.tail(15).iloc[::-1].copy()
+            recent["Result"] = recent["result"].apply(
+                lambda x: {"win": "W", "loss": "L", "void": "P"}.get(x, x)
+            )
+            recent["P/L"] = recent["profit"].apply(lambda x: f"{float(x):+.2f}")
+            display_cols = ["date", "platform", "line", "odds", "wager", "Result", "P/L"]
+            st.dataframe(recent[display_cols], use_container_width=True, hide_index=True)
+
+            # Summary stats
+            wins = len(settled[settled["result"] == "win"])
+            losses = len(settled[settled["result"] == "loss"])
+            total_profit = settled["profit"].astype(float).sum()
+            total_wagered = settled["wager"].astype(float).sum()
+            roi = (total_profit / total_wagered * 100) if total_wagered > 0 else 0
+            st.caption(
+                f"Record: {wins}W-{losses}L | "
+                f"Profit: {total_profit:+.2f}U | "
+                f"ROI: {roi:+.1f}%"
+            )
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
