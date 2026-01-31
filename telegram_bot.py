@@ -336,14 +336,16 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conf = row.get("Conf", 0)
         edge = row.get("Std_Edge_Pct", row.get("Edge_Pct", ""))
         pick = row.get("Pick", "")
-        time = row.get("Date/Time", "")
 
-        badge = "**" if rating == "STRONG" else ""
-        lines.append(f"  {badge}{pick}{badge}")
-        lines.append(f"    {time} | {conf:.0%} conf | {edge} edge | {units:.1f}U")
-        lines.append("")
+        tag = "[S]" if rating == "STRONG" else "[G]"
+        lines.append(f"{tag} {pick}  {conf:.0%} | {edge} | {units:.1f}U")
 
-    await update.message.reply_text("\n".join(lines))
+    # Telegram max message length is 4096 chars
+    msg = "\n".join(lines)
+    if len(msg) > 4000:
+        msg = msg[:4000] + "\n..."
+
+    await update.message.reply_text(msg)
 
 
 async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
