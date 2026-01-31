@@ -12,7 +12,7 @@ import os
 import re
 import csv
 import json
-import base64
+import tempfile
 import logging
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -28,7 +28,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import anthropic
+from ocrmac import ocrmac
 
 from settle_bets import settle_pending_bets
 
@@ -40,7 +40,6 @@ DAILY_PREDICTIONS = os.path.join(BASE_DIR, "daily_predictions.csv")
 PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -86,66 +85,103 @@ def append_bet(bet: dict):
     return row
 
 
-async def parse_bet_screenshot(image_bytes: bytes) -> dict:
+def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     """
-    Use Claude Vision API to parse a sportsbook bet slip screenshot.
-    Returns parsed bet details as a dict.
+    Use macOS native OCR (ocrmac) to extract text from a bet slip screenshot,
+    then parse the text into structured bet data.
+    Returns a list of parsed bet dicts.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    # Write bytes to a temp file for ocrmac
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
 
-    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    try:
+        results = ocrmac.OCR(tmp_path, recognition_level="accurate").recognize()
+    finally:
+        os.unlink(tmp_path)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": b64_image,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract from this sportsbook bet slip the following details. "
-                            "Return ONLY valid JSON with these fields:\n"
-                            '- "platform": the sportsbook name (e.g. "FanDuel", "DraftKings", "Kalshi")\n'
-                            '- "game": the matchup in "Away vs Home" format (use full team names)\n'
-                            '- "bet_type": the bet type (e.g. "spread", "moneyline", "total")\n'
-                            '- "line": the bet line (e.g. "Providence +15.5" or "UConn -15.5 NO" for Kalshi)\n'
-                            '- "odds": American odds as a string (e.g. "-110", "+150") or "n/a" for Kalshi\n'
-                            '- "wager": the wager amount as a number (dollars, no $ sign)\n'
-                            "\n"
-                            "If there are multiple bets on the slip, return a JSON array of objects.\n"
-                            "If you cannot determine a field, use null for that field.\n"
-                            "Return ONLY the JSON, no other text."
-                        ),
-                    },
-                ],
-            }
-        ],
+    # Combine OCR text lines
+    lines = [text for text, confidence, bbox in results if confidence > 0.3]
+    raw_text = "\n".join(lines)
+    logger.info(f"OCR text:\n{raw_text}")
+
+    return _parse_bet_slip_text(raw_text)
+
+
+def _parse_bet_slip_text(text: str) -> list[dict]:
+    """Parse raw OCR text from a bet slip into structured bet data."""
+    # Detect platform
+    text_lower = text.lower()
+    if "fanduel" in text_lower:
+        platform = "FanDuel"
+    elif "draftkings" in text_lower:
+        platform = "DraftKings"
+    elif "kalshi" in text_lower:
+        platform = "Kalshi"
+    elif "betmgm" in text_lower:
+        platform = "BetMGM"
+    elif "caesars" in text_lower:
+        platform = "Caesars"
+    else:
+        platform = "Unknown"
+
+    # Find spread lines: "Team +/-X.X" or "Team +/-X"
+    spread_pattern = re.compile(
+        r"([A-Z][A-Za-z\s&'.]+?)\s+([+-]\d+\.?\d*)", re.MULTILINE
     )
+    spreads = spread_pattern.findall(text)
 
-    response_text = message.content[0].text.strip()
+    # Find American odds: -110, +150, etc.
+    odds_pattern = re.compile(r"([+-]\d{3,})")
+    odds_matches = odds_pattern.findall(text)
 
-    # Strip markdown code fences if present
-    if response_text.startswith("```"):
-        response_text = re.sub(r"^```(?:json)?\s*", "", response_text)
-        response_text = re.sub(r"\s*```$", "", response_text)
+    # Find wager amounts: $1.25, $0.50, Wager $1.25, Risk $1.25, Stake 1.25
+    wager_pattern = re.compile(
+        r"(?:wager|risk|stake|bet)?\s*\$?(\d+\.?\d{0,2})\b", re.IGNORECASE
+    )
+    wager_matches = wager_pattern.findall(text)
+    # Filter to reasonable wager amounts (0.25 to 500)
+    wagers = [float(w) for w in wager_matches if 0.25 <= float(w) <= 500]
 
-    parsed = json.loads(response_text)
+    # Find "vs" or "@" matchups
+    matchup_pattern = re.compile(
+        r"([A-Z][A-Za-z\s&'.]+?)\s+(?:vs\.?|@|at)\s+([A-Z][A-Za-z\s&'.]+?)(?:\n|$)",
+        re.IGNORECASE,
+    )
+    matchups = matchup_pattern.findall(text)
 
-    # Normalize to list
-    if isinstance(parsed, dict):
-        parsed = [parsed]
+    bets = []
+    if spreads:
+        for i, (team, spread) in enumerate(spreads):
+            team = team.strip()
+            # Skip if it looks like a score or irrelevant number
+            if len(team) < 2:
+                continue
 
-    return parsed
+            bet = {
+                "platform": platform,
+                "game": f"{matchups[i][0].strip()} vs {matchups[i][1].strip()}" if i < len(matchups) else "",
+                "bet_type": "spread",
+                "line": f"{team} {spread}",
+                "odds": odds_matches[i] if i < len(odds_matches) else "n/a",
+                "wager": wagers[i] if i < len(wagers) else 0,
+            }
+            bets.append(bet)
+
+    # If regex parsing found nothing, return the raw text so the user can see what OCR got
+    if not bets:
+        bets.append({
+            "platform": platform,
+            "game": "",
+            "bet_type": "spread",
+            "line": "",
+            "odds": "n/a",
+            "wager": 0,
+            "_raw_ocr": text,
+        })
+
+    return bets
 
 
 def parse_shorthand(text: str) -> dict:
@@ -357,11 +393,7 @@ async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle bet slip screenshot."""
-    if not ANTHROPIC_API_KEY:
-        await update.message.reply_text("ANTHROPIC_API_KEY not set in .env")
-        return
-
+    """Handle bet slip screenshot via macOS OCR."""
     await update.message.reply_text("Parsing bet slip...")
 
     # Download the photo (highest resolution)
@@ -372,7 +404,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     image_bytes = buf.getvalue()
 
     try:
-        bets = await parse_bet_screenshot(image_bytes)
+        bets = parse_bet_screenshot(image_bytes)
     except Exception as e:
         logger.error(f"Error parsing screenshot: {e}")
         await update.message.reply_text(f"Could not parse bet slip: {e}")
@@ -380,7 +412,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logged = []
     for bet in bets:
-        # Validate required fields
+        # If OCR couldn't parse structured data, show the raw text
+        if bet.get("_raw_ocr") and (not bet.get("line") or not bet.get("wager")):
+            await update.message.reply_text(
+                f"Could not auto-parse. OCR text:\n\n{bet['_raw_ocr']}\n\n"
+                "Try manual entry: FD TeamName +5.5 -110 1.25"
+            )
+            continue
+
         if not bet.get("line") or not bet.get("wager"):
             await update.message.reply_text(
                 f"Missing required fields in parsed bet: {json.dumps(bet, indent=2)}"
@@ -394,7 +433,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if logged:
         await update.message.reply_text("\n".join(logged))
-    else:
+    elif not any(b.get("_raw_ocr") for b in bets):
         await update.message.reply_text("No valid bets found in the screenshot.")
 
 
