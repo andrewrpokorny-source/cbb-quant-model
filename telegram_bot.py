@@ -109,15 +109,118 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     return _parse_bet_slip_text(raw_text)
 
 
+def _parse_dk_blocks(text: str) -> list[dict]:
+    """Parse DraftKings bet slip using block-based approach.
+
+    DK OCR produces structured blocks like:
+        TEAM SPREAD ODDS
+        Spread
+        Wager: $X.XX [Paid: $X.XX]
+        TEAM1
+        TEAM2
+        Final Score ...
+    """
+    # Match spread lines: "TEAM SPREAD ODDS" (spread may abut team name, e.g. "QUEENS NC-5.5")
+    spread_line_re = re.compile(
+        r"^(.+?)\s*([+-]\d+\.?\d*)\s+([+-]\d{3,})\s*$", re.MULTILINE
+    )
+
+    matches = list(spread_line_re.finditer(text))
+    if not matches:
+        return []
+
+    skip_teams = {"SPREAD", "DRAFTKINGS", "SPORTSBOOK", "LOST", "WON", "PUSH", "VOID", "OT"}
+    bets = []
+
+    for i, match in enumerate(matches):
+        team = match.group(1).strip()
+        spread = match.group(2)
+        odds = match.group(3)
+
+        # Text between this spread line and the next one
+        block_start = match.end()
+        block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[block_start:block_end]
+
+        # Extract wager -- require "Wager:" prefix
+        wager_match = re.search(r"Wager:\s*\$?(\d+\.?\d*)", block)
+        wager = float(wager_match.group(1)) if wager_match else 0
+
+        # Extract matchup from ALL-CAPS lines (DK lists teams on separate lines)
+        team_lines = re.findall(r"^([A-Z][A-Z &'.]+)$", block, re.MULTILINE)
+        teams = [t.strip() for t in team_lines if t.strip() not in skip_teams and len(t.strip()) > 2]
+        game = f"{teams[0]} vs {teams[1]}" if len(teams) >= 2 else ""
+
+        bets.append({
+            "platform": "DraftKings",
+            "game": game,
+            "bet_type": "spread",
+            "line": f"{team} {spread}",
+            "odds": odds,
+            "wager": wager,
+        })
+
+    return bets
+
+
+def _parse_kalshi_blocks(text: str) -> list[dict]:
+    """Parse Kalshi bet slip using structured approach.
+
+    Kalshi OCR produces blocks like:
+        NCAAMB
+        Team1 at Team2: Spread
+        Yes * Team1 wins by over X.X Points
+        ...
+        Cost
+        $X.XX
+    """
+    # Extract spread details: "Yes/No . Team wins by over X.X Points"
+    spread_re = re.compile(
+        r"(Yes|No)\s*[•·.*]\s*(.+?)\s+wins by over\s+(\d+\.?\d*)\s+Points",
+        re.IGNORECASE,
+    )
+    spread_details = spread_re.findall(text)
+    if not spread_details:
+        return []
+
+    # Extract matchups: "Team1 at Team2: Spread"
+    matchup_re = re.compile(r"(.+?)\s+at\s+(.+?):\s*Spread", re.IGNORECASE)
+    matchups = matchup_re.findall(text)
+
+    # Extract costs: "Cost\n$X.XX" or "Cost $X.XX"
+    cost_re = re.compile(r"Cost\s+\$(\d+\.?\d*)", re.IGNORECASE)
+    costs = cost_re.findall(text)
+
+    bets = []
+    for i, (side, team, spread) in enumerate(spread_details):
+        team = team.strip()
+        if i < len(matchups):
+            game = f"{matchups[i][0].strip()} vs {matchups[i][1].strip()}"
+        else:
+            game = ""
+        wager = float(costs[i]) if i < len(costs) else 0
+
+        bets.append({
+            "platform": "Kalshi",
+            "game": game,
+            "bet_type": "spread",
+            "line": f"{team} -{spread} {side.upper()}",
+            "odds": "n/a",
+            "wager": wager,
+        })
+
+    return bets
+
+
 def _parse_bet_slip_text(text: str) -> list[dict]:
     """Parse raw OCR text from a bet slip into structured bet data."""
     # Detect platform
     text_lower = text.lower()
-    if "fanduel" in text_lower:
-        platform = "FanDuel"
-    elif "draftkings" in text_lower:
+    if "draftkings" in text_lower:
         platform = "DraftKings"
-    elif "kalshi" in text_lower:
+    elif "fanduel" in text_lower:
+        platform = "FanDuel"
+    elif "kalshi" in text_lower or "wins by over" in text_lower:
         platform = "Kalshi"
     elif "betmgm" in text_lower:
         platform = "BetMGM"
@@ -125,6 +228,19 @@ def _parse_bet_slip_text(text: str) -> list[dict]:
         platform = "Caesars"
     else:
         platform = "Unknown"
+
+    # Use platform-specific parser when available
+    if platform == "DraftKings":
+        bets = _parse_dk_blocks(text)
+        if bets:
+            return bets
+
+    if platform == "Kalshi":
+        bets = _parse_kalshi_blocks(text)
+        if bets:
+            return bets
+
+    # --- Generic fallback parser ---
 
     # Find spread lines: "Team +/-X.X" or "Team +/-X"
     spread_pattern = re.compile(
@@ -136,12 +252,11 @@ def _parse_bet_slip_text(text: str) -> list[dict]:
     odds_pattern = re.compile(r"([+-]\d{3,})")
     odds_matches = odds_pattern.findall(text)
 
-    # Find wager amounts: $1.25, $0.50, Wager $1.25, Risk $1.25, Stake 1.25
+    # Find wager amounts -- require keyword prefix to avoid matching stray numbers
     wager_pattern = re.compile(
-        r"(?:wager|risk|stake|bet)?\s*\$?(\d+\.?\d{0,2})\b", re.IGNORECASE
+        r"(?:wager|risk|stake|bet)\s*:?\s*\$?(\d+\.?\d{0,2})\b", re.IGNORECASE
     )
     wager_matches = wager_pattern.findall(text)
-    # Filter to reasonable wager amounts (0.25 to 500)
     wagers = [float(w) for w in wager_matches if 0.25 <= float(w) <= 500]
 
     # Find "vs" or "@" matchups

@@ -54,6 +54,20 @@ def parse_bet_line(line_str):
     return {"team": team, "spread": spread, "side": side}
 
 
+def match_bet_by_team(line_str, completed_games):
+    """Fallback: match a bet to a game using just the team name from the line field."""
+    parsed = parse_bet_line(line_str)
+    if not parsed:
+        return None
+
+    team = parsed["team"]
+    for (home, away), result in completed_games.items():
+        if _team_matches(team, home) or _team_matches(team, away):
+            return result
+
+    return None
+
+
 def match_bet_to_game(game_str, completed_games):
     """
     Match a bet's game string (e.g. "Providence vs UConn") to ESPN completed games.
@@ -62,10 +76,13 @@ def match_bet_to_game(game_str, completed_games):
 
     Returns the game result dict or None.
     """
+    if not game_str or (isinstance(game_str, float) and pd.isna(game_str)):
+        return None
+
     # Parse "Away vs Home" or "Away @ Home" format
     for sep in [" vs ", " @ "]:
-        if sep in game_str:
-            parts = game_str.split(sep)
+        if sep in str(game_str):
+            parts = str(game_str).split(sep)
             if len(parts) == 2:
                 team_a, team_b = parts[0].strip(), parts[1].strip()
                 break
@@ -261,15 +278,23 @@ def settle_pending_bets(csv_path=None):
         return {"settled": 0, "still_pending": 0, "details": ["No pending bets."]}
 
     # Group by date to minimize ESPN API calls
+    # Also fetch adjacent dates (day before/after) to handle bets logged on a
+    # different day than the game was played.
     pending_dates = pending["date"].unique()
     games_by_date = {}
 
     eastern = pytz.timezone("US/Eastern")
 
+    fetched_dates = set()
     for date_str in pending_dates:
         date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
         date_obj = eastern.localize(date_obj)
-        games_by_date[date_str] = fetch_completed_games(date_obj)
+        for offset in [timedelta(0), timedelta(days=-1), timedelta(days=1)]:
+            d = date_obj + offset
+            d_str = d.strftime("%Y-%m-%d")
+            if d_str not in fetched_dates:
+                fetched_dates.add(d_str)
+                games_by_date[d_str] = fetch_completed_games(d)
 
     settled_count = 0
     still_pending = 0
@@ -283,14 +308,23 @@ def settle_pending_bets(csv_path=None):
         odds_str = row["odds"]
         wager = row["wager"]
 
-        completed = games_by_date.get(date_str, {})
+        # Collect completed games from the bet date and adjacent dates
+        date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
+        date_obj = eastern.localize(date_obj)
+        completed = {}
+        for offset in [timedelta(0), timedelta(days=-1), timedelta(days=1)]:
+            d_str = (date_obj + offset).strftime("%Y-%m-%d")
+            completed.update(games_by_date.get(d_str, {}))
+
         if not completed:
             still_pending += 1
             details.append(f"  No games found for {date_str}: {line_str}")
             continue
 
-        # Match bet to game
+        # Match bet to game (try game field first, then fall back to team from line)
         game_result = match_bet_to_game(game_str, completed)
+        if game_result is None:
+            game_result = match_bet_by_team(line_str, completed)
         if game_result is None:
             still_pending += 1
             details.append(f"  No match for {game_str}: {line_str}")
