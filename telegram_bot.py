@@ -53,23 +53,35 @@ CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", 
 # Short team abbreviations that are valid (not junk OCR text)
 VALID_SHORT_TEAMS = {"TCU", "USC", "LSU", "SMU", "UCF", "UNC", "UAB", "FIU", "BYU", "UIC"}
 
-# Known junk lines from DraftKings/FanDuel UI that OCR picks up
+# Known junk lines from DraftKings/FanDuel UI that OCR picks up.
+# NOTE: Do NOT include platform names here -- they're needed for platform detection.
 JUNK_LINES = {
     "my bets", "betting groups", "my pools", "open", "live", "settled",
     "won", "lost", "share", "the crown is yours", "pm", "am",
-    "sportsbook", "spread betting", "total wager", "fanduel sportsbook",
-    "draftkings", "fanduel", "betmgm", "caesars", "final", "spread",
-    "straight", "parlay", "won on fanduel", "returned",
+    "sportsbook", "final", "spread", "straight", "parlay",
+    "won on fanduel", "returned", "finished", "all sports", "rewards",
+    "home", "account", "saved", "live now", "spread betting", "total wager",
 }
 
 # Regex patterns for junk OCR lines
 JUNK_PATTERNS = [
     re.compile(r"^\d{1,2}:\d{2}\s*(AM|PM)?$", re.IGNORECASE),  # timestamps
-    re.compile(r"^[A-Z0-9]{6,}-[A-Z0-9]+$"),  # bet IDs
+    re.compile(r"^Bet ID:\s", re.IGNORECASE),  # DK bet IDs
+    re.compile(r"^BET ID:\s", re.IGNORECASE),  # FD bet IDs
     re.compile(r"^Placed:\s", re.IGNORECASE),  # "Placed:" lines
+    re.compile(r"^PLACED:\s", re.IGNORECASE),  # FD placed lines
     re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$"),  # dates like 1/30/26
     re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", re.IGNORECASE),
+    re.compile(r"^\d[\d\s]*$"),  # score lines (just digits and spaces)
+    re.compile(r"^\$\d+\.\d+\s*\+?\s*$"),  # balance display like "$12.10 +"
+    re.compile(r"^[•+]\s*Share", re.IGNORECASE),  # share buttons
+    re.compile(r"^\d+\s+Share", re.IGNORECASE),  # "4 Share"
 ]
+
+# Common OCR misreads to correct
+OCR_CORRECTIONS = {
+    "lowa": "Iowa",
+}
 
 
 def _clean_ocr_text(lines: list[str]) -> list[str]:
@@ -88,6 +100,10 @@ def _clean_ocr_text(lines: list[str]) -> list[str]:
         # Skip short ALL-CAPS abbreviations (2-5 chars) unless valid team name
         if stripped.isupper() and 2 <= len(stripped) <= 5 and stripped not in VALID_SHORT_TEAMS:
             continue
+        # Apply OCR corrections
+        for wrong, right in OCR_CORRECTIONS.items():
+            if wrong in stripped:
+                stripped = stripped.replace(wrong, right)
         cleaned.append(stripped)
     return cleaned
 
@@ -198,9 +214,10 @@ def _parse_dk_blocks(text: str) -> list[dict]:
         TEAM2
         Final Score ...
     """
-    # Match spread lines: "TEAM SPREAD ODDS" (spread may abut team name, e.g. "QUEENS NC-5.5")
+    # Match spread lines: "TEAM SPREAD [1|] ODDS"
+    # OCR often inserts "1", "|", or "•" between spread and odds
     spread_line_re = re.compile(
-        r"^(.+?)\s*([+-]\d+\.?\d*)\s+([+-]\d{3,})\s*$", re.MULTILINE
+        r"^(.+?)\s*([+-]\d+\.?\d*)\s*(?:[1|•]\s*)?([+-]\s*\d{3,})\s*$", re.MULTILINE
     )
 
     matches = list(spread_line_re.finditer(text))
@@ -217,7 +234,7 @@ def _parse_dk_blocks(text: str) -> list[dict]:
     for i, match in enumerate(matches):
         team = match.group(1).strip()
         spread = match.group(2)
-        odds = match.group(3)
+        odds = match.group(3).replace(" ", "")  # fix OCR spaces in odds like "- 115"
 
         # Text between this spread line and the next one
         block_start = match.end()
@@ -252,15 +269,17 @@ def _parse_dk_blocks(text: str) -> list[dict]:
 def _parse_fd_blocks(text: str) -> list[dict]:
     """Parse FanDuel bet slip using block-based approach.
 
-    FanDuel OCR layout:
-        Team Name +/-X.X    -NNN
-        Team1 @ Team2       DATE
-        $X.XX               $X.XX
-        TOTAL WAGER         WON ON FANDUEL / RETURNED
+    FanDuel OCR layout (spread and odds on SEPARATE lines):
+        Team Name +/-X.X
+        Team1 @ Team2
+        $X.XX           <- wager
+        BET ID: ...
+        -NNN            <- odds on own line
+        $X.XX           <- payout
     """
-    # Spread+odds on one line: "Team +/-X.X -NNN"
+    # FD spread lines have NO odds on the same line: "Team +/-X.X" alone
     spread_line_re = re.compile(
-        r"^(.+?)\s*([+-]\d+\.?\d*)\s+([+-]\d{3,})\s*$", re.MULTILINE
+        r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$", re.MULTILINE
     )
     matches = list(spread_line_re.finditer(text))
     if not matches:
@@ -270,16 +289,15 @@ def _parse_fd_blocks(text: str) -> list[dict]:
     for i, match in enumerate(matches):
         team = match.group(1).strip()
         spread = match.group(2)
-        odds = match.group(3)
 
-        # Block of text between this match and the next
+        # Block of text between this spread line and the next
         block_start = match.end()
         block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         block = text[block_start:block_end]
 
-        # Matchup: "Team1 @ Team2" with optional trailing date
+        # Matchup: "Team1 @ Team2"
         matchup_match = re.search(
-            r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+?)(?:\s+\d|$)",
+            r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)",
             block,
         )
         if matchup_match:
@@ -295,6 +313,10 @@ def _parse_fd_blocks(text: str) -> list[dict]:
             if 0.25 <= amt <= 500:
                 wager = amt
                 break
+
+        # Odds: standalone American odds line (e.g. "-108") in the block
+        odds_match = re.search(r"^([+-]\d{3,})\s*$", block, re.MULTILINE)
+        odds = odds_match.group(1) if odds_match else "n/a"
 
         bets.append({
             "platform": "FanDuel",
@@ -371,6 +393,12 @@ def _parse_bet_slip_text(text: str) -> list[dict]:
         platform = "BetMGM"
     elif "caesars" in text_lower:
         platform = "Caesars"
+    # FanDuel heuristics -- FD screenshots often lack the "FanDuel" word
+    elif "spread betting" in text_lower or "total wager" in text_lower:
+        platform = "FanDuel"
+    # DraftKings heuristics -- DK format uses "Wager:" prefix
+    elif re.search(r"Wager:\s*\$", text):
+        platform = "DraftKings"
     else:
         platform = "Unknown"
 
