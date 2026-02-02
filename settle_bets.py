@@ -32,7 +32,22 @@ def parse_bet_line(line_str):
         "Mercer -9.5"           -> {team: "Mercer", spread: -9.5, side: None}
         "Alabama -10.5"         -> {team: "Alabama", spread: -10.5, side: None}
     """
-    line_str = line_str.strip()
+    line_str = str(line_str).strip()
+
+    # Handle embedded newlines from garbled OCR data:
+    # search from the end for a line matching the spread pattern
+    if "\n" in line_str:
+        spread_re = re.compile(r"^(.+?)\s+([+-]?\d+\.?\d*)(?:\s+(YES|NO))?$", re.IGNORECASE)
+        for part in reversed(line_str.split("\n")):
+            part = part.strip()
+            m = spread_re.match(part)
+            if m:
+                line_str = part
+                break
+        else:
+            # No line matched the spread pattern; use the last non-empty line
+            parts = [p.strip() for p in line_str.split("\n") if p.strip()]
+            line_str = parts[-1] if parts else line_str
 
     # Check for Kalshi YES/NO suffix
     side = None

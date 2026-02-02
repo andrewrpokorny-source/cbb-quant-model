@@ -50,6 +50,47 @@ logger = logging.getLogger(__name__)
 # CSV headers for betting_history.csv
 CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit"]
 
+# Short team abbreviations that are valid (not junk OCR text)
+VALID_SHORT_TEAMS = {"TCU", "USC", "LSU", "SMU", "UCF", "UNC", "UAB", "FIU", "BYU", "UIC"}
+
+# Known junk lines from DraftKings/FanDuel UI that OCR picks up
+JUNK_LINES = {
+    "my bets", "betting groups", "my pools", "open", "live", "settled",
+    "won", "lost", "share", "the crown is yours", "pm", "am",
+    "sportsbook", "spread betting", "total wager", "fanduel sportsbook",
+    "draftkings", "fanduel", "betmgm", "caesars", "final", "spread",
+    "straight", "parlay", "won on fanduel", "returned",
+}
+
+# Regex patterns for junk OCR lines
+JUNK_PATTERNS = [
+    re.compile(r"^\d{1,2}:\d{2}\s*(AM|PM)?$", re.IGNORECASE),  # timestamps
+    re.compile(r"^[A-Z0-9]{6,}-[A-Z0-9]+$"),  # bet IDs
+    re.compile(r"^Placed:\s", re.IGNORECASE),  # "Placed:" lines
+    re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$"),  # dates like 1/30/26
+    re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", re.IGNORECASE),
+]
+
+
+def _clean_ocr_text(lines: list[str]) -> list[str]:
+    """Remove known junk lines from OCR output before parsing."""
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Skip known junk (case-insensitive)
+        if stripped.lower() in JUNK_LINES:
+            continue
+        # Skip regex-matched junk
+        if any(p.match(stripped) for p in JUNK_PATTERNS):
+            continue
+        # Skip short ALL-CAPS abbreviations (2-5 chars) unless valid team name
+        if stripped.isupper() and 2 <= len(stripped) <= 5 and stripped not in VALID_SHORT_TEAMS:
+            continue
+        cleaned.append(stripped)
+    return cleaned
+
 
 def ensure_csv_exists():
     """Create betting_history.csv with headers if it doesn't exist."""
@@ -59,8 +100,26 @@ def ensure_csv_exists():
             writer.writerow(CSV_HEADERS)
 
 
+def _normalize_line(line_str: str) -> str:
+    """Normalize a bet line field for duplicate comparison.
+
+    Handles embedded newlines from garbled OCR by extracting the actual
+    spread line (e.g. 'Team +/-X.X') from the end of multi-line strings.
+    """
+    line_str = str(line_str).strip()
+    if "\n" in line_str:
+        # Search from end for the actual spread line
+        spread_re = re.compile(r"^(.+?)\s+[+-]\d+\.?\d*$")
+        for part in reversed(line_str.split("\n")):
+            part = part.strip()
+            if spread_re.match(part):
+                return part.upper()
+        return line_str.split("\n")[-1].strip().upper()
+    return line_str.upper()
+
+
 def append_bet(bet: dict):
-    """Append a bet row to betting_history.csv."""
+    """Append a bet row to betting_history.csv. Returns None if duplicate."""
     ensure_csv_exists()
     eastern = pytz.timezone("US/Eastern")
     today = datetime.now(eastern).strftime("%Y-%m-%d")
@@ -77,6 +136,21 @@ def append_bet(bet: dict):
         "payout": "",
         "profit": "",
     }
+
+    # Duplicate detection: check for matching (normalized line, wager, platform)
+    if os.path.exists(BETTING_HISTORY):
+        new_key = (_normalize_line(row["line"]), str(row["wager"]), row["platform"].upper())
+        with open(BETTING_HISTORY, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for existing in reader:
+                existing_key = (
+                    _normalize_line(existing.get("line", "")),
+                    str(existing.get("wager", "")),
+                    existing.get("platform", "").upper(),
+                )
+                if existing_key == new_key:
+                    logger.info(f"Duplicate bet skipped: {row['line']} {row['wager']} {row['platform']}")
+                    return None
 
     with open(BETTING_HISTORY, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
@@ -101,10 +175,14 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     finally:
         os.unlink(tmp_path)
 
-    # Combine OCR text lines
-    lines = [text for text, confidence, bbox in results if confidence > 0.3]
-    raw_text = "\n".join(lines)
-    logger.info(f"OCR text:\n{raw_text}")
+    # Combine OCR text lines (confidence threshold 0.5)
+    lines = [text for text, confidence, bbox in results if confidence > 0.5]
+    logger.info(f"OCR raw lines:\n{chr(10).join(lines)}")
+
+    # Clean junk lines before parsing
+    cleaned = _clean_ocr_text(lines)
+    raw_text = "\n".join(cleaned)
+    logger.info(f"OCR cleaned text:\n{raw_text}")
 
     return _parse_bet_slip_text(raw_text)
 
@@ -129,7 +207,11 @@ def _parse_dk_blocks(text: str) -> list[dict]:
     if not matches:
         return []
 
-    skip_teams = {"SPREAD", "DRAFTKINGS", "SPORTSBOOK", "LOST", "WON", "PUSH", "VOID", "OT"}
+    skip_teams = {
+        "SPREAD", "DRAFTKINGS", "SPORTSBOOK", "LOST", "WON", "PUSH", "VOID", "OT",
+        "SETTLED", "OPEN", "LIVE", "MY BETS", "MY POOLS", "BETTING GROUPS",
+        "SHARE", "THE CROWN IS YOURS", "FINAL",
+    }
     bets = []
 
     for i, match in enumerate(matches):
@@ -148,11 +230,74 @@ def _parse_dk_blocks(text: str) -> list[dict]:
 
         # Extract matchup from ALL-CAPS lines (DK lists teams on separate lines)
         team_lines = re.findall(r"^([A-Z][A-Z &'.]+)$", block, re.MULTILINE)
-        teams = [t.strip() for t in team_lines if t.strip() not in skip_teams and len(t.strip()) > 2]
+        teams = [
+            t.strip() for t in team_lines
+            if t.strip().upper() not in skip_teams
+            and (len(t.strip()) >= 4 or t.strip().upper() in VALID_SHORT_TEAMS)
+        ]
         game = f"{teams[0]} vs {teams[1]}" if len(teams) >= 2 else ""
 
         bets.append({
             "platform": "DraftKings",
+            "game": game,
+            "bet_type": "spread",
+            "line": f"{team} {spread}",
+            "odds": odds,
+            "wager": wager,
+        })
+
+    return bets
+
+
+def _parse_fd_blocks(text: str) -> list[dict]:
+    """Parse FanDuel bet slip using block-based approach.
+
+    FanDuel OCR layout:
+        Team Name +/-X.X    -NNN
+        Team1 @ Team2       DATE
+        $X.XX               $X.XX
+        TOTAL WAGER         WON ON FANDUEL / RETURNED
+    """
+    # Spread+odds on one line: "Team +/-X.X -NNN"
+    spread_line_re = re.compile(
+        r"^(.+?)\s*([+-]\d+\.?\d*)\s+([+-]\d{3,})\s*$", re.MULTILINE
+    )
+    matches = list(spread_line_re.finditer(text))
+    if not matches:
+        return []
+
+    bets = []
+    for i, match in enumerate(matches):
+        team = match.group(1).strip()
+        spread = match.group(2)
+        odds = match.group(3)
+
+        # Block of text between this match and the next
+        block_start = match.end()
+        block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[block_start:block_end]
+
+        # Matchup: "Team1 @ Team2" with optional trailing date
+        matchup_match = re.search(
+            r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+?)(?:\s+\d|$)",
+            block,
+        )
+        if matchup_match:
+            game = f"{matchup_match.group(1).strip()} vs {matchup_match.group(2).strip()}"
+        else:
+            game = ""
+
+        # Wager: first dollar amount in reasonable range
+        wager_amounts = re.findall(r"\$(\d+\.?\d{0,2})", block)
+        wager = 0
+        for amt_str in wager_amounts:
+            amt = float(amt_str)
+            if 0.25 <= amt <= 500:
+                wager = amt
+                break
+
+        bets.append({
+            "platform": "FanDuel",
             "game": game,
             "bet_type": "spread",
             "line": f"{team} {spread}",
@@ -232,6 +377,11 @@ def _parse_bet_slip_text(text: str) -> list[dict]:
     # Use platform-specific parser when available
     if platform == "DraftKings":
         bets = _parse_dk_blocks(text)
+        if bets:
+            return bets
+
+    if platform == "FanDuel":
+        bets = _parse_fd_blocks(text)
         if bets:
             return bets
 
@@ -385,7 +535,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/pending - Show pending bets\n"
         "/settle - Settle pending bets\n"
         "/today - Today's model picks\n"
-        "/record - W-L record and profit"
+        "/record - W-L record and profit\n"
+        "/delete N - Delete Nth pending bet"
     )
 
 
@@ -506,6 +657,48 @@ async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete the Nth pending bet. Usage: /delete N"""
+    if not context.args:
+        # Show numbered list of pending bets
+        if not os.path.exists(BETTING_HISTORY):
+            await update.message.reply_text("No betting history found.")
+            return
+        df = pd.read_csv(BETTING_HISTORY)
+        pending = df[df["result"] == "pending"]
+        if len(pending) == 0:
+            await update.message.reply_text("No pending bets to delete.")
+            return
+        lines = ["Pending bets:\n"]
+        for i, (_, row) in enumerate(pending.iterrows(), 1):
+            lines.append(f"  {i}. {row['date']} | {row['line']} | ${row['wager']:.2f} | {row['platform']}")
+        lines.append("\nUsage: /delete N")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    try:
+        n = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Usage: /delete N (where N is the pending bet number)")
+        return
+
+    df = pd.read_csv(BETTING_HISTORY)
+    pending_indices = df.index[df["result"] == "pending"].tolist()
+
+    if n < 1 or n > len(pending_indices):
+        await update.message.reply_text(f"Invalid number. There are {len(pending_indices)} pending bets.")
+        return
+
+    idx = pending_indices[n - 1]
+    deleted_row = df.loc[idx]
+    df = df.drop(idx)
+    df.to_csv(BETTING_HISTORY, index=False)
+
+    await update.message.reply_text(
+        f"Deleted pending bet #{n}: {deleted_row['line']} ${deleted_row['wager']:.2f} ({deleted_row['platform']})"
+    )
+
+
 # --- Message handlers ---
 
 
@@ -527,41 +720,88 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Could not parse bet slip: {e}")
         return
 
-    logged = []
+    # Filter to valid bets
+    valid_bets = []
     for bet in bets:
-        # If OCR couldn't parse structured data, show the raw text
         if bet.get("_raw_ocr") and (not bet.get("line") or not bet.get("wager")):
             await update.message.reply_text(
                 f"Could not auto-parse. OCR text:\n\n{bet['_raw_ocr']}\n\n"
                 "Try manual entry: FD TeamName +5.5 -110 1.25"
             )
             continue
-
         if not bet.get("line") or not bet.get("wager"):
             await update.message.reply_text(
                 f"Missing required fields in parsed bet: {json.dumps(bet, indent=2)}"
             )
             continue
+        valid_bets.append(bet)
 
-        row = append_bet(bet)
-        logged.append(
-            f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
-        )
+    if not valid_bets:
+        if not any(b.get("_raw_ocr") for b in bets):
+            await update.message.reply_text("No valid bets found in the screenshot.")
+        return
 
-    if logged:
-        await update.message.reply_text("\n".join(logged))
-    elif not any(b.get("_raw_ocr") for b in bets):
-        await update.message.reply_text("No valid bets found in the screenshot.")
+    # Single bet: log immediately
+    if len(valid_bets) == 1:
+        row = append_bet(valid_bets[0])
+        if row is None:
+            await update.message.reply_text("Duplicate bet -- already logged.")
+        else:
+            await update.message.reply_text(
+                f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
+            )
+        return
+
+    # Multiple bets: show numbered list and wait for selection
+    lines = [f"Found {len(valid_bets)} bets:\n"]
+    for i, bet in enumerate(valid_bets, 1):
+        lines.append(f"  {i}. {bet['line']}  {bet['odds']}  ${bet['wager']:.2f}  ({bet['platform']})")
+    lines.append("\nReply with numbers to log (e.g. '1 3') or 'all'.")
+
+    context.user_data["pending_bets"] = valid_bets
+    await update.message.reply_text("\n".join(lines))
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages (shorthand bet entry)."""
+    """Handle text messages (shorthand bet entry or pending bet selection)."""
     text = update.message.text.strip()
 
     # Ignore if it starts with / (command that wasn't recognized)
     if text.startswith("/"):
         await update.message.reply_text("Unknown command. Try /start for help.")
         return
+
+    # Handle pending multi-bet selection from a screenshot
+    pending_bets = context.user_data.get("pending_bets")
+    if pending_bets:
+        if text.lower() == "all":
+            indices = list(range(len(pending_bets)))
+        else:
+            try:
+                indices = [int(x) - 1 for x in text.split() if x.isdigit()]
+            except ValueError:
+                indices = []
+
+        if indices:
+            logged = []
+            dupes = 0
+            for idx in indices:
+                if 0 <= idx < len(pending_bets):
+                    row = append_bet(pending_bets[idx])
+                    if row is None:
+                        dupes += 1
+                    else:
+                        logged.append(
+                            f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
+                        )
+            msgs = []
+            if logged:
+                msgs.extend(logged)
+            if dupes:
+                msgs.append(f"{dupes} duplicate(s) skipped.")
+            context.user_data.pop("pending_bets", None)
+            await update.message.reply_text("\n".join(msgs) if msgs else "No bets logged.")
+            return
 
     bet = parse_shorthand(text)
     if bet is None:
@@ -573,6 +813,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     row = append_bet(bet)
+    if row is None:
+        await update.message.reply_text("Duplicate bet -- already logged.")
+        return
     await update.message.reply_text(
         f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
     )
@@ -594,6 +837,7 @@ def main():
     app.add_handler(CommandHandler("settle", cmd_settle))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("record", cmd_record))
+    app.add_handler(CommandHandler("delete", cmd_delete))
 
     # Messages
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
