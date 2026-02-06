@@ -73,7 +73,8 @@ JUNK_PATTERNS = [
     re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$"),  # dates like 1/30/26
     re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", re.IGNORECASE),
     re.compile(r"^\d[\d\s]*$"),  # score lines (just digits and spaces)
-    re.compile(r"^\$\d+\.\d+\s*\+?\s*$"),  # balance display like "$12.10 +"
+    re.compile(r"^\$\d+\.\d+\s*\+\s*$"),  # balance display with + sign like "$12.10 +"
+    re.compile(r"^\$\d{2,}\.\d+$"),  # large balances like "$42.44" (2+ digits before decimal)
     re.compile(r"^[•+]\s*Share", re.IGNORECASE),  # share buttons
     re.compile(r"^\d+\s+Share", re.IGNORECASE),  # "4 Share"
 ]
@@ -195,12 +196,17 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     lines = [text for text, confidence, bbox in results if confidence > 0.5]
     logger.info(f"OCR raw lines:\n{chr(10).join(lines)}")
 
+    # Detect platform from RAW text (before cleaning removes identifiers)
+    raw_text_for_detection = "\n".join(lines)
+    platform = _detect_platform(raw_text_for_detection)
+    logger.info(f"Detected platform: {platform}")
+
     # Clean junk lines before parsing
     cleaned = _clean_ocr_text(lines)
-    raw_text = "\n".join(cleaned)
-    logger.info(f"OCR cleaned text:\n{raw_text}")
+    cleaned_text = "\n".join(cleaned)
+    logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    return _parse_bet_slip_text(raw_text)
+    return _parse_bet_slip_text(cleaned_text, platform=platform)
 
 
 def _parse_dk_blocks(text: str) -> list[dict]:
@@ -242,7 +248,8 @@ def _parse_dk_blocks(text: str) -> list[dict]:
         block = text[block_start:block_end]
 
         # Extract wager -- require "Wager:" prefix
-        wager_match = re.search(r"Wager:\s*\$?(\d+\.?\d*)", block)
+        # Handle formats: "Wager: $1.00", "Wager:\n$1.00", "Wager: $1.00 / Paid: $1.89"
+        wager_match = re.search(r"Wager:\s*[\n\s]*\$?(\d+\.?\d*)", block)
         wager = float(wager_match.group(1)) if wager_match else 0
 
         # Extract matchup from ALL-CAPS lines (DK lists teams on separate lines)
@@ -379,28 +386,34 @@ def _parse_kalshi_blocks(text: str) -> list[dict]:
     return bets
 
 
-def _parse_bet_slip_text(text: str) -> list[dict]:
-    """Parse raw OCR text from a bet slip into structured bet data."""
-    # Detect platform
+def _detect_platform(text: str) -> str:
+    """Detect betting platform from OCR text."""
     text_lower = text.lower()
     if "draftkings" in text_lower:
-        platform = "DraftKings"
+        return "DraftKings"
     elif "fanduel" in text_lower:
-        platform = "FanDuel"
+        return "FanDuel"
     elif "kalshi" in text_lower or "wins by over" in text_lower:
-        platform = "Kalshi"
+        return "Kalshi"
     elif "betmgm" in text_lower:
-        platform = "BetMGM"
+        return "BetMGM"
     elif "caesars" in text_lower:
-        platform = "Caesars"
+        return "Caesars"
     # FanDuel heuristics -- FD screenshots often lack the "FanDuel" word
     elif "spread betting" in text_lower or "total wager" in text_lower:
-        platform = "FanDuel"
+        return "FanDuel"
     # DraftKings heuristics -- DK format uses "Wager:" prefix
-    elif re.search(r"Wager:\s*\$", text):
-        platform = "DraftKings"
+    elif re.search(r"Wager:\s*\$?", text):
+        return "DraftKings"
     else:
-        platform = "Unknown"
+        return "Unknown"
+
+
+def _parse_bet_slip_text(text: str, platform: str = None) -> list[dict]:
+    """Parse raw OCR text from a bet slip into structured bet data."""
+    # Use provided platform or try to detect from text
+    if platform is None:
+        platform = _detect_platform(text)
 
     # Use platform-specific parser when available
     if platform == "DraftKings":
