@@ -19,6 +19,7 @@ import functools
 from datetime import datetime, timedelta
 from io import BytesIO
 
+import httpx
 import pytz
 import pandas as pd
 from dotenv import load_dotenv
@@ -152,6 +153,61 @@ def _normalize_line(line_str: str) -> str:
                 return part.upper()
         return line_str.split("\n")[-1].strip().upper()
     return line_str.upper()
+
+
+def update_bet_result(bet: dict) -> str | None:
+    """
+    Update a pending bet with its result, matching by line and wager.
+
+    Returns a status message, or None if no matching pending bet found.
+    """
+    if not os.path.exists(BETTING_HISTORY):
+        return None
+
+    new_key = (_normalize_line(bet["line"]), str(bet["wager"]), bet["platform"].upper())
+
+    with open(BETTING_HISTORY, "r", newline="") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            reader = list(csv.DictReader(f))
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    # Find matching pending bet
+    matched_idx = None
+    for i, row in enumerate(reader):
+        if row.get("result") != "pending":
+            continue
+        existing_key = (
+            _normalize_line(row.get("line", "")),
+            str(row.get("wager", "")),
+            row.get("platform", "").upper(),
+        )
+        if existing_key == new_key:
+            matched_idx = i
+            break
+
+    if matched_idx is None:
+        return None
+
+    # Update the matched row
+    reader[matched_idx]["result"] = bet["result"]
+    reader[matched_idx]["payout"] = bet.get("payout", "")
+    reader[matched_idx]["profit"] = bet.get("profit", "")
+
+    # Write back
+    with open(BETTING_HISTORY, "w", newline="") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+            writer.writeheader()
+            writer.writerows(reader)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    result = bet["result"]
+    profit = bet.get("profit", 0)
+    return f"Updated: {bet['line']} -> {result.upper()} ({profit:+.2f}U)"
 
 
 def append_bet(bet: dict):
@@ -518,6 +574,80 @@ def _parse_bet_slip_text(text: str, platform: str = None) -> list[dict]:
     return bets
 
 
+def parse_dk_share_url(url: str) -> dict | None:
+    """
+    Parse a DraftKings social share URL to extract bet result data.
+
+    URL format: https://sportsbook.draftkings.com/social/post/{uuid}?slipAdd
+
+    Returns a dict with bet details and result, or None if parsing fails.
+    """
+    try:
+        # Fetch the page
+        resp = httpx.get(url, follow_redirects=True, timeout=10)
+        resp.raise_for_status()
+        html = resp.text
+
+        # DraftKings embeds bet data in meta tags and structured data
+        # Look for Open Graph tags first
+        og_title_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
+        og_desc_match = re.search(r'<meta\s+property="og:description"\s+content="([^"]+)"', html)
+
+        # Also try to find bet details in the page content
+        # Pattern: "Team +/-X.X" spread line
+        spread_match = re.search(r'([A-Za-z][A-Za-z\s&\'.()-]+?)\s+([+-]\d+\.?\d*)\s*', html)
+
+        # Pattern: odds like "-115" or "+150"
+        odds_match = re.search(r'["\s]([+-]\d{3})["\s<]', html)
+
+        # Pattern: wager amount
+        wager_match = re.search(r'[Ww]ager[:\s]*\$?(\d+\.?\d*)', html)
+
+        # Pattern: payout/paid amount
+        payout_match = re.search(r'[Pp]aid[:\s]*\$?(\d+\.?\d*)', html)
+
+        # Pattern: result (Won/Lost/Push)
+        result_match = re.search(r'\b(Won|Lost|Push|Void)\b', html, re.IGNORECASE)
+
+        if not spread_match:
+            logger.warning(f"Could not parse spread from DK share URL: {url}")
+            return None
+
+        team = spread_match.group(1).strip()
+        spread = spread_match.group(2)
+        odds = odds_match.group(1) if odds_match else "n/a"
+        wager = float(wager_match.group(1)) if wager_match else 0
+        payout = float(payout_match.group(1)) if payout_match else 0
+        result = result_match.group(1).lower() if result_match else "pending"
+
+        # Calculate profit
+        if result == "won":
+            profit = payout - wager
+        elif result == "lost":
+            profit = -wager
+        else:
+            profit = 0
+
+        return {
+            "platform": "DraftKings",
+            "game": "",
+            "bet_type": "spread",
+            "line": f"{team} {spread}",
+            "odds": odds,
+            "wager": wager,
+            "result": result,
+            "payout": payout,
+            "profit": round(profit, 2),
+        }
+
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP error fetching DK share URL: {e}")
+        return None
+    except Exception as e:
+        logger.exception(f"Error parsing DK share URL: {e}")
+        return None
+
+
 def parse_shorthand(text: str) -> dict:
     """
     Parse shorthand text entry like:
@@ -600,7 +730,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "CBB Bet Logger\n\n"
         "Send a bet slip screenshot to log a bet.\n"
-        "Or type shorthand: FD PROV +15.5 -110 1.25\n\n"
+        "Or type shorthand: FD PROV +15.5 -110 1.25\n"
+        "Or share a DraftKings result link to update bets.\n\n"
         "Commands:\n"
         "/pending - Show pending bets\n"
         "/settle - Settle pending bets\n"
@@ -850,13 +981,48 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized_only
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages (shorthand bet entry or pending bet selection)."""
+    """Handle text messages (shorthand bet entry, pending bet selection, or share URLs)."""
     text = update.message.text.strip()
 
     # Ignore if it starts with / (command that wasn't recognized)
     if text.startswith("/"):
         await update.message.reply_text("Unknown command. Try /start for help.")
         return
+
+    # Check for DraftKings social share URL
+    dk_url_match = re.search(r'https://sportsbook\.draftkings\.com/social/post/[a-zA-Z0-9-]+', text)
+    if dk_url_match:
+        await update.message.reply_text("Parsing DraftKings share link...")
+        bet = parse_dk_share_url(dk_url_match.group(0))
+        if bet is None:
+            await update.message.reply_text(
+                "Could not parse DraftKings share link. Try screenshot instead."
+            )
+            return
+
+        # If this is a settled bet (won/lost), try to update existing pending bet
+        if bet.get("result") in ("won", "lost", "push", "void"):
+            update_msg = update_bet_result(bet)
+            if update_msg:
+                await update.message.reply_text(update_msg)
+                return
+            else:
+                # No matching pending bet - might be a new bet that's already settled
+                await update.message.reply_text(
+                    f"No matching pending bet found for: {bet['line']} ${bet['wager']:.2f}\n"
+                    f"Result: {bet['result'].upper()} (profit: {bet.get('profit', 0):+.2f}U)"
+                )
+                return
+        else:
+            # It's a new pending bet - log it
+            row = append_bet(bet)
+            if row is None:
+                await update.message.reply_text("Duplicate bet -- already logged.")
+            else:
+                await update.message.reply_text(
+                    f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
+                )
+            return
 
     # Handle pending multi-bet selection from a screenshot
     pending_bets = context.user_data.get("pending_bets")
