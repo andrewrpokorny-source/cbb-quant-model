@@ -190,6 +190,12 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
     """
     Get spread from Kalshi markets when ESPN doesn't have one.
 
+    Args:
+        mapper: MarketMapper instance for finding Kalshi markets
+        home_team: Home team name from ESPN
+        away_team: Away team name from ESPN
+        game_date: Game datetime for market matching
+
     Returns:
         Tuple of (spread_value, favorite_is_home) or (None, None) if not found
     """
@@ -203,6 +209,7 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         spread_markets = [m for m in all_markets if "SPREAD" in m.get("ticker", "")]
 
         if not spread_markets:
+            print(f"      No Kalshi SPREAD markets found for {away_team} @ {home_team}")
             return None, None
 
         # Get the first spread market and extract info
@@ -220,9 +227,16 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         elif away_keyword in title:
             return floor_strike, False
 
+        print(f"      Could not determine favorite from Kalshi market title: {title}")
+        return None, None
+    except ImportError as e:
+        print(f"      Kalshi module not available: {e}")
+        return None, None
+    except (KeyError, AttributeError) as e:
+        print(f"      Kalshi market data format issue for {away_team} @ {home_team}: {e}")
         return None, None
     except Exception as e:
-        print(f"      Error getting Kalshi spread: {e}")
+        print(f"      Unexpected error getting Kalshi spread for {away_team} @ {home_team}: {type(e).__name__}: {e}")
         return None, None
 
 
@@ -329,8 +343,14 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                 "Kalshi_Side": kalshi_side,
                 "Kalshi_Title": title,
             }
+    except ImportError as e:
+        print(f"      Kalshi module not available: {e}")
+    except (KeyError, AttributeError) as e:
+        print(f"      Kalshi market data format issue: {e}")
+    except ZeroDivisionError as e:
+        print(f"      Kalshi calculation error (division by zero): {e}")
     except Exception as e:
-        print(f"      Kalshi matching error: {e}")
+        print(f"      Unexpected Kalshi error for {away_team} @ {home_team}: {type(e).__name__}: {e}")
 
     return result
 

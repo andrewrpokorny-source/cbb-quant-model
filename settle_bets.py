@@ -158,13 +158,7 @@ def determine_bet_result(parsed_line, game_result, game_str):
     picked_away = _team_matches(team, away_name)
 
     if not picked_home and not picked_away:
-        # Try the other team in the line for Kalshi NO bets
-        # For "UConn -15.5 NO" on "Providence vs UConn", the team is UConn
-        # We need to find which side UConn is on
-        picked_home = _team_matches(team, home_name)
-        picked_away = _team_matches(team, away_name)
-        if not picked_home and not picked_away:
-            return None
+        return None
 
     if side is not None:
         # Kalshi bet: the spread is a threshold for the named team's margin

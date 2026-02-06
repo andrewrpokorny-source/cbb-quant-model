@@ -12,8 +12,10 @@ import os
 import re
 import csv
 import json
+import fcntl
 import tempfile
 import logging
+import functools
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -40,6 +42,23 @@ DAILY_PREDICTIONS = os.path.join(BASE_DIR, "daily_predictions.csv")
 PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# User authorization: comma-separated list of allowed Telegram user IDs
+_allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USERS", "")
+ALLOWED_USER_IDS = set(int(uid.strip()) for uid in _allowed_users_str.split(",") if uid.strip())
+
+
+def authorized_only(func):
+    """Decorator to restrict access to authorized users only."""
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id if update.effective_user else None
+        if ALLOWED_USER_IDS and user_id not in ALLOWED_USER_IDS:
+            logger.warning(f"Unauthorized access attempt from user {user_id}")
+            await update.message.reply_text("Unauthorized. Contact the bot owner for access.")
+            return
+        return await func(update, context)
+    return wrapper
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -136,7 +155,11 @@ def _normalize_line(line_str: str) -> str:
 
 
 def append_bet(bet: dict):
-    """Append a bet row to betting_history.csv. Returns None if duplicate."""
+    """Append a bet row to betting_history.csv. Returns None if duplicate.
+
+    Uses file locking to prevent race conditions when multiple messages
+    arrive simultaneously.
+    """
     ensure_csv_exists()
     eastern = pytz.timezone("US/Eastern")
     today = datetime.now(eastern).strftime("%Y-%m-%d")
@@ -154,10 +177,12 @@ def append_bet(bet: dict):
         "profit": "",
     }
 
-    # Duplicate detection: check for matching (normalized line, wager, platform)
-    if os.path.exists(BETTING_HISTORY):
-        new_key = (_normalize_line(row["line"]), str(row["wager"]), row["platform"].upper())
-        with open(BETTING_HISTORY, "r", newline="") as f:
+    # Use file locking to prevent race conditions
+    with open(BETTING_HISTORY, "r+", newline="") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            # Check for duplicates while holding the lock
+            new_key = (_normalize_line(row["line"]), str(row["wager"]), row["platform"].upper())
             reader = csv.DictReader(f)
             for existing in reader:
                 existing_key = (
@@ -169,9 +194,12 @@ def append_bet(bet: dict):
                     logger.info(f"Duplicate bet skipped: {row['line']} {row['wager']} {row['platform']}")
                     return None
 
-    with open(BETTING_HISTORY, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        writer.writerow(row)
+            # Seek to end and append while still holding the lock
+            f.seek(0, 2)
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+            writer.writerow(row)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     return row
 
@@ -566,6 +594,7 @@ def parse_shorthand(text: str) -> dict:
 # --- Command handlers ---
 
 
+@authorized_only
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     await update.message.reply_text(
@@ -581,6 +610,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@authorized_only
 async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show pending bets."""
     if not os.path.exists(BETTING_HISTORY):
@@ -601,6 +631,7 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized_only
 async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Settle all pending bets."""
     await update.message.reply_text("Settling pending bets...")
@@ -618,6 +649,7 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(msg_parts))
 
 
+@authorized_only
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show today's model predictions."""
     if not os.path.exists(DAILY_PREDICTIONS):
@@ -655,6 +687,7 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
+@authorized_only
 async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show W-L record and profit from betting_history.csv."""
     if not os.path.exists(BETTING_HISTORY):
@@ -698,6 +731,7 @@ async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized_only
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Delete the Nth pending bet. Usage: /delete N"""
     if not context.args:
@@ -743,6 +777,7 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Message handlers ---
 
 
+@authorized_only
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bet slip screenshot via macOS OCR."""
     await update.message.reply_text("Parsing bet slip...")
@@ -756,9 +791,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         bets = parse_bet_screenshot(image_bytes)
+    except (IOError, OSError) as e:
+        logger.error(f"File I/O error during OCR: {e}")
+        await update.message.reply_text(
+            "Could not process image file. Please try a different screenshot."
+        )
+        return
     except Exception as e:
-        logger.error(f"Error parsing screenshot: {e}")
-        await update.message.reply_text(f"Could not parse bet slip: {e}")
+        # Log full exception for debugging, but don't expose internals to user
+        logger.exception(f"Unexpected error parsing screenshot: {e}")
+        await update.message.reply_text(
+            "Could not parse bet slip. Please try again or use manual entry:\n"
+            "FD TeamName +5.5 -110 1.25"
+        )
         return
 
     # Filter to valid bets
@@ -803,6 +848,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized_only
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages (shorthand bet entry or pending bet selection)."""
     text = update.message.text.strip()

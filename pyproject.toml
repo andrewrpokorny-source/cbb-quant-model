@@ -18,6 +18,9 @@ dependencies = [
     "ocrmac>=1.0.0",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
 [project.scripts]
 train = "model:train_and_evaluate"
 predict = "predict:main"
