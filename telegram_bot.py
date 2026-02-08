@@ -65,6 +65,16 @@ def authorized_only(func):
 
 LOG_FILE = os.path.join(BASE_DIR, "telegram_bot.log")
 
+
+class _RedactTokenFilter(logging.Filter):
+    """Strip bot tokens from log messages."""
+    _pattern = re.compile(r"/bot\d+:[A-Za-z0-9_-]+/")
+
+    def filter(self, record):
+        record.msg = self._pattern.sub("/bot***REDACTED***/", str(record.msg))
+        return True
+
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -75,6 +85,8 @@ logging.basicConfig(
         ),
     ],
 )
+for handler in logging.root.handlers:
+    handler.addFilter(_RedactTokenFilter())
 logger = logging.getLogger(__name__)
 
 # CSV headers for betting_history.csv
