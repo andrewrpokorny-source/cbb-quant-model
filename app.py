@@ -356,8 +356,39 @@ def should_refresh_predictions():
 # Run predictions once on startup (always run to get line shopping data)
 if 'predictions_loaded' not in st.session_state:
     with st.spinner("Loading predictions..."):
-        predict.main()
+        predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
     st.session_state.predictions_loaded = True
+
+# Check for games needing manual spreads
+games_needing_spreads = predict.get_games_needing_spreads()
+if games_needing_spreads:
+    st.markdown('<div class="section-title">Missing Spreads</div>', unsafe_allow_html=True)
+    st.caption(
+        "ESPN has no line for these games. Enter the spread you see "
+        "(e.g. \"-7.5\" if home team is favored, \"+7.5\" if away team is favored)."
+    )
+    with st.form("spread_overrides_form"):
+        override_inputs = {}
+        for game in games_needing_spreads:
+            matchup = game['matchup']
+            override_inputs[matchup] = st.text_input(
+                matchup,
+                placeholder="e.g. -7.5 (home fav) or +3 (away fav)",
+                key=f"spread_{game['id']}",
+            )
+        submitted = st.form_submit_button("Apply & Re-run")
+        if submitted:
+            overrides = st.session_state.get('spread_overrides', {})
+            for matchup, val in override_inputs.items():
+                val = val.strip()
+                if val:
+                    try:
+                        overrides[matchup] = float(val)
+                    except ValueError:
+                        st.error(f"Invalid spread for {matchup}: {val}")
+            st.session_state.spread_overrides = overrides
+            st.session_state.predictions_loaded = False
+            st.rerun()
 
 # Get predictions with line shopping data
 predictions_with_line_shopping = predict.get_latest_predictions()
@@ -526,7 +557,7 @@ if os.path.exists(PRED_FILE):
 
     st.dataframe(
         table_df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         height=400,
         column_config={
@@ -544,7 +575,7 @@ if os.path.exists(PRED_FILE):
         if st.button("Refresh"):
             with st.spinner("Running model..."):
                 predict.OUTPUT_FILE = PRED_FILE
-                predict.main()
+                predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
             st.rerun()
 
 else:
@@ -552,7 +583,7 @@ else:
     if st.button("Run Prediction Engine"):
         with st.spinner("Calculating..."):
             predict.OUTPUT_FILE = PRED_FILE
-            predict.main()
+            predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
         st.rerun()
 
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -568,7 +599,7 @@ if os.path.exists(BET_HIST_FILE):
             st.markdown(f'<div class="section-title">Pending Bets ({pending_count})</div>', unsafe_allow_html=True)
             pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
             pending_display["wager"] = pending_display["wager"].apply(lambda x: f"${x:.2f}")
-            st.dataframe(pending_display, use_container_width=True, hide_index=True)
+            st.dataframe(pending_display, width='stretch', hide_index=True)
 
             if st.button("Settle Bets"):
                 with st.spinner("Settling pending bets via ESPN scores..."):
@@ -590,7 +621,7 @@ if os.path.exists(BET_HIST_FILE):
             )
             recent["P/L"] = recent["profit"].apply(lambda x: f"{float(x):+.2f}")
             display_cols = ["date", "platform", "line", "odds", "wager", "Result", "P/L"]
-            st.dataframe(recent[display_cols], use_container_width=True, hide_index=True)
+            st.dataframe(recent[display_cols], width='stretch', hide_index=True)
 
             # Summary stats
             wins = len(settled[settled["result"] == "win"])
@@ -678,7 +709,7 @@ with st.expander("Performance History"):
         ).configure_view(
             strokeWidth=0
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width='stretch')
 
         with st.expander("View Bet History"):
             hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
@@ -692,7 +723,7 @@ with st.expander("Performance History"):
             )
             df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
 
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            st.dataframe(df_display, width='stretch', hide_index=True)
 
     else:
         st.info("No performance data yet.")

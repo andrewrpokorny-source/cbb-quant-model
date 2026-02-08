@@ -28,6 +28,9 @@ BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college
 # Module-level storage for predictions with line shopping data (for app.py access)
 _latest_predictions = None
 
+# Games that need manual spread entry (no ESPN spread available)
+_games_needing_spreads = None
+
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
 with open(TEAM_MAP_FILE, 'r') as f:
@@ -399,13 +402,55 @@ def calculate_production_features(row, h_stats, a_stats):
 
     return row
 
-def main():
+def fetch_games_needing_spreads():
+    """Fetch schedule and return games that have no ESPN spread.
+
+    Returns list of dicts with 'away_raw', 'home_raw', 'date', 'id' for each
+    game missing a spread, or empty list if all games have spreads.
+    """
+    schedule = fetch_schedule()
+    missing = []
+    for g in schedule:
+        if not g.get('has_espn_spread', False):
+            try:
+                eastern = pytz.timezone('US/Eastern')
+                local_ts = g['date'].tz_convert(eastern)
+                time_str = local_ts.strftime("%m/%d %I:%M %p")
+            except (TypeError, AttributeError):
+                time_str = g['date'].strftime("%m/%d %I:%M %p")
+            missing.append({
+                'id': g['id'],
+                'away_raw': g['away_raw'],
+                'home_raw': g['home_raw'],
+                'date': g['date'],
+                'time_str': time_str,
+                'matchup': f"{g['away_raw']} @ {g['home_raw']}",
+            })
+    return missing
+
+
+def get_games_needing_spreads():
+    """Return cached list of games needing manual spreads."""
+    return _games_needing_spreads
+
+
+def main(spread_overrides=None):
+    """Run prediction engine.
+
+    Args:
+        spread_overrides: dict mapping game matchup string to home-team spread float.
+            e.g. {"Northwestern Wildcats @ Iowa Hawkeyes": -7.5}
+            Convention: negative = home favored, positive = away favored.
+    """
+    if spread_overrides is None:
+        spread_overrides = {}
+
     print("--- PREDICTION ENGINE (GBM + Sigmoid Calibration, 15 features) ---")
-    
+
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
-    
+
     # Load model and data
     try:
         model = joblib.load(MODEL_FILE)
@@ -413,7 +458,7 @@ def main():
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
         return
-    
+
     try:
         df_hist = pd.read_csv(DATA_FILE)
         print(f"   Data loaded: {len(df_hist)} historical games")
@@ -423,16 +468,16 @@ def main():
 
     known_teams = df_hist['team'].unique()
     team_stats = get_latest_stats(df_hist)
-    
+
     # Check data freshness
     df_hist['date'] = pd.to_datetime(df_hist['date'])
     last_data_date = df_hist['date'].max()
     print(f"   Data current through: {last_data_date.strftime('%Y-%m-%d')}")
-    
+
     days_old = (datetime.now() - last_data_date).days
     if days_old > 2:
         print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
-    
+
     # Fetch schedule
     schedule = fetch_schedule()
     games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
@@ -443,6 +488,7 @@ def main():
 
     predictions = []
     skipped = []
+    games_needing_spreads = []
 
     for g in schedule:
         # Match team names to historical data
@@ -458,16 +504,21 @@ def main():
             skipped.append(f"{g['away_raw']} @ {g['home_raw']} (No historical stats)")
             continue
 
-        # If no ESPN spread, try to get from Kalshi
+        # If no ESPN spread, check for manual override
+        matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
         if not g.get('has_espn_spread', False):
-            kalshi_spread, fav_is_home = get_kalshi_spread(
-                kalshi_mapper, g['home_raw'], g['away_raw'], g['date']
-            )
-            if kalshi_spread is not None:
-                g['spread'] = kalshi_spread
-                g['raw_odds'] = f"Kalshi {kalshi_spread}"
+            if matchup_key in spread_overrides:
+                g['spread'] = spread_overrides[matchup_key]
+                g['raw_odds'] = f"Manual {g['spread']}"
+                g['has_espn_spread'] = True  # Treat as valid
             else:
-                skipped.append(f"{g['away_raw']} @ {g['home_raw']} (No spread available)")
+                games_needing_spreads.append({
+                    'id': g['id'],
+                    'away_raw': g['away_raw'],
+                    'home_raw': g['home_raw'],
+                    'matchup': matchup_key,
+                })
+                skipped.append(f"{matchup_key} (No spread -- needs manual entry)")
                 continue
 
         # Build feature row
@@ -644,6 +695,12 @@ def main():
         print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+    # Store games that still need manual spreads
+    global _games_needing_spreads
+    _games_needing_spreads = games_needing_spreads
+    if games_needing_spreads:
+        print(f"\n{len(games_needing_spreads)} game(s) need manual spread entry.")
 
 def get_latest_predictions():
     """Return the latest predictions DataFrame with line shopping data."""
