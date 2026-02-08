@@ -13,8 +13,10 @@ import re
 import csv
 import json
 import fcntl
+import base64
 import tempfile
 import logging
+import logging.handlers
 import functools
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -61,9 +63,17 @@ def authorized_only(func):
         return await func(update, context)
     return wrapper
 
+LOG_FILE = os.path.join(BASE_DIR, "telegram_bot.log")
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),
+        logging.handlers.RotatingFileHandler(
+            LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3
+        ),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -580,71 +590,103 @@ def parse_dk_share_url(url: str) -> dict | None:
 
     URL format: https://sportsbook.draftkings.com/social/post/{uuid}?slipAdd
 
+    Uses the DK social API to fetch structured bet data (the share pages are
+    JS-rendered SPAs, so plain HTTP fetching doesn't work).
+
     Returns a dict with bet details and result, or None if parsing fails.
     """
+    # Extract the post UUID from the URL
+    uuid_match = re.search(r'/social/post/([a-zA-Z0-9-]+)', url)
+    if not uuid_match:
+        logger.warning(f"Could not extract post key from DK share URL: {url}")
+        return None
+
+    post_key = uuid_match.group(1)
+
     try:
-        # Fetch the page
-        resp = httpx.get(url, follow_redirects=True, timeout=10)
+        resp = httpx.post(
+            "https://api.draftkings.com/comments/feed/post/details.json",
+            json={
+                "postKey": post_key,
+                "replyDepth": 1,
+                "replyScrolling": {"limit": 10, "sort": "desc"},
+            },
+            timeout=10,
+        )
         resp.raise_for_status()
-        html = resp.text
+        data = resp.json()
 
-        # DraftKings embeds bet data in meta tags and structured data
-        # Look for Open Graph tags first
-        og_title_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
-        og_desc_match = re.search(r'<meta\s+property="og:description"\s+content="([^"]+)"', html)
-
-        # Also try to find bet details in the page content
-        # Pattern: "Team +/-X.X" spread line
-        spread_match = re.search(r'([A-Za-z][A-Za-z\s&\'.()-]+?)\s+([+-]\d+\.?\d*)\s*', html)
-
-        # Pattern: odds like "-115" or "+150"
-        odds_match = re.search(r'["\s]([+-]\d{3})["\s<]', html)
-
-        # Pattern: wager amount
-        wager_match = re.search(r'[Ww]ager[:\s]*\$?(\d+\.?\d*)', html)
-
-        # Pattern: payout/paid amount
-        payout_match = re.search(r'[Pp]aid[:\s]*\$?(\d+\.?\d*)', html)
-
-        # Pattern: result (Won/Lost/Push)
-        result_match = re.search(r'\b(Won|Lost|Push|Void)\b', html, re.IGNORECASE)
-
-        if not spread_match:
-            logger.warning(f"Could not parse spread from DK share URL: {url}")
+        if not data.get("success", False):
+            logger.warning(f"DK API returned failure for post {post_key}")
             return None
 
-        team = spread_match.group(1).strip()
-        spread = spread_match.group(2)
-        odds = odds_match.group(1) if odds_match else "n/a"
-        wager = float(wager_match.group(1)) if wager_match else 0
-        payout = float(payout_match.group(1)) if payout_match else 0
-        result = result_match.group(1).lower() if result_match else "pending"
+        # Bet data is base64-encoded JSON in postEntries
+        post = data["post"]
+        entries = post.get("postEntries", [])
+        if not entries:
+            logger.warning(f"No post entries in DK share: {post_key}")
+            return None
+
+        props = entries[0].get("metadataProperties", {}).get("properties", {})
+        bet_b64 = props.get("value", "")
+        if not bet_b64:
+            logger.warning(f"No betJSON value in DK share: {post_key}")
+            return None
+
+        bet_data = json.loads(base64.b64decode(bet_b64))
+
+        status = bet_data.get("status", "pending")
+        # Map DK statuses to our format
+        status_map = {"won": "won", "lost": "lost", "pushed": "void",
+                      "voided": "void", "cashout": "void"}
+        result = status_map.get(status, status)
+
+        stake = float(bet_data.get("stake", 0))
+        payout = float(bet_data.get("payout", 0))
+
+        # Extract bet details from combinationOutcomes
+        outcomes = bet_data.get("combinationOutcomes", [])
+        if not outcomes:
+            logger.warning(f"No outcomes in DK bet data: {post_key}")
+            return None
+
+        outcome = outcomes[0]
+        line = outcome.get("outcomeLabel", "")
+        odds = outcome.get("playedOddsAmerican", "n/a")
+        bet_type = outcome.get("offerLabel", "spread").lower()
+
+        # Build game string from events
+        events = bet_data.get("events", [])
+        game = events[0].get("name", "").replace(" @ ", " vs ") if events else ""
 
         # Calculate profit
         if result == "won":
-            profit = payout - wager
+            profit = payout - stake
         elif result == "lost":
-            profit = -wager
+            profit = -stake
         else:
             profit = 0
 
         return {
             "platform": "DraftKings",
-            "game": "",
-            "bet_type": "spread",
-            "line": f"{team} {spread}",
+            "game": game,
+            "bet_type": bet_type,
+            "line": line,
             "odds": odds,
-            "wager": wager,
+            "wager": stake,
             "result": result,
             "payout": payout,
             "profit": round(profit, 2),
         }
 
     except httpx.HTTPError as e:
-        logger.error(f"HTTP error fetching DK share URL: {e}")
+        logger.error(f"HTTP error fetching DK share API: {e}")
+        return None
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        logger.error(f"Error parsing DK share API response: {e}")
         return None
     except Exception as e:
-        logger.exception(f"Error parsing DK share URL: {e}")
+        logger.exception(f"Unexpected error parsing DK share URL: {e}")
         return None
 
 
@@ -983,6 +1025,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages (shorthand bet entry, pending bet selection, or share URLs)."""
     text = update.message.text.strip()
+    user = update.effective_user
+    logger.info(f"Text from {user.id} ({user.username}): {text}")
 
     # Ignore if it starts with / (command that wasn't recognized)
     if text.startswith("/"):
