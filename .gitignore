@@ -6,5 +6,13 @@ __pycache__/
 # Secrets
 .env
 *.pem
+
+# Generated artifacts
+*.pkl
+predictions_*.csv
+performance_log.csv
+daily_predictions.csv
+telegram_bot.log
+
 IMPROVEMENT_PLAN.md
 betting_history.csv

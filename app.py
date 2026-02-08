@@ -18,7 +18,7 @@ PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 
-st.set_page_config(page_title="CBB Quant Edge", page_icon="🏀", layout="centered")
+st.set_page_config(page_title="CBB Quant Edge", layout="centered")
 
 # --- CUSTOM STYLING ---
 st.markdown("""
@@ -364,7 +364,7 @@ predictions_with_line_shopping = predict.get_latest_predictions()
 
 # --- HEADER ---
 st.markdown('<div class="main-header">CBB Quant Edge</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis · v4.0</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis</div>', unsafe_allow_html=True)
 
 # ==========================================
 # MAIN CONTENT - No tabs, prioritized layout
@@ -607,7 +607,7 @@ if os.path.exists(BET_HIST_FILE):
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- PERFORMANCE SECTION (collapsible) ---
-with st.expander("📈 Performance History"):
+with st.expander("Performance History"):
     if os.path.exists(PERF_FILE):
         hist = pd.read_csv(PERF_FILE)
         hist['date'] = pd.to_datetime(hist['date'])
@@ -681,7 +681,7 @@ with st.expander("📈 Performance History"):
         st.altair_chart(chart, use_container_width=True)
 
         with st.expander("View Bet History"):
-            hist['Result'] = hist['pick_correct'].apply(lambda x: "✓ Win" if x else "✗ Loss")
+            hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
             hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
             hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
             hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)

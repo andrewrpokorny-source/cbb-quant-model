@@ -10,12 +10,15 @@ Usage:
 
 import os
 import re
+import logging
 import pandas as pd
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import pytz
 
 from grade_predictions import fetch_completed_games
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
@@ -241,16 +244,16 @@ def calculate_payout(odds_str, wager, result):
     odds_str = str(odds_str).strip()
 
     if odds_str in ("n/a", "nan", ""):
-        # Kalshi bet — we can't calculate exact payout without the price
-        # Return wager * 2 as approximate (will be overridden if price is known)
-        # In practice, Kalshi payouts are already recorded or we use the original payout
-        return round(wager * 2, 2), round(wager, 2)
+        # Odds unavailable (e.g. Kalshi bets) -- cannot calculate accurate payout.
+        # Return zeros so the bet is flagged for manual review.
+        logger.warning(f"Cannot calculate payout: odds are '{odds_str}' for wager={wager}")
+        return 0.00, 0.00
 
     try:
         odds = int(float(odds_str))
     except (ValueError, TypeError):
-        # Fallback for non-parseable odds
-        return round(wager * 2, 2), round(wager, 2)
+        logger.warning(f"Cannot parse odds '{odds_str}' for wager={wager}")
+        return 0.00, 0.00
 
     if odds < 0:
         # Favorite: profit = wager * 100 / abs(odds)
@@ -280,7 +283,12 @@ def settle_pending_bets(csv_path=None):
     if not os.path.exists(csv_path):
         return {"settled": 0, "still_pending": 0, "details": ["No betting history file found."]}
 
-    df = pd.read_csv(csv_path)
+    try:
+        df = pd.read_csv(csv_path)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        logger.error(f"Could not read CSV {csv_path}: {e}")
+        return {"settled": 0, "still_pending": 0, "details": [f"CSV read error: {e}"]}
+
     pending = df[df["result"] == "pending"]
 
     if len(pending) == 0:
@@ -296,80 +304,97 @@ def settle_pending_bets(csv_path=None):
 
     fetched_dates = set()
     for date_str in pending_dates:
-        date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
-        date_obj = eastern.localize(date_obj)
+        try:
+            date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
+            date_obj = eastern.localize(date_obj)
+        except ValueError:
+            logger.warning(f"Could not parse date '{date_str}', skipping")
+            continue
         for offset in [timedelta(0), timedelta(days=-1), timedelta(days=1)]:
             d = date_obj + offset
             d_str = d.strftime("%Y-%m-%d")
             if d_str not in fetched_dates:
                 fetched_dates.add(d_str)
-                games_by_date[d_str] = fetch_completed_games(d)
+                try:
+                    games_by_date[d_str] = fetch_completed_games(d)
+                except Exception as e:
+                    logger.error(f"ESPN API error for {d_str}: {e}")
+                    games_by_date[d_str] = {}
 
     settled_count = 0
     still_pending = 0
     details = []
 
     for idx in pending.index:
-        row = df.loc[idx]
-        date_str = row["date"]
-        game_str = row["game"]
-        line_str = row["line"]
-        odds_str = row["odds"]
-        wager = row["wager"]
+        try:
+            row = df.loc[idx]
+            date_str = row["date"]
+            game_str = row["game"]
+            line_str = row["line"]
+            odds_str = row["odds"]
+            wager = row["wager"]
 
-        # Collect completed games from the bet date and adjacent dates
-        date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
-        date_obj = eastern.localize(date_obj)
-        completed = {}
-        for offset in [timedelta(0), timedelta(days=-1), timedelta(days=1)]:
-            d_str = (date_obj + offset).strftime("%Y-%m-%d")
-            completed.update(games_by_date.get(d_str, {}))
+            # Collect completed games from the bet date and adjacent dates
+            date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
+            date_obj = eastern.localize(date_obj)
+            completed = {}
+            for offset in [timedelta(0), timedelta(days=-1), timedelta(days=1)]:
+                d_str = (date_obj + offset).strftime("%Y-%m-%d")
+                completed.update(games_by_date.get(d_str, {}))
 
-        if not completed:
+            if not completed:
+                still_pending += 1
+                details.append(f"  No games found for {date_str}: {line_str}")
+                continue
+
+            # Match bet to game (try game field first, then fall back to team from line)
+            game_result = match_bet_to_game(game_str, completed)
+            if game_result is None:
+                game_result = match_bet_by_team(line_str, completed)
+            if game_result is None:
+                still_pending += 1
+                details.append(f"  No match for {game_str}: {line_str}")
+                continue
+
+            # Parse the bet line
+            parsed = parse_bet_line(line_str)
+            if parsed is None:
+                still_pending += 1
+                details.append(f"  Could not parse line: {line_str}")
+                continue
+
+            # Determine result
+            result = determine_bet_result(parsed, game_result, game_str)
+            if result is None:
+                still_pending += 1
+                details.append(f"  Could not determine result: {line_str}")
+                continue
+
+            # Calculate payout
+            payout, profit = calculate_payout(odds_str, wager, result)
+
+            # Update the row
+            df.at[idx, "result"] = result
+            df.at[idx, "payout"] = payout
+            df.at[idx, "profit"] = profit
+
+            settled_count += 1
+            icon = {"win": "W", "loss": "L", "void": "P"}[result]
+            details.append(
+                f"  [{icon}] {line_str} ({game_str}) -> {result}, "
+                f"payout={payout:.2f}, profit={profit:+.2f}"
+            )
+        except Exception as e:
+            logger.error(f"Error settling bet at index {idx}: {e}")
             still_pending += 1
-            details.append(f"  No games found for {date_str}: {line_str}")
-            continue
+            details.append(f"  Error processing bet: {e}")
 
-        # Match bet to game (try game field first, then fall back to team from line)
-        game_result = match_bet_to_game(game_str, completed)
-        if game_result is None:
-            game_result = match_bet_by_team(line_str, completed)
-        if game_result is None:
-            still_pending += 1
-            details.append(f"  No match for {game_str}: {line_str}")
-            continue
-
-        # Parse the bet line
-        parsed = parse_bet_line(line_str)
-        if parsed is None:
-            still_pending += 1
-            details.append(f"  Could not parse line: {line_str}")
-            continue
-
-        # Determine result
-        result = determine_bet_result(parsed, game_result, game_str)
-        if result is None:
-            still_pending += 1
-            details.append(f"  Could not determine result: {line_str}")
-            continue
-
-        # Calculate payout
-        payout, profit = calculate_payout(odds_str, wager, result)
-
-        # Update the row
-        df.at[idx, "result"] = result
-        df.at[idx, "payout"] = payout
-        df.at[idx, "profit"] = profit
-
-        settled_count += 1
-        icon = {"win": "W", "loss": "L", "void": "P"}[result]
-        details.append(
-            f"  [{icon}] {line_str} ({game_str}) -> {result}, "
-            f"payout={payout:.2f}, profit={profit:+.2f}"
-        )
-
-    # Save updated CSV
-    df.to_csv(csv_path, index=False)
+    # Save updated CSV (always write back work done so far)
+    try:
+        df.to_csv(csv_path, index=False)
+    except (IOError, PermissionError) as e:
+        logger.error(f"Could not write CSV {csv_path}: {e}")
+        details.append(f"WARNING: Could not save results to CSV: {e}")
 
     return {
         "settled": settled_count,

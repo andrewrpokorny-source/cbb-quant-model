@@ -12,9 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
 
-# V2 Feature Set (improved from experiments)
 FEATURES = [
-    # Original features
     'is_home',
     'spread',
     'rest_days',
@@ -23,19 +21,17 @@ FEATURES = [
     'diff_TO',
     'momentum_gap',
     'roll5_cover_margin',
-    # New V2 features
     'prev_games_played',
     'opp_win_pct',
     'prev_blowout_rate',
     'prev_roll5_margin',
     'prev_volatility',
-    # Spread interaction features
     'spread_abs',
     'spread_squared',
 ]
 
 def train_and_evaluate():
-    print("--- TRAINING CBB MODEL V3 (Gradient Boosting + Calibration) ---")
+    print("--- TRAINING CBB MODEL (GBM + Sigmoid Calibration, 15 features) ---")
 
     if not os.path.exists(DATA_FILE):
         print("No processed data found. Run features.py first.")

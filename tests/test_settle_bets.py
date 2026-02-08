@@ -250,16 +250,16 @@ class TestCalculatePayout:
         assert profit == 0.00
 
     def test_kalshi_na_odds(self):
-        """Kalshi bet with 'n/a' odds uses fallback (2x wager)."""
+        """Kalshi bet with 'n/a' odds returns zeros for manual review."""
         payout, profit = calculate_payout("n/a", 1.00, "win")
-        assert payout == 2.00
-        assert profit == 1.00
+        assert payout == 0.00
+        assert profit == 0.00
 
     def test_empty_odds(self):
-        """Empty odds string uses fallback."""
+        """Empty odds string returns zeros for manual review."""
         payout, profit = calculate_payout("", 1.00, "win")
-        assert payout == 2.00
-        assert profit == 1.00
+        assert payout == 0.00
+        assert profit == 0.00
 
     def test_heavy_favorite(self):
         """Heavy favorite odds (-300)."""

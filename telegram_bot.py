@@ -67,10 +67,14 @@ LOG_FILE = os.path.join(BASE_DIR, "telegram_bot.log")
 
 
 class _RedactTokenFilter(logging.Filter):
-    """Strip bot tokens from log messages."""
+    """Strip bot tokens from log output (covers both msg and args)."""
     _pattern = re.compile(r"/bot\d+:[A-Za-z0-9_-]+/")
 
     def filter(self, record):
+        # Format eagerly so tokens in args are also redacted
+        if record.args:
+            record.msg = str(record.msg) % record.args
+            record.args = None
         record.msg = self._pattern.sub("/bot***REDACTED***/", str(record.msg))
         return True
 
@@ -182,45 +186,43 @@ def update_bet_result(bet: dict) -> str | None:
     Update a pending bet with its result, matching by line and wager.
 
     Returns a status message, or None if no matching pending bet found.
+    Uses a single file handle with lock held throughout to avoid TOCTOU races.
     """
     if not os.path.exists(BETTING_HISTORY):
         return None
 
     new_key = (_normalize_line(bet["line"]), str(bet["wager"]), bet["platform"].upper())
 
-    with open(BETTING_HISTORY, "r", newline="") as f:
+    with open(BETTING_HISTORY, "r+", newline="") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             reader = list(csv.DictReader(f))
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-    # Find matching pending bet
-    matched_idx = None
-    for i, row in enumerate(reader):
-        if row.get("result") != "pending":
-            continue
-        existing_key = (
-            _normalize_line(row.get("line", "")),
-            str(row.get("wager", "")),
-            row.get("platform", "").upper(),
-        )
-        if existing_key == new_key:
-            matched_idx = i
-            break
+            # Find matching pending bet
+            matched_idx = None
+            for i, row in enumerate(reader):
+                if row.get("result") != "pending":
+                    continue
+                existing_key = (
+                    _normalize_line(row.get("line", "")),
+                    str(row.get("wager", "")),
+                    row.get("platform", "").upper(),
+                )
+                if existing_key == new_key:
+                    matched_idx = i
+                    break
 
-    if matched_idx is None:
-        return None
+            if matched_idx is None:
+                return None
 
-    # Update the matched row
-    reader[matched_idx]["result"] = bet["result"]
-    reader[matched_idx]["payout"] = bet.get("payout", "")
-    reader[matched_idx]["profit"] = bet.get("profit", "")
+            # Update the matched row
+            reader[matched_idx]["result"] = bet["result"]
+            reader[matched_idx]["payout"] = bet.get("payout", "")
+            reader[matched_idx]["profit"] = bet.get("profit", "")
 
-    # Write back
-    with open(BETTING_HISTORY, "w", newline="") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
+            # Write back while still holding the lock
+            f.seek(0)
+            f.truncate()
             writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
             writer.writeheader()
             writer.writerows(reader)
@@ -648,8 +650,8 @@ def parse_dk_share_url(url: str) -> dict | None:
         bet_data = json.loads(base64.b64decode(bet_b64))
 
         status = bet_data.get("status", "pending")
-        # Map DK statuses to our format
-        status_map = {"won": "won", "lost": "lost", "pushed": "void",
+        # Map DK statuses to our format (win/loss/void)
+        status_map = {"won": "win", "lost": "loss", "pushed": "void",
                       "voided": "void", "cashout": "void"}
         result = status_map.get(status, status)
 
@@ -672,9 +674,9 @@ def parse_dk_share_url(url: str) -> dict | None:
         game = events[0].get("name", "").replace(" @ ", " vs ") if events else ""
 
         # Calculate profit
-        if result == "won":
+        if result == "win":
             profit = payout - stake
-        elif result == "lost":
+        elif result == "loss":
             profit = -stake
         else:
             profit = 0
@@ -1056,8 +1058,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # If this is a settled bet (won/lost), try to update existing pending bet
-        if bet.get("result") in ("won", "lost", "push", "void"):
+        # If this is a settled bet, try to update existing pending bet
+        if bet.get("result") in ("win", "loss", "void"):
             update_msg = update_bet_result(bet)
             if update_msg:
                 await update.message.reply_text(update_msg)

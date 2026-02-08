@@ -49,7 +49,7 @@ def find_best_match(name, known_teams):
         return matches[0]
     
     # Log warning for unmatched teams
-    print(f"      ⚠️  WARNING: Could not match '{name}' to historical data")
+    print(f"      WARNING: Could not match '{name}' to historical data")
     return None
 
 def get_latest_stats(df):
@@ -67,7 +67,7 @@ def get_latest_stats(df):
                 stats[col] = last_game[col]
         stats['last_game_date'] = last_game['date']
         stats['last_opponent'] = last_game.get('opponent', 'Unknown')
-        # V2 features
+        # Features that may not exist in older rows -- use sensible defaults
         stats['prev_games_played'] = last_game.get('prev_games_played', 10)
         stats['prev_volatility'] = last_game.get('prev_volatility', 10)
         stats['prev_roll5_margin'] = last_game.get('prev_roll5_margin', 0)
@@ -82,7 +82,7 @@ def fetch_schedule():
     Fetch today's and tomorrow's games with TIMEZONE AWARENESS.
     Uses Eastern Time to ensure we're querying the correct date.
     """
-    print("   -> 📅 Fetching schedule (TIMEZONE AWARE)...")
+    print("   -> Fetching schedule (TIMEZONE AWARE)...")
     
     # Use Eastern Time for proper date handling
     eastern = pytz.timezone('US/Eastern')
@@ -157,7 +157,7 @@ def fetch_schedule():
                     })
                     
         except Exception as e:
-            print(f"         ❌ Error fetching {date_str}: {e}")
+            print(f"         Error fetching {date_str}: {e}")
             
     return sorted(games, key=lambda x: x['date'])
 
@@ -167,7 +167,7 @@ def fetch_kalshi_markets():
 
     api_key = os.getenv("KALSHI_API_KEY")
     if not api_key:
-        print("      ⚠️  KALSHI_API_KEY not set. Skipping Kalshi integration.")
+        print("      KALSHI_API_KEY not set. Skipping Kalshi integration.")
         return None, None
 
     try:
@@ -182,7 +182,7 @@ def fetch_kalshi_markets():
             print("      No NCAAB markets found")
             return client, None
     except Exception as e:
-        print(f"      ❌ Kalshi API error: {e}")
+        print(f"      Kalshi API error: {e}")
         return None, None
 
 
@@ -356,7 +356,7 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
 
 
 def calculate_production_features(row, h_stats, a_stats):
-    """Calculate features needed for prediction (V2 with new features)."""
+    """Calculate features needed for prediction."""
     # --- Original Features ---
     # 1. Effective Field Goal %
     row['diff_eFG'] = h_stats.get('season_team_eFG', 0) - a_stats.get('season_team_eFG', 0)
@@ -400,7 +400,7 @@ def calculate_production_features(row, h_stats, a_stats):
     return row
 
 def main():
-    print("--- 🔮 PREDICTION ENGINE (V4: Enhanced Features + GB) 🔮 ---")
+    print("--- PREDICTION ENGINE (GBM + Sigmoid Calibration, 15 features) ---")
     
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
@@ -409,16 +409,16 @@ def main():
     # Load model and data
     try:
         model = joblib.load(MODEL_FILE)
-        print(f"   ✅ Model loaded: {MODEL_FILE}")
+        print(f"   Model loaded: {MODEL_FILE}")
     except (FileNotFoundError, IOError, EOFError) as e:
-        print(f"❌ Critical: Model not found or corrupted. Run model.py first. ({e})")
+        print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
         return
     
     try:
         df_hist = pd.read_csv(DATA_FILE)
-        print(f"   ✅ Data loaded: {len(df_hist)} historical games")
+        print(f"   Data loaded: {len(df_hist)} historical games")
     except (FileNotFoundError, IOError, pd.errors.EmptyDataError) as e:
-        print(f"❌ Critical: Training data not found or corrupted. Run main.py to download data. ({e})")
+        print(f"CRITICAL: Training data not found or corrupted. Run main.py to download data. ({e})")
         return
 
     known_teams = df_hist['team'].unique()
@@ -427,11 +427,11 @@ def main():
     # Check data freshness
     df_hist['date'] = pd.to_datetime(df_hist['date'])
     last_data_date = df_hist['date'].max()
-    print(f"   📊 Data current through: {last_data_date.strftime('%Y-%m-%d')}")
+    print(f"   Data current through: {last_data_date.strftime('%Y-%m-%d')}")
     
     days_old = (datetime.now() - last_data_date).days
     if days_old > 2:
-        print(f"   ⚠️  WARNING: Data is {days_old} days old. Run main.py to update!")
+        print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
     
     # Fetch schedule
     schedule = fetch_schedule()
@@ -482,7 +482,7 @@ def main():
         home_actual_rest = max(0, (g['date'].replace(tzinfo=None) - home_last_date).days)
         away_actual_rest = max(0, (g['date'].replace(tzinfo=None) - away_last_date).days)
         
-        # For model: use home team's rest, capped at 7 (if that's how it was trained)
+        # For model: use home team's rest, capped at 7 to match training data
         row['rest_days'] = min(home_actual_rest, 7)
         
         # Add production features
@@ -515,14 +515,14 @@ def main():
         # Determine pick - USE ORIGINAL ESPN NAMES
         if prob > 0.5:
             sign = "+" if g['spread'] > 0 else ""
-            pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # ← Original name
+            pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # Original name
             picked_team = g['home_raw']
             picked_spread = g['spread']  # Home team's spread
             picked_team_rest = home_actual_rest  # Picked home team
         else:
             away_spread = -1 * g['spread']
             sign = "+" if away_spread > 0 else ""
-            pick_str = f"{g['away_raw']} {sign}{away_spread}"  # ← Original name
+            pick_str = f"{g['away_raw']} {sign}{away_spread}"  # Original name
             picked_team = g['away_raw']
             picked_spread = away_spread  # Away team's spread
             picked_team_rest = away_actual_rest  # Picked away team
@@ -563,12 +563,12 @@ def main():
         # CRITICAL FIX: Use ORIGINAL ESPN names for display
         prediction_row = {
             "Date/Time": time_str,
-            "Matchup": f"{g['away_raw']} @ {g['home_raw']}",  # ← ORIGINAL NAMES
+            "Matchup": f"{g['away_raw']} @ {g['home_raw']}",
             "Spread": g['spread'],
             "Pick": pick_str,
             "Conf": conf,
             "Raw Odds": g['raw_odds'],
-            "Rest": picked_team_rest,  # ← Show PICKED TEAM's rest days
+            "Rest": picked_team_rest,
             # Kalshi edge data
             "Kalshi_Side": kalshi_data.get("Kalshi_Side"),
             "Kalshi_Price": kalshi_data.get("Kalshi_Price"),
@@ -594,7 +594,7 @@ def main():
         # VALIDATION: Ensure pick mentions a team that's actually in the matchup
         pick_team_mentioned = pick_str.split()[0] + " " + pick_str.split()[1]
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:
-            print(f"      ⚠️  WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
+            print(f"      WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
 
         predictions.append(prediction_row)
 
@@ -617,12 +617,12 @@ def main():
         global _latest_predictions
         _latest_predictions = pred_df
 
-        print(f"\n✅ SUCCESS: Generated {len(pred_df)} predictions")
+        print(f"\nSUCCESS: Generated {len(pred_df)} predictions")
         print(f"   Saved to: {OUTPUT_FILE}")
         print(f"   Archive: {archive_file}")
 
         # Show summary
-        print("\n📋 PREDICTION SUMMARY:")
+        print("\nPREDICTION SUMMARY:")
         for _, row in pred_df.head(5).iterrows():
             print(f"   {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
@@ -637,11 +637,11 @@ def main():
                 print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']}")
                 print(f"      Recommended: {row['Units']:.1f}U")
     else:
-        print("\n⚠️  No predictions generated.")
+        print("\nNo predictions generated.")
     
     # Show skipped games
     if skipped:
-        print(f"\n⚠️  Skipped {len(skipped)} games:")
+        print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
 
