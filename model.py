@@ -29,6 +29,9 @@ FEATURES = [
     'prev_blowout_rate',
     'prev_roll5_margin',
     'prev_volatility',
+    # Spread interaction features
+    'spread_abs',
+    'spread_squared',
 ]
 
 def train_and_evaluate():
@@ -41,6 +44,10 @@ def train_and_evaluate():
     # 1. Load Data
     df = pd.read_csv(DATA_FILE)
     print(f"Loaded {len(df)} rows.")
+
+    # Compute derived spread features
+    df['spread_abs'] = df['spread'].abs()
+    df['spread_squared'] = df['spread'] ** 2
 
     # 2. Define Features
     features = FEATURES
@@ -74,7 +81,7 @@ def train_and_evaluate():
     base_clf = GradientBoostingClassifier(
         n_estimators=150,
         learning_rate=0.05,
-        max_depth=3,
+        max_depth=4,
         random_state=42
     )
     base_clf.fit(X_train, y_train)
@@ -91,10 +98,10 @@ def train_and_evaluate():
         GradientBoostingClassifier(
             n_estimators=150,
             learning_rate=0.05,
-            max_depth=3,
+            max_depth=4,
             random_state=42
         ),
-        method='isotonic',
+        method='sigmoid',
         cv=5
     )
     calibrated_clf.fit(X_train, y_train)

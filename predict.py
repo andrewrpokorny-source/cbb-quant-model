@@ -393,6 +393,10 @@ def calculate_production_features(row, h_stats, a_stats):
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
+    # 11-12. Spread interaction features
+    row['spread_abs'] = abs(row.get('spread', 0))
+    row['spread_squared'] = row.get('spread', 0) ** 2
+
     return row
 
 def main():
@@ -499,7 +503,8 @@ def main():
             'momentum_gap': 0, 'roll5_cover_margin': 0,
             'prev_games_played': 10, 'opp_win_pct': 0.5,
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
-            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3
+            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
+            'spread_abs': 0, 'spread_squared': 0,
         })
         input_df = input_df.fillna(0)  # Catch any remaining NaNs
         

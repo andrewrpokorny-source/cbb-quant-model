@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 import numpy as np
 import pandas as pd
+from scipy.interpolate import PchipInterpolator
 
 from .kelly import recommended_units
 
@@ -69,6 +70,10 @@ def calculate_line_shopping(
             # Picked team is away, model sees negative of away spread
             row['spread'] = -spread_val
 
+        # Derived spread features (must match model training)
+        row['spread_abs'] = abs(row['spread'])
+        row['spread_squared'] = row['spread'] ** 2
+
         # Prepare for model prediction - ensure columns match model's expected order
         input_df = pd.DataFrame([row])
         for c in cols:
@@ -106,6 +111,41 @@ def calculate_line_shopping(
             kelly_units=units,
             is_market=is_market,
         ))
+
+    # Smooth probabilities via monotonic PCHIP interpolation
+    if len(recommendations) >= 3:
+        sorted_recs = sorted(recommendations, key=lambda r: r.spread)
+        spreads = np.array([r.spread for r in sorted_recs])
+        probs = np.array([r.model_prob for r in sorted_recs])
+
+        # Determine expected monotonicity direction:
+        # More favorable spread (lower for favorites, higher for dogs) should
+        # mean higher cover probability. Check if probs generally increase
+        # or decrease with spread.
+        if probs[-1] >= probs[0]:
+            # Probs increase with spread -- enforce monotonically non-decreasing
+            for i in range(1, len(probs)):
+                probs[i] = max(probs[i], probs[i - 1])
+        else:
+            # Probs decrease with spread -- enforce monotonically non-increasing
+            for i in range(1, len(probs)):
+                probs[i] = min(probs[i], probs[i - 1])
+
+        # Fit PCHIP and evaluate at same points for smooth curve
+        interp = PchipInterpolator(spreads, probs)
+        smooth_probs = interp(spreads)
+
+        # Clamp to [0, 1]
+        smooth_probs = np.clip(smooth_probs, 0.0, 1.0)
+
+        # Write smoothed values back into recommendations
+        for rec, sp in zip(sorted_recs, smooth_probs):
+            rec.model_prob = float(sp)
+            rec.edge = rec.model_prob - STANDARD_IMPLIED_PROB
+            rec.kelly_units = recommended_units(rec.edge, STANDARD_IMPLIED_PROB)
+
+        # Replace recommendations with sorted order
+        recommendations = sorted_recs
 
     # Find breakeven spread via interpolation
     breakeven = find_breakeven_spread(recommendations)
