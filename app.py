@@ -336,6 +336,57 @@ hr {
     border-radius: 8px;
     overflow: hidden;
 }
+
+/* Missing spreads */
+.missing-spreads-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fffbeb;
+    border: 1px solid #f0e6c0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin: 1rem 0;
+}
+
+.missing-spreads-banner .ms-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: #c9a227;
+    color: #1a2e1a;
+    padding: 2px 7px;
+    border-radius: 3px;
+    letter-spacing: 0.03em;
+}
+
+.missing-spreads-banner .ms-text {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    color: #6b5e1a;
+}
+
+.spread-game-row {
+    background: #ffffff;
+    border: 1px solid #e5e5e0;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+
+.spread-game-teams {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1a2e1a;
+}
+
+.spread-game-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: #8a9a8a;
+    margin-top: 2px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -359,39 +410,11 @@ if 'predictions_loaded' not in st.session_state:
         predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
     st.session_state.predictions_loaded = True
 
-# Check for games needing manual spreads
-games_needing_spreads = predict.get_games_needing_spreads()
-if games_needing_spreads:
-    st.markdown('<div class="section-title">Missing Spreads</div>', unsafe_allow_html=True)
-    st.caption(
-        "ESPN has no line for these games. Enter the spread you see "
-        "(e.g. \"-7.5\" if home team is favored, \"+7.5\" if away team is favored)."
-    )
-    with st.form("spread_overrides_form"):
-        override_inputs = {}
-        for game in games_needing_spreads:
-            matchup = game['matchup']
-            override_inputs[matchup] = st.text_input(
-                matchup,
-                placeholder="e.g. -7.5 (home fav) or +3 (away fav)",
-                key=f"spread_{game['id']}",
-            )
-        submitted = st.form_submit_button("Apply & Re-run")
-        if submitted:
-            overrides = st.session_state.get('spread_overrides', {})
-            for matchup, val in override_inputs.items():
-                val = val.strip()
-                if val:
-                    try:
-                        overrides[matchup] = float(val)
-                    except ValueError:
-                        st.error(f"Invalid spread for {matchup}: {val}")
-            st.session_state.spread_overrides = overrides
-            st.session_state.predictions_loaded = False
-            st.rerun()
-
 # Get predictions with line shopping data
 predictions_with_line_shopping = predict.get_latest_predictions()
+
+# Check for games needing manual spreads (used later)
+games_needing_spreads = predict.get_games_needing_spreads()
 
 # --- HEADER ---
 st.markdown('<div class="main-header">CBB Quant Edge</div>', unsafe_allow_html=True)
@@ -411,8 +434,17 @@ if os.path.exists(PRED_FILE):
         ].copy()
 
         num_value = len(value_bets)
-        total_units = value_bets['Std_Units'].sum() if num_value > 0 else 0
-        num_strong = len(value_bets[value_bets['Std_Rating'] == 'STRONG']) if num_value > 0 else 0
+        if num_value > 0:
+            # Use best units per bet (max of Kalshi vs standard book)
+            std_u = value_bets['Std_Units'].fillna(0)
+            kalshi_u = value_bets['Units'].fillna(0)
+            total_units = pd.concat([std_u, kalshi_u], axis=1).max(axis=1).sum()
+        else:
+            total_units = 0
+        num_strong = len(value_bets[
+            (value_bets['Std_Rating'] == 'STRONG') |
+            (value_bets['Rating'] == 'STRONG')
+        ]) if num_value > 0 else 0
 
         st.markdown(f'''
         <div class="summary-bar">
@@ -443,21 +475,37 @@ if os.path.exists(PRED_FILE):
             else:
                 cols = [st.container()]
 
+            RATING_RANK = {'STRONG': 3, 'GOOD': 2, 'MARGINAL': 1, 'PASS': 0}
+
             for i, (idx, row) in enumerate(value_bets.iterrows()):
                 col = cols[i % 2] if num_value >= 2 else cols[0]
 
                 with col:
                     std_rating = row.get('Std_Rating', 'MARGINAL')
-                    is_strong = std_rating == 'STRONG'
+                    kalshi_rating = row.get('Rating', 'PASS') if pd.notna(row.get('Rating')) else 'PASS'
+                    conf = row['Conf']
+                    game_time = row.get('Date/Time', '')
 
+                    # Use whichever source gave the better rating
+                    std_rank = RATING_RANK.get(std_rating, 0)
+                    kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
+                    kalshi_is_primary = kalshi_rank > std_rank
+
+                    best_rating = kalshi_rating if kalshi_is_primary else std_rating
+                    is_strong = best_rating == 'STRONG'
                     card_class = "strong" if is_strong else "good"
                     badge_class = "strong" if is_strong else "good"
                     badge_text = "Strong" if is_strong else "Good"
 
-                    std_edge_pct = row.get('Std_Edge_Pct', 'N/A')
-                    std_units = row.get('Std_Units', 0)
-                    conf = row['Conf']
-                    game_time = row.get('Date/Time', '')
+                    # Pick edge/units from the source that triggered the rating
+                    if kalshi_is_primary:
+                        display_edge = row.get('Edge_Pct', 'N/A')
+                        display_units = row.get('Units', 0) or 0
+                        edge_source = "Kalshi Edge"
+                    else:
+                        display_edge = row.get('Std_Edge_Pct', 'N/A')
+                        display_units = row.get('Std_Units', 0) or 0
+                        edge_source = "Edge"
 
                     # Breakeven spread
                     breakeven = row.get('Breakeven_Spread', None)
@@ -487,12 +535,12 @@ if os.path.exists(PRED_FILE):
                                 <span class="stat-value">{conf:.1%}</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-label">Edge</span>
-                                <span class="stat-value positive">{std_edge_pct}</span>
+                                <span class="stat-label">{edge_source}</span>
+                                <span class="stat-value positive">{display_edge}</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Units</span>
-                                <span class="stat-value">{std_units:.1f}U</span>
+                                <span class="stat-value">{display_units:.1f}U</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Breakeven</span>
@@ -568,6 +616,49 @@ if os.path.exists(PRED_FILE):
             "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
         }
     )
+
+    # --- MISSING SPREADS (compact, below predictions) ---
+    if games_needing_spreads:
+        n_missing = len(games_needing_spreads)
+        st.markdown(f'''
+        <div class="missing-spreads-banner">
+            <span class="ms-count">{n_missing}</span>
+            <span class="ms-text">game{"s" if n_missing != 1 else ""} missing ESPN spread — enter manually to get predictions</span>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        with st.expander("Enter missing spreads", expanded=False):
+            with st.form("spread_overrides_form"):
+                override_inputs = {}
+                cols = st.columns(2)
+                for i, game in enumerate(games_needing_spreads):
+                    matchup = game['matchup']
+                    with cols[i % 2]:
+                        st.markdown(f'''
+                        <div class="spread-game-row">
+                            <div class="spread-game-teams">{matchup}</div>
+                            <div class="spread-game-time">{game.get("time_str", "")}</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                        override_inputs[matchup] = st.text_input(
+                            matchup,
+                            placeholder="-7.5 or +3",
+                            key=f"spread_{game['id']}",
+                            label_visibility="collapsed",
+                        )
+                submitted = st.form_submit_button("Apply & Re-run")
+                if submitted:
+                    overrides = st.session_state.get('spread_overrides', {})
+                    for matchup, val in override_inputs.items():
+                        val = val.strip()
+                        if val:
+                            try:
+                                overrides[matchup] = float(val)
+                            except ValueError:
+                                st.error(f"Invalid spread for {matchup}: {val}")
+                    st.session_state.spread_overrides = overrides
+                    st.session_state.predictions_loaded = False
+                    st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns([1, 4])
