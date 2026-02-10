@@ -13,6 +13,7 @@ predictions_*.csv
 performance_log.csv
 daily_predictions.csv
 telegram_bot.log
+.telegram_bot.lock
 
 IMPROVEMENT_PLAN.md
 betting_history.csv

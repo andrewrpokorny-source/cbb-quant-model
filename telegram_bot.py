@@ -10,6 +10,7 @@ Usage:
 
 import os
 import re
+import sys
 import csv
 import json
 import fcntl
@@ -252,9 +253,9 @@ def append_bet(bet: dict):
         "line": bet.get("line", ""),
         "odds": bet.get("odds", "n/a"),
         "wager": bet.get("wager", 0),
-        "result": "pending",
-        "payout": "",
-        "profit": "",
+        "result": bet.get("result", "pending"),
+        "payout": bet.get("payout", ""),
+        "profit": bet.get("profit", ""),
     }
 
     # Use file locking to prevent race conditions
@@ -1065,11 +1066,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(update_msg)
                 return
             else:
-                # No matching pending bet - might be a new bet that's already settled
-                await update.message.reply_text(
-                    f"No matching pending bet found for: {bet['line']} ${bet['wager']:.2f}\n"
-                    f"Result: {bet['result'].upper()} (profit: {bet.get('profit', 0):+.2f}U)"
-                )
+                # No matching pending bet -- log it as a settled bet directly
+                row = append_bet(bet)
+                if row is None:
+                    await update.message.reply_text("Duplicate bet -- already logged.")
+                else:
+                    await update.message.reply_text(
+                        f"Logged ({row['result'].upper()}): {row['line']}, {row['odds']}, "
+                        f"${float(row['wager']):.2f} on {row['platform']} "
+                        f"(profit: {row.get('profit', 0):+.2f}U)"
+                    )
                 return
         else:
             # It's a new pending bet - log it
@@ -1132,12 +1138,36 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+LOCK_FILE = os.path.join(BASE_DIR, ".telegram_bot.lock")
+
+
+def _acquire_instance_lock():
+    """Acquire an exclusive lock to prevent multiple bot instances.
+
+    Returns the open file handle (must stay open for the lock to hold).
+    Exits the process if another instance is already running.
+    """
+    lock_fh = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Error: Another bot instance is already running.")
+        print(f"If you're sure it's not, delete {LOCK_FILE} and try again.")
+        lock_fh.close()
+        sys.exit(1)
+    lock_fh.write(str(os.getpid()))
+    lock_fh.flush()
+    return lock_fh
+
+
 def main():
     """Start the Telegram bot."""
     if not TELEGRAM_BOT_TOKEN:
         print("Error: TELEGRAM_BOT_TOKEN not set in .env")
         print("Create a bot via @BotFather on Telegram and add the token to .env")
         return
+
+    lock_fh = _acquire_instance_lock()
 
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -1155,7 +1185,14 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("Bot started. Send /start in Telegram to begin.")
-    app.run_polling()
+    try:
+        app.run_polling()
+    finally:
+        lock_fh.close()
+        try:
+            os.unlink(LOCK_FILE)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
