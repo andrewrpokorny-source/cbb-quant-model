@@ -13,6 +13,7 @@ import re
 import sys
 import csv
 import json
+import errno
 import fcntl
 import base64
 import tempfile
@@ -1071,10 +1072,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if row is None:
                     await update.message.reply_text("Duplicate bet -- already logged.")
                 else:
+                    profit_val = float(row.get('profit', 0) or 0)
                     await update.message.reply_text(
                         f"Logged ({row['result'].upper()}): {row['line']}, {row['odds']}, "
                         f"${float(row['wager']):.2f} on {row['platform']} "
-                        f"(profit: {row.get('profit', 0):+.2f}U)"
+                        f"(profit: {profit_val:+.2f}U)"
                     )
                 return
         else:
@@ -1147,16 +1149,28 @@ def _acquire_instance_lock():
     Returns the open file handle (must stay open for the lock to hold).
     Exits the process if another instance is already running.
     """
-    lock_fh = open(LOCK_FILE, "w")
+    try:
+        lock_fh = open(LOCK_FILE, "w")
+    except OSError as e:
+        logger.error("Cannot create lock file %s: %s", LOCK_FILE, e)
+        sys.exit(1)
+
     try:
         fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        print("Error: Another bot instance is already running.")
-        print(f"If you're sure it's not, delete {LOCK_FILE} and try again.")
+    except OSError as e:
+        if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+            logger.error("Another bot instance is already running.")
+        else:
+            logger.error("Could not acquire lock on %s: %s", LOCK_FILE, e)
         lock_fh.close()
         sys.exit(1)
-    lock_fh.write(str(os.getpid()))
-    lock_fh.flush()
+
+    try:
+        lock_fh.write(str(os.getpid()))
+        lock_fh.flush()
+    except OSError as e:
+        logger.warning("Could not write PID to lock file (non-fatal): %s", e)
+
     return lock_fh
 
 
@@ -1188,11 +1202,14 @@ def main():
     try:
         app.run_polling()
     finally:
-        lock_fh.close()
+        try:
+            lock_fh.close()
+        except OSError as e:
+            logger.warning("Error closing lock file handle: %s", e)
         try:
             os.unlink(LOCK_FILE)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.warning("Could not remove lock file %s: %s", LOCK_FILE, e)
 
 
 if __name__ == "__main__":
