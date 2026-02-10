@@ -8,7 +8,6 @@ __pycache__/
 *.pem
 
 # Generated artifacts
-*.pkl
 predictions_*.csv
 performance_log.csv
 daily_predictions.csv
