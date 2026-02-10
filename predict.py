@@ -28,6 +28,9 @@ BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college
 # Module-level storage for predictions with line shopping data (for app.py access)
 _latest_predictions = None
 
+# Games that need manual spread entry (no ESPN spread available)
+_games_needing_spreads = None
+
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
 with open(TEAM_MAP_FILE, 'r') as f:
@@ -49,7 +52,7 @@ def find_best_match(name, known_teams):
         return matches[0]
     
     # Log warning for unmatched teams
-    print(f"      ⚠️  WARNING: Could not match '{name}' to historical data")
+    print(f"      WARNING: Could not match '{name}' to historical data")
     return None
 
 def get_latest_stats(df):
@@ -67,7 +70,7 @@ def get_latest_stats(df):
                 stats[col] = last_game[col]
         stats['last_game_date'] = last_game['date']
         stats['last_opponent'] = last_game.get('opponent', 'Unknown')
-        # V2 features
+        # Features that may not exist in older rows -- use sensible defaults
         stats['prev_games_played'] = last_game.get('prev_games_played', 10)
         stats['prev_volatility'] = last_game.get('prev_volatility', 10)
         stats['prev_roll5_margin'] = last_game.get('prev_roll5_margin', 0)
@@ -82,7 +85,7 @@ def fetch_schedule():
     Fetch today's and tomorrow's games with TIMEZONE AWARENESS.
     Uses Eastern Time to ensure we're querying the correct date.
     """
-    print("   -> 📅 Fetching schedule (TIMEZONE AWARE)...")
+    print("   -> Fetching schedule (TIMEZONE AWARE)...")
     
     # Use Eastern Time for proper date handling
     eastern = pytz.timezone('US/Eastern')
@@ -92,8 +95,8 @@ def fetch_schedule():
     
     games = []
     
-    # Fetch today and tomorrow (Eastern time)
-    for days_ahead in [0, 1]:
+    # Fetch today through 5 days ahead (Eastern time)
+    for days_ahead in range(6):
         target_date = now_eastern + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
         url = f"{BASE_URL}&dates={date_str}"
@@ -144,23 +147,20 @@ def fetch_schedule():
                 except (ValueError, IndexError):
                     spread_val = 0.0
 
-                # Skip games without spreads
-                if spread_val == 0.0: 
-                    continue
-                
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
                         'id': game_id,
                         'home_raw': home_raw,  # Keep original ESPN name
                         'away_raw': away_raw,  # Keep original ESPN name
-                        'spread': spread_val, 
+                        'spread': spread_val,  # May be 0 if ESPN doesn't have it
                         'date': game_date,
-                        'raw_odds': raw_odds
+                        'raw_odds': raw_odds,
+                        'has_espn_spread': spread_val != 0.0
                     })
                     
         except Exception as e:
-            print(f"         ❌ Error fetching {date_str}: {e}")
+            print(f"         Error fetching {date_str}: {e}")
             
     return sorted(games, key=lambda x: x['date'])
 
@@ -170,7 +170,7 @@ def fetch_kalshi_markets():
 
     api_key = os.getenv("KALSHI_API_KEY")
     if not api_key:
-        print("      ⚠️  KALSHI_API_KEY not set. Skipping Kalshi integration.")
+        print("      KALSHI_API_KEY not set. Skipping Kalshi integration.")
         return None, None
 
     try:
@@ -185,7 +185,61 @@ def fetch_kalshi_markets():
             print("      No NCAAB markets found")
             return client, None
     except Exception as e:
-        print(f"      ❌ Kalshi API error: {e}")
+        print(f"      Kalshi API error: {e}")
+        return None, None
+
+
+def get_kalshi_spread(mapper, home_team, away_team, game_date):
+    """
+    Get spread from Kalshi markets when ESPN doesn't have one.
+
+    Args:
+        mapper: MarketMapper instance for finding Kalshi markets
+        home_team: Home team name from ESPN
+        away_team: Away team name from ESPN
+        game_date: Game datetime for market matching
+
+    Returns:
+        Tuple of (spread_value, favorite_is_home) or (None, None) if not found
+    """
+    if not mapper:
+        return None, None
+
+    try:
+        from kalshi.market_mapper import extract_school_keyword
+
+        all_markets = mapper.find_all_markets_for_game(home_team, away_team, game_date)
+        spread_markets = [m for m in all_markets if "SPREAD" in m.get("ticker", "")]
+
+        if not spread_markets:
+            print(f"      No Kalshi SPREAD markets found for {away_team} @ {home_team}")
+            return None, None
+
+        # Get the first spread market and extract info
+        market = spread_markets[0]
+        floor_strike = market.get("floor_strike", 0)
+        title = market.get("title", "").lower()
+
+        # Determine which team is favored based on the market title
+        home_keyword = extract_school_keyword(home_team).lower()
+        away_keyword = extract_school_keyword(away_team).lower()
+
+        # If home team is in title as "wins by", they're favored (negative spread)
+        if home_keyword in title:
+            return -floor_strike, True
+        elif away_keyword in title:
+            return floor_strike, False
+
+        print(f"      Could not determine favorite from Kalshi market title: {title}")
+        return None, None
+    except ImportError as e:
+        print(f"      Kalshi module not available: {e}")
+        return None, None
+    except (KeyError, AttributeError) as e:
+        print(f"      Kalshi market data format issue for {away_team} @ {home_team}: {e}")
+        return None, None
+    except Exception as e:
+        print(f"      Unexpected error getting Kalshi spread for {away_team} @ {home_team}: {type(e).__name__}: {e}")
         return None, None
 
 
@@ -259,7 +313,9 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                         best_market = market
 
         if best_market:
-            prices = mapper.get_market_prices(best_market)
+            # Fetch fresh prices from API (not cached data)
+            ticker = best_market.get("ticker", "")
+            prices = client.get_market_prices(ticker) if ticker else mapper.get_market_prices(best_market)
             title = prices.get("title", "")
             yes_price = prices.get("yes_price", 50)
             no_price = prices.get("no_price", 50)
@@ -290,14 +346,20 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                 "Kalshi_Side": kalshi_side,
                 "Kalshi_Title": title,
             }
+    except ImportError as e:
+        print(f"      Kalshi module not available: {e}")
+    except (KeyError, AttributeError) as e:
+        print(f"      Kalshi market data format issue: {e}")
+    except ZeroDivisionError as e:
+        print(f"      Kalshi calculation error (division by zero): {e}")
     except Exception as e:
-        print(f"      Kalshi matching error: {e}")
+        print(f"      Unexpected Kalshi error for {away_team} @ {home_team}: {type(e).__name__}: {e}")
 
     return result
 
 
 def calculate_production_features(row, h_stats, a_stats):
-    """Calculate features needed for prediction (V2 with new features)."""
+    """Calculate features needed for prediction."""
     # --- Original Features ---
     # 1. Effective Field Goal %
     row['diff_eFG'] = h_stats.get('season_team_eFG', 0) - a_stats.get('season_team_eFG', 0)
@@ -334,65 +396,130 @@ def calculate_production_features(row, h_stats, a_stats):
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
+    # 11-12. Spread interaction features
+    row['spread_abs'] = abs(row.get('spread', 0))
+    row['spread_squared'] = row.get('spread', 0) ** 2
+
     return row
 
-def main():
-    print("--- 🔮 PREDICTION ENGINE (V4: Enhanced Features + GB) 🔮 ---")
-    
+def fetch_games_needing_spreads():
+    """Fetch schedule and return games that have no ESPN spread.
+
+    Returns list of dicts with 'away_raw', 'home_raw', 'date', 'id' for each
+    game missing a spread, or empty list if all games have spreads.
+    """
+    schedule = fetch_schedule()
+    missing = []
+    for g in schedule:
+        if not g.get('has_espn_spread', False):
+            try:
+                eastern = pytz.timezone('US/Eastern')
+                local_ts = g['date'].tz_convert(eastern)
+                time_str = local_ts.strftime("%m/%d %I:%M %p")
+            except (TypeError, AttributeError):
+                time_str = g['date'].strftime("%m/%d %I:%M %p")
+            missing.append({
+                'id': g['id'],
+                'away_raw': g['away_raw'],
+                'home_raw': g['home_raw'],
+                'date': g['date'],
+                'time_str': time_str,
+                'matchup': f"{g['away_raw']} @ {g['home_raw']}",
+            })
+    return missing
+
+
+def get_games_needing_spreads():
+    """Return cached list of games needing manual spreads."""
+    return _games_needing_spreads
+
+
+def main(spread_overrides=None):
+    """Run prediction engine.
+
+    Args:
+        spread_overrides: dict mapping game matchup string to home-team spread float.
+            e.g. {"Northwestern Wildcats @ Iowa Hawkeyes": -7.5}
+            Convention: negative = home favored, positive = away favored.
+    """
+    if spread_overrides is None:
+        spread_overrides = {}
+
+    print("--- PREDICTION ENGINE (GBM + Sigmoid Calibration, 15 features) ---")
+
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
-    
+
     # Load model and data
     try:
         model = joblib.load(MODEL_FILE)
-        print(f"   ✅ Model loaded: {MODEL_FILE}")
+        print(f"   Model loaded: {MODEL_FILE}")
     except (FileNotFoundError, IOError, EOFError) as e:
-        print(f"❌ Critical: Model not found or corrupted. Run model.py first. ({e})")
+        print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
         return
-    
+
     try:
         df_hist = pd.read_csv(DATA_FILE)
-        print(f"   ✅ Data loaded: {len(df_hist)} historical games")
+        print(f"   Data loaded: {len(df_hist)} historical games")
     except (FileNotFoundError, IOError, pd.errors.EmptyDataError) as e:
-        print(f"❌ Critical: Training data not found or corrupted. Run main.py to download data. ({e})")
+        print(f"CRITICAL: Training data not found or corrupted. Run main.py to download data. ({e})")
         return
 
     known_teams = df_hist['team'].unique()
     team_stats = get_latest_stats(df_hist)
-    
+
     # Check data freshness
     df_hist['date'] = pd.to_datetime(df_hist['date'])
     last_data_date = df_hist['date'].max()
-    print(f"   📊 Data current through: {last_data_date.strftime('%Y-%m-%d')}")
-    
+    print(f"   Data current through: {last_data_date.strftime('%Y-%m-%d')}")
+
     days_old = (datetime.now() - last_data_date).days
     if days_old > 2:
-        print(f"   ⚠️  WARNING: Data is {days_old} days old. Run main.py to update!")
-    
+        print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
+
     # Fetch schedule
     schedule = fetch_schedule()
-    print(f"   -> Found {len(schedule)} games with spreads")
+    games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
+    print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
 
     # Fetch Kalshi markets
     kalshi_client, kalshi_mapper = fetch_kalshi_markets()
 
     predictions = []
     skipped = []
-    
+    games_needing_spreads = []
+
     for g in schedule:
         # Match team names to historical data
         home_matched = find_best_match(g['home_raw'], known_teams)
         away_matched = find_best_match(g['away_raw'], known_teams)
-        
+
         # Skip if we can't match teams or don't have stats
         if not home_matched or not away_matched:
             skipped.append(f"{g['away_raw']} @ {g['home_raw']} (Team matching failed)")
             continue
-            
+
         if home_matched not in team_stats or away_matched not in team_stats:
             skipped.append(f"{g['away_raw']} @ {g['home_raw']} (No historical stats)")
             continue
+
+        # If no ESPN spread, check for manual override
+        matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
+        if not g.get('has_espn_spread', False):
+            if matchup_key in spread_overrides:
+                g['spread'] = spread_overrides[matchup_key]
+                g['raw_odds'] = f"Manual {g['spread']}"
+                g['has_espn_spread'] = True  # Treat as valid
+            else:
+                games_needing_spreads.append({
+                    'id': g['id'],
+                    'away_raw': g['away_raw'],
+                    'home_raw': g['home_raw'],
+                    'matchup': matchup_key,
+                })
+                skipped.append(f"{matchup_key} (No spread -- needs manual entry)")
+                continue
 
         # Build feature row
         row = {'is_home': 1, 'spread': g['spread']}
@@ -406,7 +533,7 @@ def main():
         home_actual_rest = max(0, (g['date'].replace(tzinfo=None) - home_last_date).days)
         away_actual_rest = max(0, (g['date'].replace(tzinfo=None) - away_last_date).days)
         
-        # For model: use home team's rest, capped at 7 (if that's how it was trained)
+        # For model: use home team's rest, capped at 7 to match training data
         row['rest_days'] = min(home_actual_rest, 7)
         
         # Add production features
@@ -427,7 +554,8 @@ def main():
             'momentum_gap': 0, 'roll5_cover_margin': 0,
             'prev_games_played': 10, 'opp_win_pct': 0.5,
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
-            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3
+            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
+            'spread_abs': 0, 'spread_squared': 0,
         })
         input_df = input_df.fillna(0)  # Catch any remaining NaNs
         
@@ -438,14 +566,14 @@ def main():
         # Determine pick - USE ORIGINAL ESPN NAMES
         if prob > 0.5:
             sign = "+" if g['spread'] > 0 else ""
-            pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # ← Original name
+            pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # Original name
             picked_team = g['home_raw']
             picked_spread = g['spread']  # Home team's spread
             picked_team_rest = home_actual_rest  # Picked home team
         else:
             away_spread = -1 * g['spread']
             sign = "+" if away_spread > 0 else ""
-            pick_str = f"{g['away_raw']} {sign}{away_spread}"  # ← Original name
+            pick_str = f"{g['away_raw']} {sign}{away_spread}"  # Original name
             picked_team = g['away_raw']
             picked_spread = away_spread  # Away team's spread
             picked_team_rest = away_actual_rest  # Picked away team
@@ -486,12 +614,12 @@ def main():
         # CRITICAL FIX: Use ORIGINAL ESPN names for display
         prediction_row = {
             "Date/Time": time_str,
-            "Matchup": f"{g['away_raw']} @ {g['home_raw']}",  # ← ORIGINAL NAMES
+            "Matchup": f"{g['away_raw']} @ {g['home_raw']}",
             "Spread": g['spread'],
             "Pick": pick_str,
             "Conf": conf,
             "Raw Odds": g['raw_odds'],
-            "Rest": picked_team_rest,  # ← Show PICKED TEAM's rest days
+            "Rest": picked_team_rest,
             # Kalshi edge data
             "Kalshi_Side": kalshi_data.get("Kalshi_Side"),
             "Kalshi_Price": kalshi_data.get("Kalshi_Price"),
@@ -517,7 +645,7 @@ def main():
         # VALIDATION: Ensure pick mentions a team that's actually in the matchup
         pick_team_mentioned = pick_str.split()[0] + " " + pick_str.split()[1]
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:
-            print(f"      ⚠️  WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
+            print(f"      WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
 
         predictions.append(prediction_row)
 
@@ -540,12 +668,12 @@ def main():
         global _latest_predictions
         _latest_predictions = pred_df
 
-        print(f"\n✅ SUCCESS: Generated {len(pred_df)} predictions")
+        print(f"\nSUCCESS: Generated {len(pred_df)} predictions")
         print(f"   Saved to: {OUTPUT_FILE}")
         print(f"   Archive: {archive_file}")
 
         # Show summary
-        print("\n📋 PREDICTION SUMMARY:")
+        print("\nPREDICTION SUMMARY:")
         for _, row in pred_df.head(5).iterrows():
             print(f"   {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
@@ -560,13 +688,19 @@ def main():
                 print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']}")
                 print(f"      Recommended: {row['Units']:.1f}U")
     else:
-        print("\n⚠️  No predictions generated.")
+        print("\nNo predictions generated.")
     
     # Show skipped games
     if skipped:
-        print(f"\n⚠️  Skipped {len(skipped)} games:")
+        print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+    # Store games that still need manual spreads
+    global _games_needing_spreads
+    _games_needing_spreads = games_needing_spreads
+    if games_needing_spreads:
+        print(f"\n{len(games_needing_spreads)} game(s) need manual spread entry.")
 
 def get_latest_predictions():
     """Return the latest predictions DataFrame with line shopping data."""

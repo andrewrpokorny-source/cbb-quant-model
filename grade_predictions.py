@@ -71,7 +71,7 @@ def fetch_completed_games(date_obj):
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         
                         spread = -val if is_home_fav else val
-                except:
+                except (ValueError, IndexError):
                     pass
             
             # Store with multiple key formats for easier matching
@@ -88,7 +88,7 @@ def fetch_completed_games(date_obj):
         return games
         
     except Exception as e:
-        print(f"      ❌ Error fetching games: {e}")
+        print(f"      Error fetching games: {e}")
         return {}
 
 def match_prediction_to_game(pred_matchup, games):
@@ -166,13 +166,13 @@ def grade_predictions():
     
     if os.path.exists(dated_pred_file):
         pred_source = dated_pred_file
-        print(f"✅ Found dated prediction file: {os.path.basename(dated_pred_file)}")
+        print(f"Found dated prediction file: {os.path.basename(dated_pred_file)}")
     elif os.path.exists(PRED_FILE):
         pred_source = PRED_FILE
-        print(f"⚠️  Using daily_predictions.csv (no dated file found)")
+        print(f"Using daily_predictions.csv (no dated file found)")
         print(f"   Note: This may contain today's games instead of yesterday's")
     else:
-        print("❌ No predictions file found")
+        print("No predictions file found")
         print(f"   Looked for: {dated_pred_file}")
         print(f"   Looked for: {PRED_FILE}")
         print("   Run predict.py to generate predictions first.")
@@ -182,7 +182,7 @@ def grade_predictions():
     try:
         preds = pd.read_csv(pred_source)
         total_preds = len(preds)
-        print(f"✅ Loaded {total_preds} predictions from file")
+        print(f"Loaded {total_preds} predictions from file")
         
         # CRITICAL: Filter for actionable bets only (conf >= 53%)
         CONFIDENCE_THRESHOLD = 0.53
@@ -193,7 +193,7 @@ def grade_predictions():
             print(f"   Skipped {total_preds - len(preds)} low-confidence predictions")
             
     except Exception as e:
-        print(f"❌ Error loading predictions: {e}")
+        print(f"Error loading predictions: {e}")
         return
     
     # 4. Parse prediction dates
@@ -204,18 +204,18 @@ def grade_predictions():
     # (since predict.py overwrites daily_predictions.csv each time)
     # We'll match them to yesterday's completed games
     
-    print(f"\n📊 Predictions to grade: {len(preds)} (actionable bets only)")
+    print(f"\nPredictions to grade: {len(preds)} (actionable bets only)")
     
     # 5. Fetch yesterday's completed games
     completed_games = fetch_completed_games(yesterday)
     
     if not completed_games:
-        print("\n❌ No completed games found for yesterday.")
+        print("\nNo completed games found for yesterday.")
         print("   Either no games were played, or ESPN API is not responding.")
         return
     
     # 6. Grade each prediction
-    print(f"\n📝 Grading predictions...")
+    print(f"\nGrading predictions...")
     
     graded_bets = []
     unmatched = []
@@ -262,10 +262,10 @@ def grade_predictions():
             'final_score': f"{game_result['away_score']}-{game_result['home_score']}"
         })
         
-        result_icon = "✅" if pick_correct else "❌"
+        result_icon = "W" if pick_correct else "L"
         print(f"   {result_icon} {matchup}: {pick} ({'WIN' if pick_correct else 'LOSS'})")
     
-    print(f"\n📊 Grading Summary:")
+    print(f"\nGrading Summary:")
     print(f"   Graded: {len(graded_bets)}")
     print(f"   Unmatched: {len(unmatched)}")
     
@@ -289,23 +289,23 @@ def grade_predictions():
             # Combine
             combined = pd.concat([existing, graded_df], ignore_index=True)
             combined.to_csv(PERF_FILE, index=False)
-            print(f"\n✅ Added {len(graded_bets)} graded bets to performance_log.csv")
+            print(f"\nAdded {len(graded_bets)} graded bets to performance_log.csv")
         else:
             graded_df.to_csv(PERF_FILE, index=False)
-            print(f"\n✅ Created performance_log.csv with {len(graded_bets)} bets")
+            print(f"\nCreated performance_log.csv with {len(graded_bets)} bets")
         
         # Show win rate
         wins = sum(graded_df['pick_correct'])
         win_rate = wins / len(graded_df)
         profit = sum(1.0 if x else -1.1 for x in graded_df['pick_correct'])
         
-        print(f"\n🎯 Yesterday's Performance:")
+        print(f"\nYesterday's Performance:")
         print(f"   Record: {wins}-{len(graded_df)-wins}")
         print(f"   Win Rate: {win_rate:.1%}")
         print(f"   Profit: {profit:+.2f} units")
-        print(f"   (Only includes bets with ≥53% confidence)")
+        print(f"   (Only includes bets with >=53% confidence)")
     else:
-        print("\n⚠️  No predictions were graded.")
+        print("\nNo predictions were graded.")
         print("   This likely means the predictions file contains games for today/tomorrow.")
 
 if __name__ == "__main__":
