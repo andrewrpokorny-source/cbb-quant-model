@@ -312,8 +312,11 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                         best_spread_diff = spread_diff
                         best_market = market
 
-        if best_market and best_spread_diff > 0:
+        if best_market and best_spread_diff > 0.01:
             # Kalshi spread doesn't match our pick -- skip
+            floor_strike = best_market.get("floor_strike", 0)
+            print(f"      Kalshi spread mismatch: Kalshi has {floor_strike}, "
+                  f"pick spread is {abs(picked_spread)} (diff={best_spread_diff:.1f}) -- skipping")
             return result
 
         if best_market:

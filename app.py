@@ -426,11 +426,17 @@ st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis<
 if os.path.exists(PRED_FILE):
     df = pd.read_csv(PRED_FILE)
 
+    def _parse_edge(series):
+        """Parse edge percentage strings like '+5.2%' into floats."""
+        cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
+        return pd.to_numeric(cleaned, errors='coerce').fillna(0)
+
     # --- SUMMARY BAR ---
     if 'Std_Rating' in df.columns:
+        rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
         value_bets = df[
             (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
-            (df['Rating'].isin(['STRONG', 'GOOD']))
+            (rating_col.isin(['STRONG', 'GOOD']))
         ].copy()
 
         num_value = len(value_bets)
@@ -478,20 +484,19 @@ if os.path.exists(PRED_FILE):
             RATING_RANK = {'STRONG': 3, 'GOOD': 2, 'MARGINAL': 1, 'PASS': 0}
 
             # Sort: STRONG first, then by best edge descending
-            value_bets['_best_rank'] = value_bets.apply(
-                lambda r: max(
-                    RATING_RANK.get(r.get('Std_Rating', 'PASS'), 0),
-                    RATING_RANK.get(r.get('Rating', 'PASS') if pd.notna(r.get('Rating')) else 'PASS', 0)
-                ), axis=1
+            value_bets['_best_rank'] = pd.concat([
+                value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0),
+                value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
+            ], axis=1).max(axis=1)
+            value_bets['_best_edge'] = pd.concat([
+                _parse_edge(value_bets['Std_Edge_Pct']),
+                _parse_edge(value_bets['Edge_Pct'])
+            ], axis=1).max(axis=1)
+            value_bets = (
+                value_bets
+                .sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
+                .drop(columns=['_best_rank', '_best_edge'])
             )
-            value_bets['_best_edge'] = value_bets[['Std_Edge_Pct', 'Edge_Pct']].apply(
-                lambda r: max(
-                    float(str(r.get('Std_Edge_Pct', '0%')).replace('%', '').replace('+', '') or 0),
-                    float(str(r.get('Edge_Pct', '0%')).replace('%', '').replace('+', '') or 0)
-                ), axis=1
-            )
-            value_bets = value_bets.sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
-            value_bets = value_bets.drop(columns=['_best_rank', '_best_edge'])
 
             for i, (idx, row) in enumerate(value_bets.iterrows()):
                 col = cols[i % 2] if num_value >= 2 else cols[0]
@@ -596,13 +601,14 @@ if os.path.exists(PRED_FILE):
 
     # Apply filter (check both standard book and Kalshi ratings)
     if 'Std_Rating' in df.columns:
+        kalshi_rating = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
         is_value = (
             (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
-            (df['Rating'].isin(['STRONG', 'GOOD']))
+            (kalshi_rating.isin(['STRONG', 'GOOD']))
         )
         is_strong = (
             (df['Std_Rating'] == 'STRONG') |
-            (df['Rating'] == 'STRONG')
+            (kalshi_rating == 'STRONG')
         )
         if show_filter == "Value Bets Only":
             display_df = df[is_value].copy()
@@ -617,11 +623,6 @@ if os.path.exists(PRED_FILE):
         display_df['Confidence'] = display_df['Conf'].apply(lambda x: f"{x:.1%}")
 
     # Pick edge and units from the same source (whichever has the better edge)
-    def _parse_edge(series):
-        return series.fillna('').astype(str).str.rstrip('%').str.lstrip('+').apply(
-            lambda x: float(x) if x != '' else 0
-        )
-
     std_edge = _parse_edge(display_df['Std_Edge_Pct']) if 'Std_Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
     kalshi_edge = _parse_edge(display_df['Edge_Pct']) if 'Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
     std_units = display_df['Std_Units'].fillna(0) if 'Std_Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
