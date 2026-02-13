@@ -678,15 +678,26 @@ def main(spread_overrides=None):
             print(f"   {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
 
-        # Show value bets (GOOD or STRONG edge)
-        value_bets = pred_df[pred_df['Rating'].isin(['STRONG', 'GOOD'])]
+        # Show value bets (GOOD or STRONG edge from either source)
+        value_bets = pred_df[
+            pred_df['Std_Rating'].isin(['STRONG', 'GOOD']) |
+            pred_df['Rating'].isin(['STRONG', 'GOOD'])
+        ]
         if len(value_bets) > 0:
             print(f"\nVALUE BETS ({len(value_bets)} found):")
             for _, row in value_bets.iterrows():
-                side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
-                print(f"   [{row['Rating']}] {row['Pick']}")
-                print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']}")
-                print(f"      Recommended: {row['Units']:.1f}U")
+                std_rating = row.get('Std_Rating', 'PASS')
+                kalshi_rating = row.get('Rating', None) if pd.notna(row.get('Rating')) else None
+                RANK = {'STRONG': 2, 'GOOD': 1}
+                best = std_rating
+                if kalshi_rating and RANK.get(kalshi_rating, 0) > RANK.get(std_rating, 0):
+                    best = kalshi_rating
+                print(f"   [{best}] {row['Pick']}")
+                if kalshi_rating in ('STRONG', 'GOOD'):
+                    side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
+                    print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
+                if std_rating in ('STRONG', 'GOOD'):
+                    print(f"      Std Book: Edge {row['Std_Edge_Pct']} | {row['Std_Units']:.1f}U")
     else:
         print("\nNo predictions generated.")
     
