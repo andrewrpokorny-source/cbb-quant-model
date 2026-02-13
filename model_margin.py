@@ -7,7 +7,8 @@ point margin. This keeps predictions independent of Vegas spreads.
 Flow:
 1. Model predicts: "Home team wins by X points" based on team quality
 2. Compare predicted margin to Vegas spread
-3. Edge = predicted_margin - spread (positive = bet home, negative = bet away)
+3. Edge = predicted_margin + spread (positive = bet home, negative = bet away)
+   (spread is negative when home is favored, so adding it shrinks the edge)
 """
 
 import pandas as pd
@@ -112,9 +113,9 @@ def train_and_evaluate():
     print(f"R2:   {r2:.3f}")
 
     # 8. Evaluate - ATS prediction accuracy
-    # If predicted_margin > spread, bet home team covers
-    # If predicted_margin < spread, bet away team covers
-    predicted_home_covers = preds > test_spreads
+    # Home covers when predicted_margin + spread > 0
+    # (matches features.py: ats_win = team_score + spread > opp_score)
+    predicted_home_covers = (preds + test_spreads) > 0
     actual_home_covers = test_ats_win == 1
 
     ats_correct = (predicted_home_covers == actual_home_covers).sum()
@@ -125,7 +126,7 @@ def train_and_evaluate():
     print(f"ATS Accuracy: {ats_accuracy:.1%} ({ats_correct}/{ats_total})")
 
     # 9. Edge-based evaluation (only bet when model disagrees with spread)
-    edge = preds - test_spreads  # Positive = model likes home more than Vegas
+    edge = preds + test_spreads  # Positive = model likes home more than Vegas
 
     # Different edge thresholds
     for threshold in [1.0, 2.0, 3.0, 5.0]:
@@ -135,6 +136,8 @@ def train_and_evaluate():
 
         home_bets = strong_home.sum()
         away_bets = strong_away.sum()
+        home_wins = 0
+        away_wins = 0
 
         if home_bets > 0:
             home_wins = (strong_home & actual_home_covers).sum()
@@ -149,7 +152,7 @@ def train_and_evaluate():
             away_acc = 0
 
         total_bets = home_bets + away_bets
-        total_wins = (home_wins if home_bets > 0 else 0) + (away_wins if away_bets > 0 else 0)
+        total_wins = home_wins + away_wins
         total_acc = total_wins / total_bets if total_bets > 0 else 0
 
         print(f"\nEdge >= {threshold} points:")
@@ -230,11 +233,15 @@ def calculate_edge(predicted_margin, vegas_spread):
         vegas_spread: Vegas spread (negative = home favored)
 
     Returns:
-        edge: Predicted margin minus spread
+        edge: predicted_margin + vegas_spread
               Positive = value on home team
               Negative = value on away team
+
+    Example:
+        Model predicts home wins by 5, spread is -7 (home favored by 7):
+        edge = 5 + (-7) = -2 -> bet away (market overvalues home)
     """
-    return predicted_margin - vegas_spread
+    return predicted_margin + vegas_spread
 
 
 if __name__ == "__main__":

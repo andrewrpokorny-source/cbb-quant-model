@@ -9,7 +9,9 @@ def kelly_fraction(
     """
     Calculate Kelly fraction for bet sizing.
 
-    Kelly = edge / odds_against
+    Full Kelly = edge / (1 - implied_prob)
+
+    Derived from standard Kelly f* = (bp - q) / b where edge = p - implied_prob.
 
     We use fractional Kelly (default 1/4 Kelly) to reduce variance.
 
@@ -24,17 +26,9 @@ def kelly_fraction(
     if edge <= 0 or implied_prob <= 0 or implied_prob >= 1:
         return 0.0
 
-    # Odds against = (1 - implied_prob) / implied_prob
-    # This gives the decimal payout ratio
-    odds_against = (1 - implied_prob) / implied_prob
-
-    if odds_against <= 0:
-        return 0.0
-
-    # Full Kelly = edge / odds_decimal
-    # But odds_decimal = 1 + odds_against for decimal odds
-    odds_decimal = 1 + odds_against
-    full_kelly = edge / odds_decimal
+    # Full Kelly = edge / (1 - implied_prob)
+    # Equivalent to (bp - q) / b where b = (1-ip)/ip, p = ip + edge
+    full_kelly = edge / (1 - implied_prob)
 
     # Apply fractional Kelly
     kelly = full_kelly * fraction
