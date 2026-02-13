@@ -578,12 +578,20 @@ if os.path.exists(PRED_FILE):
             label_visibility="collapsed"
         )
 
-    # Apply filter
+    # Apply filter (check both standard book and Kalshi ratings)
     if 'Std_Rating' in df.columns:
+        is_value = (
+            (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
+            (df['Rating'].isin(['STRONG', 'GOOD']))
+        )
+        is_strong = (
+            (df['Std_Rating'] == 'STRONG') |
+            (df['Rating'] == 'STRONG')
+        )
         if show_filter == "Value Bets Only":
-            display_df = df[df['Std_Rating'].isin(['STRONG', 'GOOD'])].copy()
+            display_df = df[is_value].copy()
         elif show_filter == "Strong Only":
-            display_df = df[df['Std_Rating'] == 'STRONG'].copy()
+            display_df = df[is_strong].copy()
         else:
             display_df = df.copy()
     else:
@@ -592,15 +600,32 @@ if os.path.exists(PRED_FILE):
     if 'Conf' in display_df.columns:
         display_df['Confidence'] = display_df['Conf'].apply(lambda x: f"{x:.1%}")
 
-    table_cols = ['Date/Time', 'Pick', 'Confidence', 'Std_Edge_Pct', 'Std_Units']
+    # Pick edge and units from the same source (whichever has the better edge)
+    def _parse_edge(series):
+        return series.str.rstrip('%').str.lstrip('+').apply(
+            lambda x: float(x) if pd.notna(x) and x != '' else 0
+        )
+
+    std_edge = _parse_edge(display_df['Std_Edge_Pct']) if 'Std_Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    kalshi_edge = _parse_edge(display_df['Edge_Pct']) if 'Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    std_units = display_df['Std_Units'].fillna(0) if 'Std_Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    kalshi_units = display_df['Units'].fillna(0) if 'Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
+
+    kalshi_is_better = kalshi_edge > std_edge
+    best_edge = kalshi_edge.where(kalshi_is_better, std_edge)
+    best_units = kalshi_units.where(kalshi_is_better, std_units)
+
+    display_df['Best_Edge'] = best_edge.apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
+    display_df['Best_Units'] = best_units
+
+    table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
     valid_cols = [c for c in table_cols if c in display_df.columns]
 
-    # Rename for display
     table_df = display_df[valid_cols].copy()
     table_df = table_df.rename(columns={
         'Date/Time': 'Time',
-        'Std_Edge_Pct': 'Edge',
-        'Std_Units': 'Units'
+        'Best_Edge': 'Edge',
+        'Best_Units': 'Units'
     })
 
     st.dataframe(
