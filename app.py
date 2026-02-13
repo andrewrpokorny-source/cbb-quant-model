@@ -477,6 +477,22 @@ if os.path.exists(PRED_FILE):
 
             RATING_RANK = {'STRONG': 3, 'GOOD': 2, 'MARGINAL': 1, 'PASS': 0}
 
+            # Sort: STRONG first, then by best edge descending
+            value_bets['_best_rank'] = value_bets.apply(
+                lambda r: max(
+                    RATING_RANK.get(r.get('Std_Rating', 'PASS'), 0),
+                    RATING_RANK.get(r.get('Rating', 'PASS') if pd.notna(r.get('Rating')) else 'PASS', 0)
+                ), axis=1
+            )
+            value_bets['_best_edge'] = value_bets[['Std_Edge_Pct', 'Edge_Pct']].apply(
+                lambda r: max(
+                    float(str(r.get('Std_Edge_Pct', '0%')).replace('%', '').replace('+', '') or 0),
+                    float(str(r.get('Edge_Pct', '0%')).replace('%', '').replace('+', '') or 0)
+                ), axis=1
+            )
+            value_bets = value_bets.sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
+            value_bets = value_bets.drop(columns=['_best_rank', '_best_edge'])
+
             for i, (idx, row) in enumerate(value_bets.iterrows()):
                 col = cols[i % 2] if num_value >= 2 else cols[0]
 
@@ -602,8 +618,8 @@ if os.path.exists(PRED_FILE):
 
     # Pick edge and units from the same source (whichever has the better edge)
     def _parse_edge(series):
-        return series.str.rstrip('%').str.lstrip('+').apply(
-            lambda x: float(x) if pd.notna(x) and x != '' else 0
+        return series.fillna('').astype(str).str.rstrip('%').str.lstrip('+').apply(
+            lambda x: float(x) if x != '' else 0
         )
 
     std_edge = _parse_edge(display_df['Std_Edge_Pct']) if 'Std_Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)

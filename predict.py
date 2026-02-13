@@ -312,6 +312,10 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                         best_spread_diff = spread_diff
                         best_market = market
 
+        if best_market and best_spread_diff > 0:
+            # Kalshi spread doesn't match our pick -- skip
+            return result
+
         if best_market:
             # Fetch fresh prices from API (not cached data)
             ticker = best_market.get("ticker", "")
