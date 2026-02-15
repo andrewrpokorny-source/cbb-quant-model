@@ -22,6 +22,7 @@ import logging.handlers
 import functools
 from datetime import datetime, timedelta
 from io import BytesIO
+from urllib.parse import urlparse, parse_qs
 
 import httpx
 import pytz
@@ -706,6 +707,123 @@ def parse_dk_share_url(url: str) -> dict | None:
         return None
 
 
+def parse_kalshi_share_url(url: str) -> dict | None:
+    """
+    Parse a Kalshi shared trade URL to extract bet data.
+
+    URL params carry the trade details:
+        marketTicker    = KXNCAAMBSPREAD-26FEB14SMCPAC-SMC8
+        direction       = yes
+        cost_cents      = 159
+        max_payout_cents = 300
+
+    Calls the Kalshi public market API to resolve team name and spread
+    from the market title (e.g. "Saint Mary's wins by over 8.5 Points").
+
+    Returns a dict with bet details, or None if parsing fails.
+    """
+    parsed_url = urlparse(url)
+    params = parse_qs(parsed_url.query)
+
+    market_ticker = params.get("marketTicker", [None])[0]
+    direction = params.get("direction", [None])[0]
+    cost_cents = params.get("cost_cents", [None])[0]
+    max_payout_cents = params.get("max_payout_cents", [None])[0]
+
+    if not all([market_ticker, direction, cost_cents, max_payout_cents]):
+        logger.warning(f"Missing required params in Kalshi share URL: {url}")
+        return None
+
+    cost = int(cost_cents) / 100
+    max_payout = int(max_payout_cents) / 100
+    side = direction.upper()
+
+    team = ""
+    spread = 0.0
+    game = ""
+    result = "pending"
+
+    # Fetch market details from Kalshi API
+    try:
+        resp = httpx.get(
+            f"https://api.elections.kalshi.com/trade-api/v2/markets/{market_ticker}",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        market = resp.json().get("market", {})
+
+        # Title like "Saint Mary's wins by over 8.5 Points?"
+        title = market.get("title", "")
+        title_match = re.match(
+            r"(.+?)\s+wins by over\s+(\d+\.?\d*)\s+Points\??", title, re.IGNORECASE
+        )
+        if title_match:
+            team = title_match.group(1).strip()
+            spread = float(title_match.group(2))
+
+        # Fetch event for game matchup (e.g. "Saint Mary's at Pacific: Spread")
+        event_ticker = market.get("event_ticker", "")
+        if event_ticker:
+            try:
+                ev_resp = httpx.get(
+                    f"https://api.elections.kalshi.com/trade-api/v2/events/{event_ticker}",
+                    timeout=10,
+                )
+                ev_resp.raise_for_status()
+                ev_title = ev_resp.json().get("event", {}).get("title", "")
+                at_match = re.match(r"(.+?)\s+at\s+(.+?)(?::\s*Spread)?$", ev_title, re.IGNORECASE)
+                if at_match:
+                    game = f"{at_match.group(1).strip()} vs {at_match.group(2).strip()}"
+            except Exception:
+                pass
+
+        # Check settlement status
+        status = market.get("status", "")
+        if status in ("settled", "finalized"):
+            market_result = market.get("result", "")
+            if market_result == "yes":
+                result = "win" if side == "YES" else "loss"
+            elif market_result == "no":
+                result = "win" if side == "NO" else "loss"
+
+    except Exception as e:
+        logger.warning(f"Kalshi API error for {market_ticker}, falling back to ticker: {e}")
+        # Fallback: decode from ticker (KXNCAAMBSPREAD-26FEB14SMCPAC-SMC8)
+        contract = market_ticker.rsplit("-", 1)[-1] if "-" in market_ticker else ""
+        num_match = re.match(r"([A-Z]+)(\d+)", contract)
+        if num_match:
+            team = num_match.group(1)
+            spread = float(num_match.group(2)) + 0.5
+
+    if not team:
+        logger.warning(f"Could not determine team from Kalshi ticker: {market_ticker}")
+        return None
+
+    line = f"{team} -{spread} {side}"
+
+    if result == "win":
+        payout = max_payout
+        profit = round(max_payout - cost, 2)
+    elif result == "loss":
+        payout = 0.0
+        profit = round(-cost, 2)
+    else:
+        payout = 0.0
+        profit = 0.0
+
+    return {
+        "platform": "Kalshi",
+        "game": game,
+        "bet_type": "spread",
+        "line": line,
+        "odds": "n/a",
+        "wager": cost,
+        "result": result,
+        "payout": round(payout, 2),
+        "profit": profit,
+    }
+
+
 def parse_shorthand(text: str) -> dict:
     """
     Parse shorthand text entry like:
@@ -789,7 +907,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "CBB Bet Logger\n\n"
         "Send a bet slip screenshot to log a bet.\n"
         "Or type shorthand: FD PROV +15.5 -110 1.25\n"
-        "Or share a DraftKings result link to update bets.\n\n"
+        "Or share a DraftKings/Kalshi link to log or settle bets.\n\n"
         "Commands:\n"
         "/pending - Show pending bets\n"
         "/settle - Settle pending bets\n"
@@ -1087,6 +1205,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(
                     f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
+                )
+            return
+
+    # Check for Kalshi shared trade URL
+    kalshi_url_match = re.search(r'https://kalshi\.com/markets/[^\s]+', text)
+    if kalshi_url_match:
+        await update.message.reply_text("Parsing Kalshi share link...")
+        bet = parse_kalshi_share_url(kalshi_url_match.group(0))
+        if bet is None:
+            await update.message.reply_text(
+                "Could not parse Kalshi share link. Try screenshot instead."
+            )
+            return
+
+        if bet.get("result") in ("win", "loss", "void"):
+            update_msg = update_bet_result(bet)
+            if update_msg:
+                await update.message.reply_text(update_msg)
+                return
+            else:
+                row = append_bet(bet)
+                if row is None:
+                    await update.message.reply_text("Duplicate bet -- already logged.")
+                else:
+                    profit_val = float(row.get('profit', 0) or 0)
+                    await update.message.reply_text(
+                        f"Logged ({row['result'].upper()}): {row['line']}, "
+                        f"${float(row['wager']):.2f} on {row['platform']} "
+                        f"(profit: {profit_val:+.2f}U)"
+                    )
+                return
+        else:
+            row = append_bet(bet)
+            if row is None:
+                await update.message.reply_text("Duplicate bet -- already logged.")
+            else:
+                await update.message.reply_text(
+                    f"Logged: {row['line']}, ${float(row['wager']):.2f} on {row['platform']}"
                 )
             return
 
