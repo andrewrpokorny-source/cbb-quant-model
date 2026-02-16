@@ -774,8 +774,8 @@ def parse_kalshi_share_url(url: str) -> dict | None:
                 at_match = re.match(r"(.+?)\s+at\s+(.+?)(?::\s*Spread)?$", ev_title, re.IGNORECASE)
                 if at_match:
                     game = f"{at_match.group(1).strip()} vs {at_match.group(2).strip()}"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not fetch event details for {event_ticker}: {e}")
 
         # Check settlement status
         status = market.get("status", "")

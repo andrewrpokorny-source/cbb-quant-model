@@ -812,6 +812,17 @@ def check_live_prices():
         else:
             live_price = no_price
 
+        if live_price is None:
+            results.append({
+                "Pick": pick,
+                "Model%": f"{model_prob:.1%}",
+                "Live Price": f"{side} N/A",
+                "Edge": "--",
+                "Rating": "--",
+                "Units": "--",
+            })
+            continue
+
         implied_prob = live_price / 100.0
         edge = calculate_edge(model_prob, implied_prob)
         rating = get_rating(edge)
