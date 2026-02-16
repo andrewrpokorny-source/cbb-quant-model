@@ -1,3 +1,4 @@
+import argparse
 import pandas as pd
 import numpy as np
 import requests
@@ -721,5 +722,153 @@ def get_latest_predictions():
     return _latest_predictions
 
 
+def check_live_prices():
+    """Re-fetch current Kalshi prices for today's STRONG picks and recalculate edge.
+
+    Reads the daily predictions CSV, filters to rows with a Kalshi ticker,
+    fetches live prices from the Kalshi API, and prints an updated table
+    showing current edge so the user can verify value before placing a bet.
+    """
+    print("--- LIVE PRICE CHECK ---\n")
+
+    # Load predictions CSV
+    if not os.path.exists(OUTPUT_FILE):
+        print(f"No predictions file found at {OUTPUT_FILE}")
+        print("Run predict.py first (without --check) to generate predictions.")
+        return
+
+    df = pd.read_csv(OUTPUT_FILE)
+
+    # Filter to rows that have a Kalshi ticker
+    if "Kalshi_Ticker" not in df.columns:
+        print("Predictions CSV does not have a Kalshi_Ticker column.")
+        return
+
+    has_ticker = df["Kalshi_Ticker"].notna() & (df["Kalshi_Ticker"] != "")
+    df_kalshi = df[has_ticker].copy()
+
+    if df_kalshi.empty:
+        print("No predictions with Kalshi tickers found.")
+        return
+
+    # Filter to STRONG picks only (from either standard or Kalshi rating)
+    is_strong = (
+        (df_kalshi.get("Std_Rating") == "STRONG") |
+        (df_kalshi.get("Rating") == "STRONG")
+    )
+    df_strong = df_kalshi[is_strong].copy()
+
+    if df_strong.empty:
+        print("No STRONG-rated picks with Kalshi tickers found.")
+        return
+
+    # Initialize Kalshi client
+    api_key = os.getenv("KALSHI_API_KEY")
+    if not api_key:
+        print("KALSHI_API_KEY not set. Cannot fetch live prices.")
+        return
+
+    client = KalshiClient(api_key)
+
+    # Fetch live prices and recalculate edge for each pick
+    results = []
+    for _, row in df_strong.iterrows():
+        ticker = row["Kalshi_Ticker"]
+        side = row.get("Kalshi_Side", "YES")
+        model_prob = row["Conf"]
+        pick = row["Pick"]
+
+        try:
+            prices = client.get_market_prices(ticker)
+        except Exception as e:
+            print(f"   Error fetching {ticker}: {e}")
+            results.append({
+                "Pick": pick,
+                "Model%": f"{model_prob:.1%}",
+                "Live Price": "ERR",
+                "Edge": "--",
+                "Rating": "--",
+                "Units": "--",
+            })
+            continue
+
+        yes_price = prices.get("yes_price")
+        no_price = prices.get("no_price")
+
+        if yes_price is None and no_price is None:
+            results.append({
+                "Pick": pick,
+                "Model%": f"{model_prob:.1%}",
+                "Live Price": "N/A",
+                "Edge": "--",
+                "Rating": "--",
+                "Units": "--",
+            })
+            continue
+
+        # Use the correct price based on which side we're betting
+        if side == "YES":
+            live_price = yes_price
+        else:
+            live_price = no_price
+
+        implied_prob = live_price / 100.0
+        edge = calculate_edge(model_prob, implied_prob)
+        rating = get_rating(edge)
+        units = recommended_units(edge, implied_prob)
+
+        results.append({
+            "Pick": pick,
+            "Model%": f"{model_prob:.1%}",
+            "Live Price": f"{side} @ {live_price}c",
+            "Edge": f"{edge * 100:+.1f}%",
+            "Rating": rating.value,
+            "Units": f"{units:.1f}U" if units > 0 else "PASS",
+        })
+
+    # Print results table
+    if not results:
+        print("No results to display.")
+        return
+
+    # Calculate column widths
+    headers = ["Pick", "Model%", "Live Price", "Edge", "Rating", "Units"]
+    widths = {}
+    for h in headers:
+        col_values = [str(r[h]) for r in results]
+        widths[h] = max(len(h), max(len(v) for v in col_values))
+
+    # Print header
+    header_line = "  ".join(h.ljust(widths[h]) for h in headers)
+    print(header_line)
+    print("-" * len(header_line))
+
+    # Print rows
+    for r in results:
+        line = "  ".join(str(r[h]).ljust(widths[h]) for h in headers)
+        print(line)
+
+    # Summary
+    still_strong = sum(1 for r in results if r["Rating"] == "STRONG")
+    total = len(results)
+    print(f"\n{still_strong}/{total} picks still STRONG at live prices.")
+
+    if still_strong < total:
+        print("Some picks have lost edge -- consider skipping those bets.")
+
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="CBB prediction engine -- generate picks or check live prices."
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Re-fetch live Kalshi prices for today's STRONG picks and show updated edge.",
+    )
+    args = parser.parse_args()
+
+    if args.check:
+        check_live_prices()
+    else:
+        main()

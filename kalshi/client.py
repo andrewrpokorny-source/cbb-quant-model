@@ -205,8 +205,9 @@ class KalshiClient:
             return {"yes_price": None, "no_price": None}
 
         # Kalshi prices are in cents (0-100)
-        yes_price = market.get("yes_bid") or market.get("last_price") or 50
-        no_price = market.get("no_bid") or (100 - yes_price)
+        # yes_ask is what you pay to buy YES -- use this for edge calculation
+        yes_price = market.get("yes_ask") or market.get("last_price") or 50
+        no_price = market.get("no_ask") or (100 - yes_price)
 
         return {
             "yes_price": yes_price,

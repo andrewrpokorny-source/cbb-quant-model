@@ -240,11 +240,10 @@ class MarketMapper:
         Returns:
             Dict with yes_price, no_price (0-100 scale)
         """
-        # yes_bid is what you can sell YES for (probability floor)
-        # yes_ask is what you can buy YES for (probability ceiling)
-        # For edge calculation, use yes_bid (conservative)
-        yes_price = market.get("yes_bid") or market.get("last_price") or 50
-        no_price = market.get("no_bid") or (100 - yes_price)
+        # yes_ask is what you pay to buy YES (the actual cost to enter)
+        # This is what matters for edge calculation -- using bid overstates edge
+        yes_price = market.get("yes_ask") or market.get("last_price") or 50
+        no_price = market.get("no_ask") or (100 - yes_price)
 
         return {
             "yes_price": yes_price,
