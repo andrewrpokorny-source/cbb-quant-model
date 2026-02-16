@@ -57,6 +57,9 @@ def calculate_line_shopping(
     """
     from model_margin import predict_margin
 
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"Invalid sigma={sigma}. Must be positive and finite.")
+
     # Predict margin once (fixed for this matchup)
     predicted_margin = predict_margin(margin_model, base_features)
 
@@ -113,8 +116,7 @@ def find_breakeven_spread(recommendations: List[SpreadAnalysis]) -> Optional[flo
     """
     Find the spread where edge = 0 via linear interpolation.
 
-    Returns None if all spreads have positive edge (very favorable)
-    or if no interpolation is possible.
+    Returns None if the breakeven lies outside the analyzed spread range.
     """
     # Sort by spread value
     sorted_recs = sorted(recommendations, key=lambda x: x.spread)
@@ -135,11 +137,7 @@ def find_breakeven_spread(recommendations: List[SpreadAnalysis]) -> Optional[flo
                 # Round to nearest 0.5
                 return round(breakeven * 2) / 2
 
-    # If all edges are positive, the breakeven is beyond our range
-    if all(r.edge > 0 for r in sorted_recs):
-        return None
-
-    # If all edges are negative, return the most favorable spread we checked
+    # Breakeven outside analyzed range (all positive or all negative edge)
     return None
 
 
@@ -159,7 +157,7 @@ def format_line_shopping_text(result: LineShoppingResult) -> str:
     if result.breakeven_spread is not None:
         lines.append(f"Breakeven: {result.picked_team} {format_spread(result.breakeven_spread)}")
     else:
-        lines.append("Breakeven: Beyond range (all positive edge)")
+        lines.append("Breakeven: Beyond analyzed range")
 
     lines.append("")
     lines.append("Spread    Model %    Edge      Units")
