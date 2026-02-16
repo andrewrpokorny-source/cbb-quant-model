@@ -965,10 +965,10 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     df = pd.read_csv(DAILY_PREDICTIONS)
 
-    # Filter to value bets (STRONG or GOOD)
+    # Filter to value bets (STRONG only)
     value_bets = df[
-        (df.get("Std_Rating", pd.Series(dtype=str)).isin(["STRONG", "GOOD"]))
-        | (df.get("Rating", pd.Series(dtype=str)).isin(["STRONG", "GOOD"]))
+        (df.get("Std_Rating", pd.Series(dtype=str)) == "STRONG")
+        | (df.get("Rating", pd.Series(dtype=str)) == "STRONG")
     ]
 
     if len(value_bets) == 0:
@@ -977,14 +977,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [f"Today's picks ({len(value_bets)} value bets):\n"]
     for _, row in value_bets.iterrows():
-        rating = row.get("Std_Rating", row.get("Rating", ""))
         units = row.get("Std_Units", row.get("Units", 0))
         conf = row.get("Conf", 0)
         edge = row.get("Std_Edge_Pct", row.get("Edge_Pct", ""))
         pick = row.get("Pick", "")
 
-        tag = "[S]" if rating == "STRONG" else "[G]"
-        lines.append(f"{tag} {pick}  {conf:.0%} | {edge} | {units:.1f}U")
+        lines.append(f"{pick}  {conf:.0%} | {edge} | {units:.1f}U")
 
     # Telegram max message length is 4096 chars
     msg = "\n".join(lines)

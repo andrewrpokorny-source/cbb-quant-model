@@ -5,18 +5,14 @@ from typing import Tuple
 
 
 class EdgeRating(Enum):
-    """Bet recommendation tier based on edge."""
+    """Bet recommendation: bet or pass. Kelly handles sizing."""
 
-    STRONG = "STRONG"  # 8%+ edge
-    GOOD = "GOOD"  # 4-8% edge
-    MARGINAL = "MARGINAL"  # 2-4% edge
-    PASS = "PASS"  # <2% edge
+    STRONG = "STRONG"  # 5%+ edge -- bet, let Kelly size it
+    PASS = "PASS"  # <5% edge
 
 
-# Rating thresholds (edge percentage)
-STRONG_THRESHOLD = 0.08  # 8%
-GOOD_THRESHOLD = 0.04  # 4%
-MARGINAL_THRESHOLD = 0.02  # 2%
+# Rating threshold (edge percentage)
+STRONG_THRESHOLD = 0.05  # 5%
 
 # Kalshi fee constant (approximately 3.5% of payout at 50/50)
 KALSHI_FEE_RATE = 0.035
@@ -82,12 +78,7 @@ def get_rating(edge: float) -> EdgeRating:
     """
     if edge >= STRONG_THRESHOLD:
         return EdgeRating.STRONG
-    elif edge >= GOOD_THRESHOLD:
-        return EdgeRating.GOOD
-    elif edge >= MARGINAL_THRESHOLD:
-        return EdgeRating.MARGINAL
-    else:
-        return EdgeRating.PASS
+    return EdgeRating.PASS
 
 
 def calculate_ev(

@@ -96,10 +96,6 @@ p, span, div, .stMarkdown {
     border-left: 4px solid #1a4d2e;
 }
 
-.bet-card.good {
-    border-left: 4px solid #c9a227;
-}
-
 .bet-badge {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
@@ -115,11 +111,6 @@ p, span, div, .stMarkdown {
 .bet-badge.strong {
     background: #1a4d2e;
     color: #ffffff;
-}
-
-.bet-badge.good {
-    background: #c9a227;
-    color: #1a2e1a;
 }
 
 .bet-pick {
@@ -435,8 +426,8 @@ if os.path.exists(PRED_FILE):
     if 'Std_Rating' in df.columns:
         rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
         value_bets = df[
-            (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
-            (rating_col.isin(['STRONG', 'GOOD']))
+            (df['Std_Rating'] == 'STRONG') |
+            (rating_col == 'STRONG')
         ].copy()
 
         num_value = len(value_bets)
@@ -481,7 +472,7 @@ if os.path.exists(PRED_FILE):
             else:
                 cols = [st.container()]
 
-            RATING_RANK = {'STRONG': 3, 'GOOD': 2, 'MARGINAL': 1, 'PASS': 0}
+            RATING_RANK = {'STRONG': 1, 'PASS': 0}
 
             # Sort: STRONG first, then by best edge descending
             value_bets['_best_rank'] = pd.concat([
@@ -502,7 +493,7 @@ if os.path.exists(PRED_FILE):
                 col = cols[i % 2] if num_value >= 2 else cols[0]
 
                 with col:
-                    std_rating = row.get('Std_Rating', 'MARGINAL')
+                    std_rating = row.get('Std_Rating', 'PASS')
                     kalshi_rating = row.get('Rating', 'PASS') if pd.notna(row.get('Rating')) else 'PASS'
                     conf = row['Conf']
                     game_time = row.get('Date/Time', '')
@@ -512,11 +503,9 @@ if os.path.exists(PRED_FILE):
                     kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
                     kalshi_is_primary = kalshi_rank > std_rank
 
-                    best_rating = kalshi_rating if kalshi_is_primary else std_rating
-                    is_strong = best_rating == 'STRONG'
-                    card_class = "strong" if is_strong else "good"
-                    badge_class = "strong" if is_strong else "good"
-                    badge_text = "Strong" if is_strong else "Good"
+                    card_class = "strong"
+                    badge_class = "strong"
+                    badge_text = "Strong"
 
                     # Pick edge/units from the source that triggered the rating
                     if kalshi_is_primary:
@@ -595,7 +584,7 @@ if os.path.exists(PRED_FILE):
     with col1:
         show_filter = st.selectbox(
             "Show",
-            ["All Games", "Value Bets Only", "Strong Only"],
+            ["All Games", "Value Bets Only"],
             label_visibility="collapsed"
         )
 
@@ -603,17 +592,11 @@ if os.path.exists(PRED_FILE):
     if 'Std_Rating' in df.columns:
         kalshi_rating = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
         is_value = (
-            (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
-            (kalshi_rating.isin(['STRONG', 'GOOD']))
-        )
-        is_strong = (
             (df['Std_Rating'] == 'STRONG') |
             (kalshi_rating == 'STRONG')
         )
         if show_filter == "Value Bets Only":
             display_df = df[is_value].copy()
-        elif show_filter == "Strong Only":
-            display_df = df[is_strong].copy()
         else:
             display_df = df.copy()
     else:
