@@ -18,6 +18,8 @@ except ImportError:
 from kalshi import KalshiClient, MarketMapper
 from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB
 from betting import calculate_line_shopping
+from betting.line_shopping import LineShoppingResult
+from model_margin import load_margin_model, FEATURES as MARGIN_FEATURES
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -471,6 +473,18 @@ def main(spread_overrides=None):
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
         return
 
+    # Load margin model for line shopping (graceful fallback if missing)
+    margin_model = None
+    margin_sigma = 9.0
+    try:
+        margin_model, margin_sigma = load_margin_model()
+        print(f"   Margin model loaded (sigma={margin_sigma:.2f})")
+    except FileNotFoundError as e:
+        print(f"   WARNING: Margin model not found, line shopping disabled. ({e})")
+    except Exception as e:
+        print(f"   WARNING: Margin model failed to load, line shopping disabled. "
+              f"({type(e).__name__}: {e})")
+
     try:
         df_hist = pd.read_csv(DATA_FILE)
         print(f"   Data loaded: {len(df_hist)} historical games")
@@ -610,18 +624,50 @@ def main(spread_overrides=None):
             picked_spread,  # Pass the spread for our pick
         )
 
-        # Calculate line shopping recommendations
-        # Build base features (everything except spread)
-        base_features = {k: v for k, v in row.items() if k != 'spread'}
+        # Calculate line shopping recommendations using margin model
         is_home_pick = (prob > 0.5)  # Home pick if model probability > 0.5
 
-        line_shopping = calculate_line_shopping(
-            model,
-            base_features,
-            picked_spread,
-            picked_team,
-            is_home_pick,
-        )
+        if margin_model is not None:
+            try:
+                # Build margin-model-specific features
+                margin_features = {k: v for k, v in row.items() if k in MARGIN_FEATURES}
+                # Two features not in calculate_production_features output:
+                opp_off_rating = a_stats.get('prev_season_off_rating')
+                if opp_off_rating is None or not np.isfinite(opp_off_rating):
+                    print(f"      WARNING: Missing opp_season_off_rating for {g['away_raw']}, defaulting to 100.0")
+                    opp_off_rating = 100.0
+                margin_features['opp_season_off_rating'] = opp_off_rating
+                margin_features['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
+                # Replace any non-finite values with 0
+                margin_features = {
+                    k: (0.0 if not np.isfinite(v) else v)
+                    for k, v in margin_features.items()
+                }
+
+                line_shopping = calculate_line_shopping(
+                    margin_model,
+                    margin_sigma,
+                    margin_features,
+                    picked_spread,
+                    picked_team,
+                    is_home_pick,
+                )
+            except Exception as e:
+                print(f"      WARNING: Line shopping failed for {matchup_key}: "
+                      f"{type(e).__name__}: {e}")
+                line_shopping = LineShoppingResult(
+                    picked_team=picked_team,
+                    market_spread=picked_spread,
+                    breakeven_spread=None,
+                    recommendations=[],
+                )
+        else:
+            line_shopping = LineShoppingResult(
+                picked_team=picked_team,
+                market_spread=picked_spread,
+                breakeven_spread=None,
+                recommendations=[],
+            )
 
         # CRITICAL FIX: Use ORIGINAL ESPN names for display
         prediction_row = {

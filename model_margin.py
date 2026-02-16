@@ -1,8 +1,9 @@
 """
-Margin Prediction Model (Experimental)
+Margin Prediction Model
 
 Instead of predicting ATS win (binary), this model predicts the actual
 point margin. This keeps predictions independent of Vegas spreads.
+Used by the line shopping module for monotonic spread probability curves.
 
 Flow:
 1. Model predicts: "Home team wins by X points" based on team quality
@@ -23,6 +24,9 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 MODEL_FILE = os.path.join(BASE_DIR, "cbb_margin_model.pkl")
+
+# Fallback when sigma is missing from an old-format pkl
+DEFAULT_SIGMA = 9.0  # Approximate RMSE for a reasonable margin model
 
 # Features for margin prediction - NO SPREAD (that's what we're trying to beat)
 FEATURES = [
@@ -195,11 +199,42 @@ def train_and_evaluate():
     except Exception as e:
         print(f"Could not load current model for comparison: {e}")
 
-    # 12. Save model
-    joblib.dump(model, MODEL_FILE)
+    # 12. Compute sigma (std of training residuals) for line shopping norm.cdf
+    train_preds = model.predict(X_train)
+    residuals = y_train.values - train_preds
+    sigma = float(np.std(residuals))
+    print(f"\n=== RESIDUAL SIGMA ===")
+    print(f"Sigma (std of training residuals): {sigma:.2f} points")
+
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"Invalid sigma={sigma} from training residuals. Check training data.")
+
+    # 13. Save model + sigma together
+    joblib.dump({'model': model, 'sigma': sigma}, MODEL_FILE)
     print(f"\nModel saved to {MODEL_FILE}")
 
     return model
+
+
+def load_margin_model(path=MODEL_FILE):
+    """
+    Load margin model + sigma from pkl file.
+
+    Handles both old format (raw model) and new format ({'model': ..., 'sigma': ...}).
+    Returns (model, sigma). Defaults sigma to DEFAULT_SIGMA for old-format files.
+    """
+    data = joblib.load(path)
+    if isinstance(data, dict) and 'model' in data:
+        sigma = data.get('sigma')
+        if sigma is None:
+            print(f"WARNING: Margin model missing 'sigma', defaulting to {DEFAULT_SIGMA}")
+            sigma = DEFAULT_SIGMA
+        if not isinstance(sigma, (int, float)) or not np.isfinite(sigma) or sigma <= 0:
+            raise ValueError(f"Invalid sigma={sigma} in margin model. Re-run model_margin.py.")
+        return data['model'], float(sigma)
+    # Old format: raw model, no sigma saved
+    print(f"WARNING: Old-format margin model, defaulting sigma to {DEFAULT_SIGMA}")
+    return data, DEFAULT_SIGMA
 
 
 def predict_margin(model, features_dict):
@@ -216,9 +251,11 @@ def predict_margin(model, features_dict):
     input_df = pd.DataFrame([features_dict])
 
     # Ensure all features present
-    for col in FEATURES:
-        if col not in input_df.columns:
-            input_df[col] = 0.0
+    missing = [col for col in FEATURES if col not in input_df.columns]
+    if missing:
+        print(f"WARNING: predict_margin missing features (defaulting to 0.0): {missing}")
+    for col in missing:
+        input_df[col] = 0.0
 
     input_df = input_df[FEATURES].astype(float)
     return model.predict(input_df)[0]

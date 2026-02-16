@@ -3,8 +3,7 @@
 from dataclasses import dataclass
 from typing import List, Optional
 import numpy as np
-import pandas as pd
-from scipy.interpolate import PchipInterpolator
+from scipy.stats import norm
 
 from .kelly import recommended_units
 
@@ -32,18 +31,23 @@ class LineShoppingResult:
 
 
 def calculate_line_shopping(
-    model,
+    margin_model,
+    sigma: float,
     base_features: dict,
     market_spread: float,
     picked_team: str,
     is_home_pick: bool,
 ) -> LineShoppingResult:
     """
-    Calculate line shopping recommendations for different spread values.
+    Calculate line shopping recommendations using margin model + norm.cdf.
+
+    Uses P(home covers) = norm.cdf((predicted_margin + home_spread) / sigma)
+    which is inherently monotonic -- no PCHIP smoothing needed.
 
     Args:
-        model: Trained model with predict_proba method
-        base_features: Feature dict without spread (will be filled in per iteration)
+        margin_model: Trained margin regression model
+        sigma: Standard deviation of training residuals
+        base_features: Feature dict for margin model (no spread needed)
         market_spread: Current market spread (from picked team's perspective)
         picked_team: Name of the team we're betting on
         is_home_pick: True if picked team is home team
@@ -51,49 +55,34 @@ def calculate_line_shopping(
     Returns:
         LineShoppingResult with breakeven spread and recommendations ladder
     """
+    from model_margin import predict_margin
+
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"Invalid sigma={sigma}. Must be positive and finite.")
+
+    # Predict margin once (fixed for this matchup)
+    predicted_margin = predict_margin(margin_model, base_features)
+
     recommendations = []
-    cols = model.feature_names_in_
 
     # Generate spreads: market +/- 2 points in 0.5 increments
-    # More favorable = more negative for favorites, more positive for underdogs
     spread_range = np.arange(market_spread - 2.0, market_spread + 2.5, 0.5)
 
     for spread_val in spread_range:
-        # Build feature row with this spread
-        row = base_features.copy()
-
-        # Model uses home team's spread perspective
+        # Convert picked-team spread to home-team spread
         if is_home_pick:
-            # Picked team is home, use spread directly
-            row['spread'] = spread_val
+            home_spread = spread_val
         else:
-            # Picked team is away, model sees negative of away spread
-            row['spread'] = -spread_val
+            home_spread = -spread_val
 
-        # Derived spread features (must match model training)
-        row['spread_abs'] = abs(row['spread'])
-        row['spread_squared'] = row['spread'] ** 2
+        # P(home covers) = norm.cdf((predicted_margin + home_spread) / sigma)
+        home_cover_prob = norm.cdf((predicted_margin + home_spread) / sigma)
 
-        # Prepare for model prediction - ensure columns match model's expected order
-        input_df = pd.DataFrame([row])
-        for c in cols:
-            if c not in input_df.columns:
-                input_df[c] = 0.0
-
-        input_df.columns = input_df.columns.astype(str)
-        input_df = input_df.fillna(0)
-
-        # Reorder columns to match model's expected feature order
-        input_df = input_df[cols]
-
-        # Get model probability
-        prob = model.predict_proba(input_df)[0][1]
-
-        # Model outputs P(home covers). Convert to P(picked team covers)
+        # Convert to P(picked team covers)
         if is_home_pick:
-            model_prob = prob
+            model_prob = home_cover_prob
         else:
-            model_prob = 1 - prob
+            model_prob = 1 - home_cover_prob
 
         # Calculate edge vs standard -110 odds
         edge = model_prob - STANDARD_IMPLIED_PROB
@@ -112,41 +101,6 @@ def calculate_line_shopping(
             is_market=is_market,
         ))
 
-    # Smooth probabilities via monotonic PCHIP interpolation
-    if len(recommendations) >= 3:
-        sorted_recs = sorted(recommendations, key=lambda r: r.spread)
-        spreads = np.array([r.spread for r in sorted_recs])
-        probs = np.array([r.model_prob for r in sorted_recs])
-
-        # Determine expected monotonicity direction:
-        # More favorable spread (lower for favorites, higher for dogs) should
-        # mean higher cover probability. Check if probs generally increase
-        # or decrease with spread.
-        if probs[-1] >= probs[0]:
-            # Probs increase with spread -- enforce monotonically non-decreasing
-            for i in range(1, len(probs)):
-                probs[i] = max(probs[i], probs[i - 1])
-        else:
-            # Probs decrease with spread -- enforce monotonically non-increasing
-            for i in range(1, len(probs)):
-                probs[i] = min(probs[i], probs[i - 1])
-
-        # Fit PCHIP and evaluate at same points for smooth curve
-        interp = PchipInterpolator(spreads, probs)
-        smooth_probs = interp(spreads)
-
-        # Clamp to [0, 1]
-        smooth_probs = np.clip(smooth_probs, 0.0, 1.0)
-
-        # Write smoothed values back into recommendations
-        for rec, sp in zip(sorted_recs, smooth_probs):
-            rec.model_prob = float(sp)
-            rec.edge = rec.model_prob - STANDARD_IMPLIED_PROB
-            rec.kelly_units = recommended_units(rec.edge, STANDARD_IMPLIED_PROB)
-
-        # Replace recommendations with sorted order
-        recommendations = sorted_recs
-
     # Find breakeven spread via interpolation
     breakeven = find_breakeven_spread(recommendations)
 
@@ -162,8 +116,7 @@ def find_breakeven_spread(recommendations: List[SpreadAnalysis]) -> Optional[flo
     """
     Find the spread where edge = 0 via linear interpolation.
 
-    Returns None if all spreads have positive edge (very favorable)
-    or if no interpolation is possible.
+    Returns None if the breakeven lies outside the analyzed spread range.
     """
     # Sort by spread value
     sorted_recs = sorted(recommendations, key=lambda x: x.spread)
@@ -184,11 +137,7 @@ def find_breakeven_spread(recommendations: List[SpreadAnalysis]) -> Optional[flo
                 # Round to nearest 0.5
                 return round(breakeven * 2) / 2
 
-    # If all edges are positive, the breakeven is beyond our range
-    if all(r.edge > 0 for r in sorted_recs):
-        return None
-
-    # If all edges are negative, return the most favorable spread we checked
+    # Breakeven outside analyzed range (all positive or all negative edge)
     return None
 
 
@@ -208,7 +157,7 @@ def format_line_shopping_text(result: LineShoppingResult) -> str:
     if result.breakeven_spread is not None:
         lines.append(f"Breakeven: {result.picked_team} {format_spread(result.breakeven_spread)}")
     else:
-        lines.append("Breakeven: Beyond range (all positive edge)")
+        lines.append("Breakeven: Beyond analyzed range")
 
     lines.append("")
     lines.append("Spread    Model %    Edge      Units")
