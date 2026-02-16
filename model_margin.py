@@ -195,11 +195,32 @@ def train_and_evaluate():
     except Exception as e:
         print(f"Could not load current model for comparison: {e}")
 
-    # 12. Save model
-    joblib.dump(model, MODEL_FILE)
+    # 12. Compute sigma (std of training residuals) for line shopping norm.cdf
+    train_preds = model.predict(X_train)
+    residuals = y_train.values - train_preds
+    sigma = float(np.std(residuals))
+    print(f"\n=== RESIDUAL SIGMA ===")
+    print(f"Sigma (std of training residuals): {sigma:.2f} points")
+
+    # 13. Save model + sigma together
+    joblib.dump({'model': model, 'sigma': sigma}, MODEL_FILE)
     print(f"\nModel saved to {MODEL_FILE}")
 
     return model
+
+
+def load_margin_model(path=MODEL_FILE):
+    """
+    Load margin model + sigma from pkl file.
+
+    Handles both old format (raw model) and new format ({'model': ..., 'sigma': ...}).
+    Returns (model, sigma). Defaults sigma to 9.0 for old-format files.
+    """
+    data = joblib.load(path)
+    if isinstance(data, dict) and 'model' in data:
+        return data['model'], data.get('sigma', 9.0)
+    # Old format: raw model, no sigma saved
+    return data, 9.0
 
 
 def predict_margin(model, features_dict):
