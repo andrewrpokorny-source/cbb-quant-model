@@ -242,8 +242,10 @@ class MarketMapper:
         """
         # yes_ask is what you pay to buy YES (the actual cost to enter)
         # This is what matters for edge calculation -- using bid overstates edge
-        yes_price = market.get("yes_ask") or market.get("last_price") or 50
-        no_price = market.get("no_ask") or (100 - yes_price)
+        yes_ask = market.get("yes_ask")
+        yes_price = yes_ask if yes_ask is not None else market.get("last_price")
+        no_ask = market.get("no_ask")
+        no_price = no_ask if no_ask is not None else (100 - yes_price if yes_price is not None else None)
 
         return {
             "yes_price": yes_price,

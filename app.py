@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import os
 import altair as alt
 import predict
@@ -433,15 +434,12 @@ if os.path.exists(PRED_FILE):
         num_value = len(value_bets)
         if num_value > 0:
             # Use best units per bet (max of Kalshi vs standard book)
-            std_u = value_bets['Std_Units'].fillna(0)
-            kalshi_u = value_bets['Units'].fillna(0)
-            total_units = pd.concat([std_u, kalshi_u], axis=1).max(axis=1).sum()
+            total_units = np.maximum(
+                value_bets['Std_Units'].fillna(0),
+                value_bets['Units'].fillna(0),
+            ).sum()
         else:
             total_units = 0
-        num_strong = len(value_bets[
-            (value_bets['Std_Rating'] == 'STRONG') |
-            (value_bets['Rating'] == 'STRONG')
-        ]) if num_value > 0 else 0
 
         st.markdown(f'''
         <div class="summary-bar">
@@ -475,14 +473,13 @@ if os.path.exists(PRED_FILE):
             RATING_RANK = {'STRONG': 1, 'PASS': 0}
 
             # Sort: STRONG first, then by best edge descending
-            value_bets['_best_rank'] = pd.concat([
-                value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0),
-                value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
-            ], axis=1).max(axis=1)
-            value_bets['_best_edge'] = pd.concat([
+            std_rank = value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
+            kalshi_rank = value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
+            value_bets['_best_rank'] = np.maximum(std_rank, kalshi_rank)
+            value_bets['_best_edge'] = np.maximum(
                 _parse_edge(value_bets['Std_Edge_Pct']),
-                _parse_edge(value_bets['Edge_Pct'])
-            ], axis=1).max(axis=1)
+                _parse_edge(value_bets['Edge_Pct']),
+            )
             value_bets = (
                 value_bets
                 .sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
@@ -502,10 +499,6 @@ if os.path.exists(PRED_FILE):
                     std_rank = RATING_RANK.get(std_rating, 0)
                     kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
                     kalshi_is_primary = kalshi_rank > std_rank
-
-                    card_class = "strong"
-                    badge_class = "strong"
-                    badge_text = "Strong"
 
                     # Pick edge/units from the source that triggered the rating
                     if kalshi_is_primary:
@@ -532,9 +525,9 @@ if os.path.exists(PRED_FILE):
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}</div>'
 
                     st.markdown(f'''
-                    <div class="bet-card {card_class}">
+                    <div class="bet-card strong">
                         <div class="bet-header">
-                            <div class="bet-badge {badge_class}">{badge_text}</div>
+                            <div class="bet-badge strong">Strong</div>
                             <div class="bet-time">{game_time}</div>
                         </div>
                         <div class="bet-pick">{row['Pick']}</div>

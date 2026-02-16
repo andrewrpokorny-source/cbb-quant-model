@@ -325,17 +325,21 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
             ticker = best_market.get("ticker", "")
             prices = client.get_market_prices(ticker) if ticker else mapper.get_market_prices(best_market)
             title = prices.get("title", "")
-            yes_price = prices.get("yes_price", 50)
-            no_price = prices.get("no_price", 50)
+            yes_price = prices.get("yes_price")
+            no_price = prices.get("no_price")
 
             if is_underdog:
                 kalshi_side = "NO"
-                implied_prob = no_price / 100.0
                 bet_price = no_price
             else:
                 kalshi_side = "YES"
-                implied_prob = yes_price / 100.0
                 bet_price = yes_price
+
+            if bet_price is None:
+                print(f"      No Kalshi ask price available for {ticker} -- market may be illiquid")
+                return result
+
+            implied_prob = bet_price / 100.0
 
             # Calculate edge using the correct implied probability
             edge = calculate_edge(model_prob, implied_prob)
@@ -778,39 +782,36 @@ def check_live_prices():
         model_prob = row["Conf"]
         pick = row["Pick"]
 
+        def _placeholder(live_price_str):
+            return {
+                "Pick": pick,
+                "Model%": f"{model_prob:.1%}",
+                "Live Price": live_price_str,
+                "Edge": "--",
+                "Rating": "--",
+                "Units": "--",
+            }
+
         try:
             prices = client.get_market_prices(ticker)
         except Exception as e:
             print(f"   Error fetching {ticker}: {e}")
-            results.append({
-                "Pick": pick,
-                "Model%": f"{model_prob:.1%}",
-                "Live Price": "ERR",
-                "Edge": "--",
-                "Rating": "--",
-                "Units": "--",
-            })
+            results.append(_placeholder("ERR"))
             continue
 
         yes_price = prices.get("yes_price")
         no_price = prices.get("no_price")
 
         if yes_price is None and no_price is None:
-            results.append({
-                "Pick": pick,
-                "Model%": f"{model_prob:.1%}",
-                "Live Price": "N/A",
-                "Edge": "--",
-                "Rating": "--",
-                "Units": "--",
-            })
+            results.append(_placeholder("N/A"))
             continue
 
         # Use the correct price based on which side we're betting
-        if side == "YES":
-            live_price = yes_price
-        else:
-            live_price = no_price
+        live_price = yes_price if side == "YES" else no_price
+
+        if live_price is None:
+            results.append(_placeholder(f"{side} N/A"))
+            continue
 
         implied_prob = live_price / 100.0
         edge = calculate_edge(model_prob, implied_prob)
@@ -833,10 +834,10 @@ def check_live_prices():
 
     # Calculate column widths
     headers = ["Pick", "Model%", "Live Price", "Edge", "Rating", "Units"]
-    widths = {}
-    for h in headers:
-        col_values = [str(r[h]) for r in results]
-        widths[h] = max(len(h), max(len(v) for v in col_values))
+    widths = {
+        h: max(len(h), *(len(str(r[h])) for r in results))
+        for h in headers
+    }
 
     # Print header
     header_line = "  ".join(h.ljust(widths[h]) for h in headers)
