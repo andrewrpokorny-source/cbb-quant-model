@@ -84,16 +84,10 @@ def analyze_bet(model_prob: float, kalshi_yes_price: float) -> dict:
     Returns:
         Dict with edge, rating, implied_prob, ev
     """
-    # Convert Kalshi price to probability
     implied_prob = kalshi_yes_price / 100.0
-
-    # Calculate edge
     edge = calculate_edge(model_prob, implied_prob)
-
-    # Get rating
     rating = get_rating(edge)
 
-    # Calculate EV (assuming Kalshi standard payouts)
     # Kalshi pays 100 cents for a winning contract that cost X cents
     payout = (100 - kalshi_yes_price) / kalshi_yes_price if kalshi_yes_price > 0 else 0
     ev = calculate_ev(model_prob, payout_if_win=payout, cost_if_loss=1.0)

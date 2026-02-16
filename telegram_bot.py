@@ -824,6 +824,41 @@ def parse_kalshi_share_url(url: str) -> dict | None:
     }
 
 
+async def _log_share_url_bet(update: Update, bet: dict):
+    """Log or settle a bet parsed from a share URL (DraftKings or Kalshi).
+
+    If the bet is settled, tries to update an existing pending bet first.
+    Otherwise logs it as a new bet. Sends a reply message in all cases.
+    """
+    odds = bet.get("odds", "n/a")
+    odds_str = f", {odds}" if odds and odds != "n/a" else ""
+
+    if bet.get("result") in ("win", "loss", "void"):
+        update_msg = update_bet_result(bet)
+        if update_msg:
+            await update.message.reply_text(update_msg)
+            return
+        # No matching pending bet -- log it as a settled bet directly
+        row = append_bet(bet)
+        if row is None:
+            await update.message.reply_text("Duplicate bet -- already logged.")
+        else:
+            profit_val = float(row.get('profit', 0) or 0)
+            await update.message.reply_text(
+                f"Logged ({row['result'].upper()}): {row['line']}{odds_str}, "
+                f"${float(row['wager']):.2f} on {row['platform']} "
+                f"(profit: {profit_val:+.2f}U)"
+            )
+    else:
+        row = append_bet(bet)
+        if row is None:
+            await update.message.reply_text("Duplicate bet -- already logged.")
+        else:
+            await update.message.reply_text(
+                f"Logged: {row['line']}{odds_str}, ${float(row['wager']):.2f} on {row['platform']}"
+            )
+
+
 def parse_shorthand(text: str) -> dict:
     """
     Parse shorthand text entry like:
@@ -1165,83 +1200,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Unknown command. Try /start for help.")
         return
 
-    # Check for DraftKings social share URL
-    dk_url_match = re.search(r'https://sportsbook\.draftkings\.com/social/post/[a-zA-Z0-9-]+', text)
-    if dk_url_match:
-        await update.message.reply_text("Parsing DraftKings share link...")
-        bet = parse_dk_share_url(dk_url_match.group(0))
-        if bet is None:
-            await update.message.reply_text(
-                "Could not parse DraftKings share link. Try screenshot instead."
-            )
-            return
-
-        # If this is a settled bet, try to update existing pending bet
-        if bet.get("result") in ("win", "loss", "void"):
-            update_msg = update_bet_result(bet)
-            if update_msg:
-                await update.message.reply_text(update_msg)
-                return
-            else:
-                # No matching pending bet -- log it as a settled bet directly
-                row = append_bet(bet)
-                if row is None:
-                    await update.message.reply_text("Duplicate bet -- already logged.")
-                else:
-                    profit_val = float(row.get('profit', 0) or 0)
-                    await update.message.reply_text(
-                        f"Logged ({row['result'].upper()}): {row['line']}, {row['odds']}, "
-                        f"${float(row['wager']):.2f} on {row['platform']} "
-                        f"(profit: {profit_val:+.2f}U)"
-                    )
-                return
-        else:
-            # It's a new pending bet - log it
-            row = append_bet(bet)
-            if row is None:
-                await update.message.reply_text("Duplicate bet -- already logged.")
-            else:
+    # Check for share URLs (DraftKings or Kalshi)
+    share_url_parsers = [
+        (r'https://sportsbook\.draftkings\.com/social/post/[a-zA-Z0-9-]+', "DraftKings", parse_dk_share_url),
+        (r'https://kalshi\.com/markets/[^\s]+', "Kalshi", parse_kalshi_share_url),
+    ]
+    for pattern, platform_name, parse_fn in share_url_parsers:
+        url_match = re.search(pattern, text)
+        if url_match:
+            await update.message.reply_text(f"Parsing {platform_name} share link...")
+            bet = parse_fn(url_match.group(0))
+            if bet is None:
                 await update.message.reply_text(
-                    f"Logged: {row['line']}, {row['odds']}, ${float(row['wager']):.2f} on {row['platform']}"
+                    f"Could not parse {platform_name} share link. Try screenshot instead."
                 )
-            return
-
-    # Check for Kalshi shared trade URL
-    kalshi_url_match = re.search(r'https://kalshi\.com/markets/[^\s]+', text)
-    if kalshi_url_match:
-        await update.message.reply_text("Parsing Kalshi share link...")
-        bet = parse_kalshi_share_url(kalshi_url_match.group(0))
-        if bet is None:
-            await update.message.reply_text(
-                "Could not parse Kalshi share link. Try screenshot instead."
-            )
-            return
-
-        if bet.get("result") in ("win", "loss", "void"):
-            update_msg = update_bet_result(bet)
-            if update_msg:
-                await update.message.reply_text(update_msg)
                 return
-            else:
-                row = append_bet(bet)
-                if row is None:
-                    await update.message.reply_text("Duplicate bet -- already logged.")
-                else:
-                    profit_val = float(row.get('profit', 0) or 0)
-                    await update.message.reply_text(
-                        f"Logged ({row['result'].upper()}): {row['line']}, "
-                        f"${float(row['wager']):.2f} on {row['platform']} "
-                        f"(profit: {profit_val:+.2f}U)"
-                    )
-                return
-        else:
-            row = append_bet(bet)
-            if row is None:
-                await update.message.reply_text("Duplicate bet -- already logged.")
-            else:
-                await update.message.reply_text(
-                    f"Logged: {row['line']}, ${float(row['wager']):.2f} on {row['platform']}"
-                )
+            await _log_share_url_bet(update, bet)
             return
 
     # Handle pending multi-bet selection from a screenshot
