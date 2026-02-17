@@ -6,12 +6,12 @@ from enum import Enum
 class EdgeRating(Enum):
     """Bet recommendation: bet or pass. Kelly handles sizing."""
 
-    STRONG = "STRONG"  # 5%+ edge -- bet, let Kelly size it
-    PASS = "PASS"  # <5% edge
+    STRONG = "STRONG"  # 8%+ edge -- bet, let Kelly size it
+    PASS = "PASS"  # <8% edge
 
 
 # Rating threshold (edge percentage)
-STRONG_THRESHOLD = 0.05  # 5%
+STRONG_THRESHOLD = 0.08  # 8%
 
 
 def calculate_edge(model_prob: float, market_implied_prob: float) -> float:
