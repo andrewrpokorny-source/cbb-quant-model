@@ -31,23 +31,25 @@ class LineShoppingResult:
 
 
 def calculate_line_shopping(
-    margin_model,
+    classifier_prob: float,
     sigma: float,
-    base_features: dict,
     market_spread: float,
     picked_team: str,
     is_home_pick: bool,
 ) -> LineShoppingResult:
     """
-    Calculate line shopping recommendations using margin model + norm.cdf.
+    Calculate line shopping recommendations using classifier prob + CDF projection.
 
-    Uses P(home covers) = norm.cdf((predicted_margin + home_spread) / sigma)
-    which is inherently monotonic -- no PCHIP smoothing needed.
+    The classifier gives P(home covers) at the market spread. We derive an
+    "effective margin" that reproduces that probability via norm.cdf, then
+    evaluate the CDF at alternative spreads. This gives:
+    - Exact match at market spread (no contradiction with main card)
+    - Monotonic probability curve across spreads
+    - Smooth, realistic shape controlled by sigma
 
     Args:
-        margin_model: Trained margin regression model
-        sigma: Standard deviation of training residuals
-        base_features: Feature dict for margin model (no spread needed)
+        classifier_prob: P(home covers) from classifier at market spread
+        sigma: Std dev of (actual_margin - (-spread)) from training data
         market_spread: Current market spread (from picked team's perspective)
         picked_team: Name of the team we're betting on
         is_home_pick: True if picked team is home team
@@ -55,13 +57,18 @@ def calculate_line_shopping(
     Returns:
         LineShoppingResult with breakeven spread and recommendations ladder
     """
-    from model_margin import predict_margin
+    from model import cover_prob_at_spread
 
     if not np.isfinite(sigma) or sigma <= 0:
         raise ValueError(f"Invalid sigma={sigma}. Must be positive and finite.")
 
-    # Predict margin once (fixed for this matchup)
-    predicted_margin = predict_margin(margin_model, base_features)
+    # Convert classifier prob to home-team perspective for CDF math
+    if is_home_pick:
+        home_prob_at_market = classifier_prob
+        home_market_spread = market_spread
+    else:
+        home_prob_at_market = 1 - classifier_prob
+        home_market_spread = -market_spread
 
     recommendations = []
 
@@ -75,10 +82,12 @@ def calculate_line_shopping(
         else:
             home_spread = -spread_val
 
-        # P(home covers) = norm.cdf((predicted_margin + home_spread) / sigma)
-        home_cover_prob = norm.cdf((predicted_margin + home_spread) / sigma)
+        # Project classifier prob to this spread via CDF
+        home_cover_prob = cover_prob_at_spread(
+            home_prob_at_market, home_market_spread, home_spread, sigma
+        )
 
-        # Convert to P(picked team covers)
+        # Convert back to P(picked team covers)
         if is_home_pick:
             model_prob = home_cover_prob
         else:
