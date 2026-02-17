@@ -11,7 +11,7 @@ from scipy.stats import norm
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
+MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v2.pkl")
 
 FEATURES = [
     'is_home',
