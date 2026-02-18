@@ -42,7 +42,7 @@ def recommended_units(
     implied_prob: float,
     fraction: float = 0.25,
     max_units: float = 3.0,
-    unit_scale: float = 25,
+    unit_scale: float = 30,
 ) -> float:
     """
     Calculate recommended bet size in units.
@@ -52,7 +52,7 @@ def recommended_units(
         implied_prob: Market implied probability (0-1)
         fraction: Kelly fraction (default 0.25)
         max_units: Maximum units to recommend (default 3.0)
-        unit_scale: Multiplier to convert kelly fraction to units (default 25)
+        unit_scale: Multiplier to convert kelly fraction to units (default 30)
 
     Returns:
         Recommended units to bet (0 to max_units)
