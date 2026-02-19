@@ -1133,7 +1133,8 @@ def parse_kalshi_share_url(url: str) -> dict | None:
         payout = 0.0
         profit = round(-cost, 2)
     else:
-        payout = 0.0
+        # Preserve max payout so settlement can compute exact profit later.
+        payout = max_payout
         profit = 0.0
 
     return {

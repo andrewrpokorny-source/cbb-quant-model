@@ -222,14 +222,15 @@ def _team_matches(short_name, full_name):
     return len(close) > 0
 
 
-def calculate_payout(odds_str, wager, result, platform=None):
+def calculate_payout(odds_str, wager, result, platform=None, stored_payout=None):
     """
     Calculate payout and profit for a bet.
 
     odds_str: American odds like "-110", "+150", or "n/a"
     wager: float wager amount
     result: "win", "loss", or "void"
-    platform: sportsbook/platform name (used for Kalshi fallback behavior)
+    platform: sportsbook/platform name
+    stored_payout: optional payout value already captured at log time
 
     Returns: (payout, profit)
     """
@@ -247,17 +248,21 @@ def calculate_payout(odds_str, wager, result, platform=None):
 
     if odds_str.lower() in ("n/a", "nan", ""):
         if platform_name == "kalshi":
-            # Kalshi wager is logged as cost. Without a price/odds snapshot, use
-            # even-money (+100) as a consistent fallback for recordkeeping.
-            profit = round(wager, 2)
-            payout = round(wager + profit, 2)
-            logger.warning(
-                "Kalshi odds missing; using +100 fallback for wager=%s (payout=%s, profit=%s)",
-                wager,
-                payout,
-                profit,
-            )
-            return payout, profit
+            # For Kalshi, use the exact max payout if it was captured at log time
+            # (e.g. from a Kalshi share URL). Otherwise, keep payout/profit unknown.
+            try:
+                payout_val = float(stored_payout)
+                if payout_val != payout_val or payout_val <= 0:  # NaN or non-positive
+                    raise ValueError
+                payout = round(payout_val, 2)
+                profit = round(payout - wager, 2)
+                return payout, profit
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Kalshi payout unknown (missing odds and stored payout) for wager=%s",
+                    wager,
+                )
+                return 0.00, 0.00
 
         logger.warning(f"Cannot calculate payout: odds are '{odds_str}' for wager={wager}")
         return 0.00, 0.00
@@ -384,7 +389,13 @@ def settle_pending_bets(csv_path=None):
                 continue
 
             # Calculate payout
-            payout, profit = calculate_payout(odds_str, wager, result, platform=row.get("platform", ""))
+            payout, profit = calculate_payout(
+                odds_str,
+                wager,
+                result,
+                platform=row.get("platform", ""),
+                stored_payout=row.get("payout", ""),
+            )
 
             # Update the row
             df.at[idx, "result"] = result
