@@ -5,7 +5,12 @@ Tests the critical bet parsing, result determination, and payout calculation log
 """
 
 import pytest
-from settle_bets import parse_bet_line, determine_bet_result, calculate_payout
+from settle_bets import (
+    parse_bet_line,
+    determine_bet_result,
+    calculate_payout,
+    _format_settlement_detail,
+)
 
 
 class TestParseBetLine:
@@ -286,3 +291,31 @@ class TestCalculatePayout:
         # profit = 1.00 * 300 / 100 = 3.00
         assert profit == 3.00
         assert payout == 4.00
+
+
+class TestSettleDetailFormatting:
+    """Tests for user-facing settle detail messages."""
+
+    def test_kalshi_win_unknown_payout_message(self):
+        """Kalshi win with unknown payout is explicitly flagged."""
+        msg = _format_settlement_detail(
+            "UConn -15.5 YES",
+            "Providence vs UConn",
+            "win",
+            0.00,
+            0.00,
+            platform="Kalshi",
+        )
+        assert "payout unknown -- manual review needed" in msg
+
+    def test_non_kalshi_win_unknown_payout_no_flag(self):
+        """Non-Kalshi wins keep the standard detail format."""
+        msg = _format_settlement_detail(
+            "Duke -5.5",
+            "UNC vs Duke",
+            "win",
+            0.00,
+            0.00,
+            platform="DraftKings",
+        )
+        assert "payout unknown -- manual review needed" not in msg

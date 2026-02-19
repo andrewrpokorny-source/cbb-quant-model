@@ -285,6 +285,25 @@ def calculate_payout(odds_str, wager, result, platform=None, stored_payout=None)
     return payout, profit
 
 
+def _format_settlement_detail(line_str, game_str, result, payout, profit, platform=""):
+    """Build a user-facing settlement detail line."""
+    icon = {"win": "W", "loss": "L", "void": "P"}[result]
+    msg = (
+        f"  [{icon}] {line_str} ({game_str}) -> {result}, "
+        f"payout={payout:.2f}, profit={profit:+.2f}"
+    )
+
+    # Explicitly flag unknown Kalshi win payouts for manual correction.
+    if (
+        str(platform or "").strip().lower() == "kalshi"
+        and result == "win"
+        and float(payout) == 0.0
+    ):
+        msg += " (payout unknown -- manual review needed)"
+
+    return msg
+
+
 def settle_pending_bets(csv_path=None):
     """
     Settle all pending bets in betting_history.csv.
@@ -403,10 +422,15 @@ def settle_pending_bets(csv_path=None):
             df.at[idx, "profit"] = profit
 
             settled_count += 1
-            icon = {"win": "W", "loss": "L", "void": "P"}[result]
             details.append(
-                f"  [{icon}] {line_str} ({game_str}) -> {result}, "
-                f"payout={payout:.2f}, profit={profit:+.2f}"
+                _format_settlement_detail(
+                    line_str,
+                    game_str,
+                    result,
+                    payout,
+                    profit,
+                    platform=row.get("platform", ""),
+                )
             )
         except Exception as e:
             logger.error(f"Error settling bet at index {idx}: {e}")
