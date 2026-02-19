@@ -20,6 +20,7 @@ import tempfile
 import logging
 import logging.handlers
 import functools
+import uuid
 from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
@@ -67,6 +68,8 @@ def authorized_only(func):
     return wrapper
 
 LOG_FILE = os.path.join(BASE_DIR, "telegram_bot.log")
+PARSE_AUDIT_FILE = os.getenv("BET_PARSE_AUDIT_FILE", os.path.join(BASE_DIR, "telegram_parse_audit.jsonl"))
+MAX_AUDIT_TEXT_CHARS = 12000
 
 
 class _RedactTokenFilter(logging.Filter):
@@ -228,6 +231,57 @@ def _bet_identity(row: dict) -> tuple[str, str, str, str, str, str]:
         _normalize_odds(row.get("odds", "")),
         _normalize_wager(row.get("wager", "")),
     )
+
+
+def _audit_bet_fields(bet: dict) -> dict:
+    """Extract stable bet fields for audit snapshots."""
+    try:
+        wager = float(bet.get("wager", 0))
+    except (TypeError, ValueError):
+        wager = bet.get("wager", 0)
+
+    return {
+        "platform": str(bet.get("platform", "")),
+        "game": str(bet.get("game", "")),
+        "bet_type": str(bet.get("bet_type", "")),
+        "line": str(bet.get("line", "")),
+        "odds": str(bet.get("odds", "")),
+        "wager": wager,
+        "result": str(bet.get("result", "")),
+    }
+
+
+def _sanitize_audit_payload(value):
+    """Recursively sanitize and truncate values before JSONL audit writes."""
+    if isinstance(value, dict):
+        return {k: _sanitize_audit_payload(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_audit_payload(v) for v in value]
+    if isinstance(value, str) and len(value) > MAX_AUDIT_TEXT_CHARS:
+        return value[:MAX_AUDIT_TEXT_CHARS] + "... [truncated]"
+    return value
+
+
+def _append_parse_audit(entry: dict):
+    """Append a parse/selection event to the sidecar JSONL audit log."""
+    eastern = pytz.timezone("US/Eastern")
+    payload = _sanitize_audit_payload(dict(entry))
+    payload["timestamp"] = datetime.now(eastern).isoformat()
+
+    try:
+        parent = os.path.dirname(PARSE_AUDIT_FILE)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        line = json.dumps(payload, ensure_ascii=True)
+        with open(PARSE_AUDIT_FILE, "a", encoding="utf-8") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(line + "\n")
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning("Could not write parse audit entry: %s", e)
 
 
 def update_bet_result(bet: dict) -> str | None:
@@ -402,6 +456,7 @@ def append_bet(bet: dict):
         "payout": bet.get("payout", ""),
         "profit": bet.get("profit", ""),
     }
+    parse_audit_id = bet.get("_parse_audit_id")
 
     # Use file locking to prevent race conditions
     with open(BETTING_HISTORY, "r+", newline="") as f:
@@ -430,6 +485,14 @@ def append_bet(bet: dict):
                         row["wager"],
                         row["platform"],
                     )
+                    if parse_audit_id:
+                        _append_parse_audit(
+                            {
+                                "event": "ocr_duplicate_skipped",
+                                "parse_id": parse_audit_id,
+                                "bet": _audit_bet_fields(row),
+                            }
+                        )
                     return None
 
             # Seek to end and append while still holding the lock
@@ -438,6 +501,15 @@ def append_bet(bet: dict):
             writer.writerow(row)
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    if parse_audit_id:
+        _append_parse_audit(
+            {
+                "event": "ocr_bet_logged",
+                "parse_id": parse_audit_id,
+                "bet": _audit_bet_fields(row),
+            }
+        )
 
     return row
 
@@ -472,8 +544,23 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    raw_text = "\n".join(lines)
-    return _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text)
+    parse_id = uuid.uuid4().hex[:12]
+    bets = _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text_for_detection)
+    for bet in bets:
+        bet["_parse_audit_id"] = parse_id
+
+    _append_parse_audit(
+        {
+            "event": "ocr_parse",
+            "parse_id": parse_id,
+            "detected_platform": platform,
+            "raw_ocr_text": raw_text_for_detection,
+            "cleaned_ocr_text": cleaned_text,
+            "parsed_candidates": [_audit_bet_fields(b) for b in bets],
+        }
+    )
+
+    return bets
 
 
 def _parse_dk_blocks(text: str) -> list[dict]:
