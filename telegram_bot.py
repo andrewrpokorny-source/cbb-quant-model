@@ -265,10 +265,8 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
 
     if len(matches) == 0:
         return None
-    if len(matches) == 1:
-        return matches.iloc[0].to_dict()
 
-    # Multiple matches -- narrow by team name
+    # Verify team name against every candidate (even single matches)
     teams = partial_bet.get("_teams", [])
     for _, row in matches.iterrows():
         line_upper = str(row.get("line", "")).upper()
@@ -277,6 +275,14 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
             if team.upper() in line_upper or team.upper() in game_upper:
                 return row.to_dict()
 
+    # Single match with no team info -- accept it as best guess
+    if len(matches) == 1 and not teams:
+        return matches.iloc[0].to_dict()
+
+    logger.info(
+        f"Could not narrow pending bet match: {len(matches)} candidates, "
+        f"teams={teams}"
+    )
     return None
 
 
