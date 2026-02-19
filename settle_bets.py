@@ -222,13 +222,14 @@ def _team_matches(short_name, full_name):
     return len(close) > 0
 
 
-def calculate_payout(odds_str, wager, result):
+def calculate_payout(odds_str, wager, result, platform=None):
     """
     Calculate payout and profit for a bet.
 
-    odds_str: American odds like "-110", "+150", or "n/a" for Kalshi
+    odds_str: American odds like "-110", "+150", or "n/a"
     wager: float wager amount
     result: "win", "loss", or "void"
+    platform: sportsbook/platform name (used for Kalshi fallback behavior)
 
     Returns: (payout, profit)
     """
@@ -242,10 +243,22 @@ def calculate_payout(odds_str, wager, result):
 
     # result == "win"
     odds_str = str(odds_str).strip()
+    platform_name = str(platform or "").strip().lower()
 
-    if odds_str in ("n/a", "nan", ""):
-        # Odds unavailable (e.g. Kalshi bets) -- cannot calculate accurate payout.
-        # Return zeros so the bet is flagged for manual review.
+    if odds_str.lower() in ("n/a", "nan", ""):
+        if platform_name == "kalshi":
+            # Kalshi wager is logged as cost. Without a price/odds snapshot, use
+            # even-money (+100) as a consistent fallback for recordkeeping.
+            profit = round(wager, 2)
+            payout = round(wager + profit, 2)
+            logger.warning(
+                "Kalshi odds missing; using +100 fallback for wager=%s (payout=%s, profit=%s)",
+                wager,
+                payout,
+                profit,
+            )
+            return payout, profit
+
         logger.warning(f"Cannot calculate payout: odds are '{odds_str}' for wager={wager}")
         return 0.00, 0.00
 
@@ -371,7 +384,7 @@ def settle_pending_bets(csv_path=None):
                 continue
 
             # Calculate payout
-            payout, profit = calculate_payout(odds_str, wager, result)
+            payout, profit = calculate_payout(odds_str, wager, result, platform=row.get("platform", ""))
 
             # Update the row
             df.at[idx, "result"] = result
