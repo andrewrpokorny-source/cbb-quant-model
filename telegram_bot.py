@@ -414,17 +414,34 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
     if len(matches) == 0:
         return None
 
-    # Verify team name against every candidate (even single matches)
+    # Score each candidate by how many extracted teams match it
     teams = partial_bet.get("_teams", [])
-    for _, row in matches.iterrows():
-        line_upper = str(row.get("line", "")).upper()
-        game_upper = str(row.get("game", "")).upper()
-        for team in teams:
-            if team.upper() in line_upper or team.upper() in game_upper:
-                return row.to_dict()
+    if teams:
+        scored: list[tuple[int, int]] = []  # (score, iloc_index)
+        for idx in range(len(matches)):
+            row = matches.iloc[idx]
+            line_upper = str(row.get("line", "")).upper()
+            game_upper = str(row.get("game", "")).upper()
+            score = sum(
+                1
+                for team in teams
+                if team.upper() in line_upper or team.upper() in game_upper
+            )
+            scored.append((score, idx))
 
-    # Single match with no team info -- accept it as best guess
-    if len(matches) == 1 and not teams:
+        best = max(s for s, _ in scored)
+        if best > 0:
+            winners = [i for s, i in scored if s == best]
+            if len(winners) == 1:
+                return matches.iloc[winners[0]].to_dict()
+            logger.info(
+                f"Tied team match ({best} tokens) across {len(winners)} "
+                f"candidates, teams={teams}"
+            )
+            return None
+
+    # No teams extracted (or no team matched any candidate)
+    if len(matches) == 1:
         return matches.iloc[0].to_dict()
 
     logger.info(
@@ -432,6 +449,66 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
         f"teams={teams}"
     )
     return None
+
+
+def _find_kalshi_pending_by_spread(bet: dict) -> str | None:
+    """Fallback matcher for Kalshi bets where the ticker-derived team name
+    doesn't match the pending bet's full team name.
+
+    Matches pending Kalshi bets by wager + spread number + side (YES/NO),
+    ignoring the team name portion of the line. If exactly one pending bet
+    matches, swaps the line to the pending row's line and calls
+    update_bet_result. Returns the update message, or None on 0 or 2+ matches.
+    """
+    if bet.get("platform", "").upper() != "KALSHI":
+        return None
+
+    if not os.path.exists(BETTING_HISTORY):
+        return None
+
+    # Extract spread number and side from the settled bet's line
+    # Expected format: "SMC -8.5 YES" or "Saint Mary's -8.5 YES"
+    line_match = re.search(r"[-+]?\d+(?:\.\d+)?\s+(YES|NO)", bet.get("line", ""), re.IGNORECASE)
+    if not line_match:
+        return None
+
+    settled_spread_str = re.search(r"([-+]?\d+(?:\.\d+)?)", bet.get("line", ""))
+    if not settled_spread_str:
+        return None
+
+    settled_spread = float(settled_spread_str.group(1))
+    settled_side = line_match.group(1).upper()
+    settled_wager = _normalize_wager(bet.get("wager", ""))
+
+    df = pd.read_csv(BETTING_HISTORY)
+    pending = df[
+        (df["result"] == "pending")
+        & (df["platform"].str.upper() == "KALSHI")
+    ]
+
+    candidates = []
+    for idx, row in pending.iterrows():
+        if _normalize_wager(row.get("wager", "")) != settled_wager:
+            continue
+        row_line = str(row.get("line", ""))
+        row_match = re.search(r"([-+]?\d+(?:\.\d+)?)\s+(YES|NO)", row_line, re.IGNORECASE)
+        if not row_match:
+            continue
+        row_spread = float(row_match.group(1))
+        row_side = row_match.group(2).upper()
+        if abs(row_spread - settled_spread) < 0.01 and row_side == settled_side:
+            candidates.append(row)
+
+    if len(candidates) != 1:
+        return None
+
+    # Swap the line to the pending row's line so update_bet_result can match
+    original_line = bet["line"]
+    bet["line"] = str(candidates[0]["line"])
+    result = update_bet_result(bet)
+    if result is None:
+        bet["line"] = original_line  # restore on failure
+    return result
 
 
 def append_bet(bet: dict):
@@ -1161,6 +1238,9 @@ async def _log_share_url_bet(update: Update, bet: dict):
 
     if bet.get("result") in ("win", "loss", "void"):
         update_msg = update_bet_result(bet)
+        if not update_msg:
+            # Kalshi fallback: ticker-derived abbreviation may not match
+            update_msg = _find_kalshi_pending_by_spread(bet)
         if update_msg:
             await update.message.reply_text(update_msg)
             return
