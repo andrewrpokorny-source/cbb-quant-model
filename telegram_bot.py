@@ -20,6 +20,7 @@ import tempfile
 import logging
 import logging.handlers
 import functools
+import uuid
 from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
@@ -67,6 +68,8 @@ def authorized_only(func):
     return wrapper
 
 LOG_FILE = os.path.join(BASE_DIR, "telegram_bot.log")
+PARSE_AUDIT_FILE = os.getenv("BET_PARSE_AUDIT_FILE", os.path.join(BASE_DIR, "telegram_parse_audit.jsonl"))
+MAX_AUDIT_TEXT_CHARS = 12000
 
 
 class _RedactTokenFilter(logging.Filter):
@@ -188,39 +191,184 @@ def _normalize_line(line_str: str) -> str:
     return line_str.upper()
 
 
+def _normalize_game(game_str: str) -> str:
+    """Normalize game strings for safer matching."""
+    game = str(game_str or "").strip()
+    if not game or game.lower() in {"nan", "none"}:
+        return ""
+    game = re.sub(r"\s+(?:vs\.?|@|at)\s+", " vs ", game, flags=re.IGNORECASE)
+    game = re.sub(r"\s+", " ", game).strip()
+    return game.upper()
+
+
+def _normalize_wager(wager_val) -> str:
+    """Normalize wager to fixed-point string for key comparison."""
+    try:
+        return f"{float(str(wager_val).strip()):.2f}"
+    except (TypeError, ValueError):
+        return str(wager_val).strip()
+
+
+def _normalize_odds(odds_val) -> str:
+    """Normalize American odds strings (e.g. -110, +120, n/a)."""
+    odds = str(odds_val or "").strip().replace(" ", "")
+    if not odds or odds.lower() in {"n/a", "nan", "none"}:
+        return "N/A"
+    try:
+        odds_int = int(float(odds))
+        return f"{odds_int:+d}" if odds_int != 0 else "0"
+    except (TypeError, ValueError):
+        return odds.upper()
+
+
+def _bet_identity(row: dict) -> tuple[str, str, str, str, str, str]:
+    """Identity key for duplicate detection."""
+    return (
+        str(row.get("date", "")).strip(),
+        str(row.get("platform", "")).strip().upper(),
+        _normalize_game(row.get("game", "")),
+        _normalize_line(row.get("line", "")),
+        _normalize_odds(row.get("odds", "")),
+        _normalize_wager(row.get("wager", "")),
+    )
+
+
+def _audit_bet_fields(bet: dict) -> dict:
+    """Extract stable bet fields for audit snapshots."""
+    try:
+        wager = float(bet.get("wager", 0))
+    except (TypeError, ValueError):
+        wager = bet.get("wager", 0)
+
+    return {
+        "platform": str(bet.get("platform", "")),
+        "game": str(bet.get("game", "")),
+        "bet_type": str(bet.get("bet_type", "")),
+        "line": str(bet.get("line", "")),
+        "odds": str(bet.get("odds", "")),
+        "wager": wager,
+        "result": str(bet.get("result", "")),
+    }
+
+
+def _sanitize_audit_payload(value):
+    """Recursively sanitize and truncate values before JSONL audit writes."""
+    if isinstance(value, dict):
+        return {k: _sanitize_audit_payload(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_audit_payload(v) for v in value]
+    if isinstance(value, str) and len(value) > MAX_AUDIT_TEXT_CHARS:
+        return value[:MAX_AUDIT_TEXT_CHARS] + "... [truncated]"
+    return value
+
+
+def _append_parse_audit(entry: dict):
+    """Append a parse/selection event to the sidecar JSONL audit log."""
+    eastern = pytz.timezone("US/Eastern")
+    payload = _sanitize_audit_payload(dict(entry))
+    payload["timestamp"] = datetime.now(eastern).isoformat()
+
+    try:
+        parent = os.path.dirname(PARSE_AUDIT_FILE)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        line = json.dumps(payload, ensure_ascii=True)
+        with open(PARSE_AUDIT_FILE, "a", encoding="utf-8") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(line + "\n")
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning("Could not write parse audit entry: %s", e)
+
+
 def update_bet_result(bet: dict) -> str | None:
     """
-    Update a pending bet with its result, matching by line and wager.
+    Update a pending bet with its result.
 
-    Returns a status message, or None if no matching pending bet found.
-    Uses a single file handle with lock held throughout to avoid TOCTOU races.
+    Primary match key is platform + line + wager. If multiple candidates match,
+    use game/odds/date to disambiguate. If still ambiguous, do not update.
     """
     if not os.path.exists(BETTING_HISTORY):
         return None
 
-    new_key = (_normalize_line(bet["line"]), str(bet["wager"]), bet["platform"].upper())
+    new_platform = str(bet.get("platform", "")).strip().upper()
+    new_line = _normalize_line(bet.get("line", ""))
+    new_wager = _normalize_wager(bet.get("wager", ""))
+    new_game = _normalize_game(bet.get("game", ""))
+    new_odds = _normalize_odds(bet.get("odds", ""))
+    new_date = str(bet.get("date", "")).strip()
 
     with open(BETTING_HISTORY, "r+", newline="") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             reader = list(csv.DictReader(f))
 
-            # Find matching pending bet
-            matched_idx = None
+            candidates: list[tuple[int, int, str]] = []
             for i, row in enumerate(reader):
-                if row.get("result") != "pending":
+                if str(row.get("result", "")).strip().lower() != "pending":
                     continue
-                existing_key = (
-                    _normalize_line(row.get("line", "")),
-                    str(row.get("wager", "")),
-                    row.get("platform", "").upper(),
-                )
-                if existing_key == new_key:
-                    matched_idx = i
-                    break
 
-            if matched_idx is None:
+                row_platform = str(row.get("platform", "")).strip().upper()
+                if row_platform != new_platform:
+                    continue
+                if _normalize_line(row.get("line", "")) != new_line:
+                    continue
+                if _normalize_wager(row.get("wager", "")) != new_wager:
+                    continue
+
+                score = 0
+                row_game = _normalize_game(row.get("game", ""))
+                row_odds = _normalize_odds(row.get("odds", ""))
+                row_date = str(row.get("date", "")).strip()
+
+                if new_game and row_game:
+                    if new_game == row_game:
+                        score += 2
+                    elif new_game in row_game or row_game in new_game:
+                        score += 1
+
+                if new_odds != "N/A" and row_odds != "N/A" and new_odds == row_odds:
+                    score += 1
+
+                if new_date and row_date == new_date:
+                    score += 2
+
+                candidates.append((score, i, row_date))
+
+            if not candidates:
                 return None
+
+            best_score = max(score for score, _, _ in candidates)
+            top = [(i, row_date) for score, i, row_date in candidates if score == best_score]
+
+            if len(top) == 1:
+                matched_idx = top[0][0]
+            else:
+                # Tie-break by most recent date if unique, otherwise avoid wrong update.
+                dated = []
+                for i, row_date in top:
+                    try:
+                        dt = datetime.strptime(row_date, "%Y-%m-%d")
+                    except (TypeError, ValueError):
+                        dt = datetime.min
+                    dated.append((dt, i))
+
+                latest_date = max(dt for dt, _ in dated)
+                finalists = [i for dt, i in dated if dt == latest_date]
+                if len(finalists) == 1:
+                    matched_idx = finalists[0]
+                else:
+                    try:
+                        wager_display = f"{float(bet.get('wager', 0)):.2f}"
+                    except (TypeError, ValueError):
+                        wager_display = str(bet.get("wager", ""))
+                    return (
+                        f"Ambiguous match for {bet.get('line', '')} ${wager_display} on "
+                        f"{bet.get('platform', '')}. Multiple pending bets match."
+                    )
 
             # Update the matched row
             reader[matched_idx]["result"] = bet["result"]
@@ -237,7 +385,7 @@ def update_bet_result(bet: dict) -> str | None:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     result = bet["result"]
-    profit = bet.get("profit", 0)
+    profit = float(bet.get("profit", 0) or 0)
     return f"Updated: {bet['line']} -> {result.upper()} ({profit:+.2f}U)"
 
 
@@ -308,22 +456,43 @@ def append_bet(bet: dict):
         "payout": bet.get("payout", ""),
         "profit": bet.get("profit", ""),
     }
+    parse_audit_id = bet.get("_parse_audit_id")
 
     # Use file locking to prevent race conditions
     with open(BETTING_HISTORY, "r+", newline="") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             # Check for duplicates while holding the lock
-            new_key = (_normalize_line(row["line"]), str(row["wager"]), row["platform"].upper())
+            new_key = _bet_identity(row)
+            new_is_pending = str(row.get("result", "")).strip().lower() == "pending"
             reader = csv.DictReader(f)
             for existing in reader:
-                existing_key = (
-                    _normalize_line(existing.get("line", "")),
-                    str(existing.get("wager", "")),
-                    existing.get("platform", "").upper(),
+                if _bet_identity(existing) != new_key:
+                    continue
+
+                existing_is_pending = (
+                    str(existing.get("result", "")).strip().lower() == "pending"
                 )
-                if existing_key == new_key:
-                    logger.info(f"Duplicate bet skipped: {row['line']} {row['wager']} {row['platform']}")
+
+                # Allow logging a new pending bet if only a settled version exists.
+                # For non-pending rows, dedupe against other non-pending rows.
+                if (new_is_pending and existing_is_pending) or (
+                    not new_is_pending and not existing_is_pending
+                ):
+                    logger.info(
+                        "Duplicate bet skipped: %s %s %s",
+                        row["line"],
+                        row["wager"],
+                        row["platform"],
+                    )
+                    if parse_audit_id:
+                        _append_parse_audit(
+                            {
+                                "event": "ocr_duplicate_skipped",
+                                "parse_id": parse_audit_id,
+                                "bet": _audit_bet_fields(row),
+                            }
+                        )
                     return None
 
             # Seek to end and append while still holding the lock
@@ -332,6 +501,15 @@ def append_bet(bet: dict):
             writer.writerow(row)
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    if parse_audit_id:
+        _append_parse_audit(
+            {
+                "event": "ocr_bet_logged",
+                "parse_id": parse_audit_id,
+                "bet": _audit_bet_fields(row),
+            }
+        )
 
     return row
 
@@ -366,8 +544,23 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    raw_text = "\n".join(lines)
-    return _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text)
+    parse_id = uuid.uuid4().hex[:12]
+    bets = _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text_for_detection)
+    for bet in bets:
+        bet["_parse_audit_id"] = parse_id
+
+    _append_parse_audit(
+        {
+            "event": "ocr_parse",
+            "parse_id": parse_id,
+            "detected_platform": platform,
+            "raw_ocr_text": raw_text_for_detection,
+            "cleaned_ocr_text": cleaned_text,
+            "parsed_candidates": [_audit_bet_fields(b) for b in bets],
+        }
+    )
+
+    return bets
 
 
 def _parse_dk_blocks(text: str) -> list[dict]:
@@ -773,11 +966,22 @@ def parse_dk_share_url(url: str) -> dict | None:
 
         bet_data = json.loads(base64.b64decode(bet_b64))
 
-        status = bet_data.get("status", "pending")
-        # Map DK statuses to our format (win/loss/void)
-        status_map = {"won": "win", "lost": "loss", "pushed": "void",
-                      "voided": "void", "cashout": "void"}
-        result = status_map.get(status, status)
+        status = str(bet_data.get("status", "pending")).strip().lower()
+        # Map DK statuses to our format (win/loss/void/pending).
+        status_map = {
+            "won": "win",
+            "lost": "loss",
+            "pushed": "void",
+            "voided": "void",
+            "cashout": "void",
+            "open": "pending",
+            "pending": "pending",
+            "placed": "pending",
+            "accepted": "pending",
+            "unsettled": "pending",
+            "active": "pending",
+        }
+        result = status_map.get(status, "pending")
 
         stake = float(bet_data.get("stake", 0))
         payout = float(bet_data.get("payout", 0))
@@ -929,7 +1133,8 @@ def parse_kalshi_share_url(url: str) -> dict | None:
         payout = 0.0
         profit = round(-cost, 2)
     else:
-        payout = 0.0
+        # Preserve max payout so settlement can compute exact profit later.
+        payout = max_payout
         profit = 0.0
 
     return {
