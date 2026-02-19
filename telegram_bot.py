@@ -768,6 +768,7 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
+    parse_id = uuid.uuid4().hex[:12]
     bets = _parse_bet_slip_text(
         cleaned_text, platform=platform, raw_text=raw_text_for_detection,
         is_fd_settled=is_fd_settled,
