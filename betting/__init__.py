@@ -2,7 +2,6 @@
 
 from .ev_calculator import (
     calculate_edge,
-    calculate_kalshi_fee,
     get_rating,
     EdgeRating,
     analyze_bet,
@@ -19,7 +18,6 @@ from .line_shopping import (
 
 __all__ = [
     "calculate_edge",
-    "calculate_kalshi_fee",
     "get_rating",
     "EdgeRating",
     "analyze_bet",

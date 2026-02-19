@@ -6,11 +6,12 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, brier_score_loss
+from scipy.stats import norm
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v1.pkl")
+MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v2.pkl")
 
 FEATURES = [
     'is_home',
@@ -157,9 +158,70 @@ def train_and_evaluate():
     for _, row in importance.head(5).iterrows():
         print(f"  {row['feature']:<20}: {row['importance']:.3f}")
 
-    # 13. Save CALIBRATED model
-    joblib.dump(calibrated_clf, MODEL_FILE)
-    print(f"\nCalibrated model saved to {MODEL_FILE}")
+    # 13. Compute sigma for CDF-based line shopping
+    # sigma = std(actual_margin - vegas_predicted_margin) where vegas margin = -spread
+    # This measures how much actual outcomes deviate from the spread, used to
+    # project the classifier's probability at the market spread to other spreads
+    # via norm.cdf curves.
+    if 'margin' in df_model.columns:
+        train_indices = X_train.index
+        train_margins = df_model.loc[train_indices, 'margin'].values
+        train_spreads = df_model.loc[train_indices, 'spread'].values
+        residuals = train_margins - (-train_spreads)  # actual - vegas prediction
+        sigma = float(np.std(residuals))
+        print(f"\nLine shopping sigma: {sigma:.2f} (std of margin vs spread)")
+    else:
+        sigma = 11.0  # Reasonable CBB default
+        print(f"\nLine shopping sigma: {sigma:.2f} (default, margin column not found)")
+
+    # 14. Save calibrated model + sigma
+    joblib.dump({'model': calibrated_clf, 'sigma': sigma}, MODEL_FILE)
+    print(f"Model + sigma saved to {MODEL_FILE}")
+
+
+def load_model(path=MODEL_FILE):
+    """
+    Load classifier + sigma from pkl file.
+
+    Handles both old format (raw model) and new format ({'model': ..., 'sigma': ...}).
+    Returns (model, sigma).
+    """
+    data = joblib.load(path)
+    if isinstance(data, dict) and 'model' in data:
+        sigma = data.get('sigma', 11.0)
+        return data['model'], float(sigma)
+    # Old format: raw model without sigma
+    return data, 11.0
+
+
+def cover_prob_at_spread(classifier_prob, market_spread, alt_spread, sigma):
+    """
+    Project a classifier's cover probability to a different spread using CDF.
+
+    The classifier gives P(home covers) at the market spread. To get the
+    probability at a different spread, we:
+    1. Derive an "effective margin" that would produce the classifier's prob
+    2. Evaluate the CDF at the alternative spread using that margin
+
+    This guarantees:
+    - At market_spread: returns exactly classifier_prob
+    - Monotonic: probability increases as spread becomes more favorable
+    - Smooth: normal CDF shape between spreads
+
+    Args:
+        classifier_prob: P(home covers) from the classifier at market spread
+        market_spread: The spread the classifier was evaluated at
+        alt_spread: The spread to project to
+        sigma: Std dev of (actual_margin - (-spread)) from training data
+
+    Returns:
+        P(home covers) at alt_spread
+    """
+    # Clamp to avoid inf from norm.ppf at 0 or 1
+    p = np.clip(classifier_prob, 0.001, 0.999)
+    effective_margin = sigma * norm.ppf(p) - market_spread
+    return float(norm.cdf((effective_margin + alt_spread) / sigma))
+
 
 if __name__ == "__main__":
     train_and_evaluate()

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import os
 import altair as alt
 import predict
@@ -96,10 +97,6 @@ p, span, div, .stMarkdown {
     border-left: 4px solid #1a4d2e;
 }
 
-.bet-card.good {
-    border-left: 4px solid #c9a227;
-}
-
 .bet-badge {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
@@ -115,11 +112,6 @@ p, span, div, .stMarkdown {
 .bet-badge.strong {
     background: #1a4d2e;
     color: #ffffff;
-}
-
-.bet-badge.good {
-    background: #c9a227;
-    color: #1a2e1a;
 }
 
 .bet-pick {
@@ -426,25 +418,28 @@ st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis<
 if os.path.exists(PRED_FILE):
     df = pd.read_csv(PRED_FILE)
 
+    def _parse_edge(series):
+        """Parse edge percentage strings like '+5.2%' into floats."""
+        cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
+        return pd.to_numeric(cleaned, errors='coerce').fillna(0)
+
     # --- SUMMARY BAR ---
     if 'Std_Rating' in df.columns:
+        rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
         value_bets = df[
-            (df['Std_Rating'].isin(['STRONG', 'GOOD'])) |
-            (df['Rating'].isin(['STRONG', 'GOOD']))
+            (df['Std_Rating'] == 'STRONG') |
+            (rating_col == 'STRONG')
         ].copy()
 
         num_value = len(value_bets)
         if num_value > 0:
             # Use best units per bet (max of Kalshi vs standard book)
-            std_u = value_bets['Std_Units'].fillna(0)
-            kalshi_u = value_bets['Units'].fillna(0)
-            total_units = pd.concat([std_u, kalshi_u], axis=1).max(axis=1).sum()
+            total_units = np.maximum(
+                value_bets['Std_Units'].fillna(0),
+                value_bets['Units'].fillna(0),
+            ).sum()
         else:
             total_units = 0
-        num_strong = len(value_bets[
-            (value_bets['Std_Rating'] == 'STRONG') |
-            (value_bets['Rating'] == 'STRONG')
-        ]) if num_value > 0 else 0
 
         st.markdown(f'''
         <div class="summary-bar">
@@ -475,13 +470,27 @@ if os.path.exists(PRED_FILE):
             else:
                 cols = [st.container()]
 
-            RATING_RANK = {'STRONG': 3, 'GOOD': 2, 'MARGINAL': 1, 'PASS': 0}
+            RATING_RANK = {'STRONG': 1, 'PASS': 0}
+
+            # Sort: STRONG first, then by best edge descending
+            std_rank = value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
+            kalshi_rank = value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
+            value_bets['_best_rank'] = np.maximum(std_rank, kalshi_rank)
+            value_bets['_best_edge'] = np.maximum(
+                _parse_edge(value_bets['Std_Edge_Pct']),
+                _parse_edge(value_bets['Edge_Pct']),
+            )
+            value_bets = (
+                value_bets
+                .sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
+                .drop(columns=['_best_rank', '_best_edge'])
+            )
 
             for i, (idx, row) in enumerate(value_bets.iterrows()):
                 col = cols[i % 2] if num_value >= 2 else cols[0]
 
                 with col:
-                    std_rating = row.get('Std_Rating', 'MARGINAL')
+                    std_rating = row.get('Std_Rating', 'PASS')
                     kalshi_rating = row.get('Rating', 'PASS') if pd.notna(row.get('Rating')) else 'PASS'
                     conf = row['Conf']
                     game_time = row.get('Date/Time', '')
@@ -490,12 +499,6 @@ if os.path.exists(PRED_FILE):
                     std_rank = RATING_RANK.get(std_rating, 0)
                     kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
                     kalshi_is_primary = kalshi_rank > std_rank
-
-                    best_rating = kalshi_rating if kalshi_is_primary else std_rating
-                    is_strong = best_rating == 'STRONG'
-                    card_class = "strong" if is_strong else "good"
-                    badge_class = "strong" if is_strong else "good"
-                    badge_text = "Strong" if is_strong else "Good"
 
                     # Pick edge/units from the source that triggered the rating
                     if kalshi_is_primary:
@@ -522,9 +525,9 @@ if os.path.exists(PRED_FILE):
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}</div>'
 
                     st.markdown(f'''
-                    <div class="bet-card {card_class}">
+                    <div class="bet-card strong">
                         <div class="bet-header">
-                            <div class="bet-badge {badge_class}">{badge_text}</div>
+                            <div class="bet-badge strong">Strong</div>
                             <div class="bet-time">{game_time}</div>
                         </div>
                         <div class="bet-pick">{row['Pick']}</div>
@@ -574,16 +577,19 @@ if os.path.exists(PRED_FILE):
     with col1:
         show_filter = st.selectbox(
             "Show",
-            ["All Games", "Value Bets Only", "Strong Only"],
+            ["All Games", "Value Bets Only"],
             label_visibility="collapsed"
         )
 
-    # Apply filter
+    # Apply filter (check both standard book and Kalshi ratings)
     if 'Std_Rating' in df.columns:
+        kalshi_rating = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
+        is_value = (
+            (df['Std_Rating'] == 'STRONG') |
+            (kalshi_rating == 'STRONG')
+        )
         if show_filter == "Value Bets Only":
-            display_df = df[df['Std_Rating'].isin(['STRONG', 'GOOD'])].copy()
-        elif show_filter == "Strong Only":
-            display_df = df[df['Std_Rating'] == 'STRONG'].copy()
+            display_df = df[is_value].copy()
         else:
             display_df = df.copy()
     else:
@@ -592,15 +598,27 @@ if os.path.exists(PRED_FILE):
     if 'Conf' in display_df.columns:
         display_df['Confidence'] = display_df['Conf'].apply(lambda x: f"{x:.1%}")
 
-    table_cols = ['Date/Time', 'Pick', 'Confidence', 'Std_Edge_Pct', 'Std_Units']
+    # Pick edge and units from the same source (whichever has the better edge)
+    std_edge = _parse_edge(display_df['Std_Edge_Pct']) if 'Std_Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    kalshi_edge = _parse_edge(display_df['Edge_Pct']) if 'Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    std_units = display_df['Std_Units'].fillna(0) if 'Std_Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
+    kalshi_units = display_df['Units'].fillna(0) if 'Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
+
+    kalshi_is_better = kalshi_edge > std_edge
+    best_edge = kalshi_edge.where(kalshi_is_better, std_edge)
+    best_units = kalshi_units.where(kalshi_is_better, std_units)
+
+    display_df['Best_Edge'] = best_edge.apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
+    display_df['Best_Units'] = best_units
+
+    table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
     valid_cols = [c for c in table_cols if c in display_df.columns]
 
-    # Rename for display
     table_df = display_df[valid_cols].copy()
     table_df = table_df.rename(columns={
         'Date/Time': 'Time',
-        'Std_Edge_Pct': 'Edge',
-        'Std_Units': 'Units'
+        'Best_Edge': 'Edge',
+        'Best_Units': 'Units'
     })
 
     st.dataframe(

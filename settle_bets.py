@@ -222,13 +222,15 @@ def _team_matches(short_name, full_name):
     return len(close) > 0
 
 
-def calculate_payout(odds_str, wager, result):
+def calculate_payout(odds_str, wager, result, platform=None, stored_payout=None):
     """
     Calculate payout and profit for a bet.
 
-    odds_str: American odds like "-110", "+150", or "n/a" for Kalshi
+    odds_str: American odds like "-110", "+150", or "n/a"
     wager: float wager amount
     result: "win", "loss", or "void"
+    platform: sportsbook/platform name
+    stored_payout: optional payout value already captured at log time
 
     Returns: (payout, profit)
     """
@@ -242,10 +244,26 @@ def calculate_payout(odds_str, wager, result):
 
     # result == "win"
     odds_str = str(odds_str).strip()
+    platform_name = str(platform or "").strip().lower()
 
-    if odds_str in ("n/a", "nan", ""):
-        # Odds unavailable (e.g. Kalshi bets) -- cannot calculate accurate payout.
-        # Return zeros so the bet is flagged for manual review.
+    if odds_str.lower() in ("n/a", "nan", ""):
+        if platform_name == "kalshi":
+            # For Kalshi, use the exact max payout if it was captured at log time
+            # (e.g. from a Kalshi share URL). Otherwise, keep payout/profit unknown.
+            try:
+                payout_val = float(stored_payout)
+                if payout_val != payout_val or payout_val <= 0:  # NaN or non-positive
+                    raise ValueError
+                payout = round(payout_val, 2)
+                profit = round(payout - wager, 2)
+                return payout, profit
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Kalshi payout unknown (missing odds and stored payout) for wager=%s",
+                    wager,
+                )
+                return 0.00, 0.00
+
         logger.warning(f"Cannot calculate payout: odds are '{odds_str}' for wager={wager}")
         return 0.00, 0.00
 
@@ -265,6 +283,25 @@ def calculate_payout(odds_str, wager, result):
     payout = round(wager + profit, 2)
     profit = round(profit, 2)
     return payout, profit
+
+
+def _format_settlement_detail(line_str, game_str, result, payout, profit, platform=""):
+    """Build a user-facing settlement detail line."""
+    icon = {"win": "W", "loss": "L", "void": "P"}[result]
+    msg = (
+        f"  [{icon}] {line_str} ({game_str}) -> {result}, "
+        f"payout={payout:.2f}, profit={profit:+.2f}"
+    )
+
+    # Explicitly flag unknown Kalshi win payouts for manual correction.
+    if (
+        str(platform or "").strip().lower() == "kalshi"
+        and result == "win"
+        and float(payout) == 0.0
+    ):
+        msg += " (payout unknown -- manual review needed)"
+
+    return msg
 
 
 def settle_pending_bets(csv_path=None):
@@ -371,7 +408,13 @@ def settle_pending_bets(csv_path=None):
                 continue
 
             # Calculate payout
-            payout, profit = calculate_payout(odds_str, wager, result)
+            payout, profit = calculate_payout(
+                odds_str,
+                wager,
+                result,
+                platform=row.get("platform", ""),
+                stored_payout=row.get("payout", ""),
+            )
 
             # Update the row
             df.at[idx, "result"] = result
@@ -379,10 +422,15 @@ def settle_pending_bets(csv_path=None):
             df.at[idx, "profit"] = profit
 
             settled_count += 1
-            icon = {"win": "W", "loss": "L", "void": "P"}[result]
             details.append(
-                f"  [{icon}] {line_str} ({game_str}) -> {result}, "
-                f"payout={payout:.2f}, profit={profit:+.2f}"
+                _format_settlement_detail(
+                    line_str,
+                    game_str,
+                    result,
+                    payout,
+                    profit,
+                    platform=row.get("platform", ""),
+                )
             )
         except Exception as e:
             logger.error(f"Error settling bet at index {idx}: {e}")
