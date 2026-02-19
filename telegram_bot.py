@@ -100,7 +100,11 @@ logger = logging.getLogger(__name__)
 CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit"]
 
 # Short team abbreviations that are valid (not junk OCR text)
-VALID_SHORT_TEAMS = {"TCU", "USC", "LSU", "SMU", "UCF", "UNC", "UAB", "FIU", "BYU", "UIC"}
+VALID_SHORT_TEAMS = {
+    "TCU", "USC", "LSU", "SMU", "UCF", "UNC", "UAB", "FIU", "BYU", "UIC",
+    "UTSA", "UTEP", "UNLV", "ETSU", "NJIT", "UNO", "URI", "UNI", "SIUE",
+    "UMBC", "LIU", "SIU", "NIU", "WKU", "FAU", "FDU", "UNCW", "VMI",
+}
 
 # Known junk lines from DraftKings/FanDuel UI that OCR picks up.
 # NOTE: Do NOT include platform names here -- they're needed for platform detection.
@@ -237,6 +241,45 @@ def update_bet_result(bet: dict) -> str | None:
     return f"Updated: {bet['line']} -> {result.upper()} ({profit:+.2f}U)"
 
 
+def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
+    """Match a partial settled bet against pending bets in history.
+
+    Matches by platform + wager, then narrows by team name if needed.
+    Returns the matched row as a dict, or None.
+    """
+    if not os.path.exists(BETTING_HISTORY):
+        return None
+
+    df = pd.read_csv(BETTING_HISTORY)
+    pending = df[df["result"] == "pending"]
+    if len(pending) == 0:
+        return None
+
+    platform = partial_bet["platform"].upper()
+    wager = float(partial_bet["wager"])
+
+    matches = pending[
+        (pending["platform"].str.upper() == platform)
+        & (abs(pending["wager"].astype(float) - wager) < 0.01)
+    ]
+
+    if len(matches) == 0:
+        return None
+    if len(matches) == 1:
+        return matches.iloc[0].to_dict()
+
+    # Multiple matches -- narrow by team name
+    teams = partial_bet.get("_teams", [])
+    for _, row in matches.iterrows():
+        line_upper = str(row.get("line", "")).upper()
+        game_upper = str(row.get("game", "")).upper()
+        for team in teams:
+            if team.upper() in line_upper or team.upper() in game_upper:
+                return row.to_dict()
+
+    return None
+
+
 def append_bet(bet: dict):
     """Append a bet row to betting_history.csv. Returns None if duplicate.
 
@@ -317,7 +360,8 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    return _parse_bet_slip_text(cleaned_text, platform=platform)
+    raw_text = "\n".join(lines)
+    return _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text)
 
 
 def _parse_dk_blocks(text: str) -> list[dict]:
@@ -382,6 +426,73 @@ def _parse_dk_blocks(text: str) -> list[dict]:
         })
 
     return bets
+
+
+def _parse_fd_settled_fallback(raw_text: str) -> dict | None:
+    """Parse a FanDuel settled slip when OCR missed the header spread line.
+
+    Settled FD slips have score sections and financial details that we can
+    extract even when the styled header (team + spread) is unreadable.
+    Works on raw (uncleaned) OCR text to preserve score lines and team names.
+    Returns a partial bet dict with _partial=True, or None.
+    """
+    lines = raw_text.split("\n")
+
+    # Look for score lines (2+ digit groups, e.g. "26 34 60") and adjacent team names
+    score_re = re.compile(r"^\d+(?:\s+\d+){1,}$")
+    teams = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if score_re.match(stripped) and i > 0:
+            prev = lines[i - 1].strip()
+            if (
+                prev
+                and re.match(r"^[A-Za-z]", prev)
+                and not re.match(r"^\$", prev)
+                and prev.lower() not in JUNK_LINES
+            ):
+                teams.append(prev)
+
+    # Need at least one team and a dollar amount to proceed
+    amounts = [
+        float(m) for m in re.findall(r"\$(\d+\.?\d{0,2})", raw_text)
+        if 0.25 <= float(m) <= 500
+    ]
+    if not teams or not amounts:
+        return None
+
+    wager = amounts[0]
+    payout = amounts[1] if len(amounts) >= 2 else 0
+
+    odds_match = re.search(r"([+-]\d{3,})", raw_text)
+    odds = odds_match.group(1) if odds_match else "n/a"
+
+    # Determine result from payout
+    if payout > wager:
+        result = "win"
+    elif payout == 0 or "returned" in raw_text.lower():
+        result = "void" if "returned" in raw_text.lower() else "loss"
+    elif abs(payout - wager) < 0.01:
+        result = "void"
+    else:
+        result = "loss"
+
+    profit = round(payout - wager, 2)
+    game = f"{teams[0]} vs {teams[1]}" if len(teams) >= 2 else ""
+
+    return {
+        "platform": "FanDuel",
+        "game": game,
+        "bet_type": "spread",
+        "line": "",
+        "odds": odds,
+        "wager": wager,
+        "payout": payout,
+        "result": result,
+        "profit": profit,
+        "_partial": True,
+        "_teams": teams,
+    }
 
 
 def _parse_fd_blocks(text: str) -> list[dict]:
@@ -520,7 +631,7 @@ def _detect_platform(text: str) -> str:
         return "Unknown"
 
 
-def _parse_bet_slip_text(text: str, platform: str = None) -> list[dict]:
+def _parse_bet_slip_text(text: str, platform: str = None, raw_text: str = None) -> list[dict]:
     """Parse raw OCR text from a bet slip into structured bet data."""
     # Use provided platform or try to detect from text
     if platform is None:
@@ -536,6 +647,10 @@ def _parse_bet_slip_text(text: str, platform: str = None) -> list[dict]:
         bets = _parse_fd_blocks(text)
         if bets:
             return bets
+        # Settled slip fallback (uses raw text to preserve score lines)
+        partial = _parse_fd_settled_fallback(raw_text or text)
+        if partial:
+            return [partial]
 
     if platform == "Kalshi":
         bets = _parse_kalshi_blocks(text)
@@ -1146,6 +1261,38 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Handle partial bets from settled-slip fallback
+    partial_bets = [b for b in bets if b.get("_partial")]
+    if partial_bets:
+        for bet in partial_bets:
+            match = _find_matching_pending_bet(bet)
+            if match:
+                settle_data = {
+                    "line": match["line"],
+                    "wager": match["wager"],
+                    "platform": match["platform"],
+                    "result": bet["result"],
+                    "payout": bet.get("payout", ""),
+                    "profit": bet.get("profit", ""),
+                }
+                msg = update_bet_result(settle_data)
+                if msg:
+                    await update.message.reply_text(msg)
+                else:
+                    await update.message.reply_text("Found matching bet but could not settle.")
+            else:
+                teams_str = ", ".join(bet.get("_teams", ["Unknown"]))
+                await update.message.reply_text(
+                    f"Settled FD slip detected:\n"
+                    f"  Teams: {teams_str}\n"
+                    f"  Wager: ${bet['wager']:.2f}, Payout: ${bet['payout']:.2f}\n"
+                    f"  Result: {bet['result'].upper()}\n\n"
+                    f"Could not read the spread from OCR.\n"
+                    f"Reply with: TEAM SPREAD (e.g. UTSA +12.5)"
+                )
+                context.user_data["partial_settled_bet"] = bet
+        return
+
     # Filter to valid bets
     valid_bets = []
     for bet in bets:
@@ -1199,6 +1346,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         await update.message.reply_text("Unknown command. Try /start for help.")
         return
+
+    # Handle partial settled bet completion (user providing missing spread)
+    partial_bet = context.user_data.get("partial_settled_bet")
+    if partial_bet:
+        spread_match = re.match(r"^(.+?)\s+([+-]\d+\.?\d*)\s*$", text.strip())
+        if spread_match:
+            team = spread_match.group(1).strip()
+            spread = spread_match.group(2)
+            partial_bet["line"] = f"{team} {spread}"
+            partial_bet.pop("_partial", None)
+            partial_bet.pop("_teams", None)
+
+            msg = update_bet_result(partial_bet)
+            if msg:
+                await update.message.reply_text(msg)
+            else:
+                row = append_bet(partial_bet)
+                if row is None:
+                    await update.message.reply_text("Duplicate bet -- already logged.")
+                else:
+                    profit_val = float(row.get("profit", 0) or 0)
+                    await update.message.reply_text(
+                        f"Logged ({row['result'].upper()}): {row['line']}, "
+                        f"${float(row['wager']):.2f} on {row['platform']} "
+                        f"(profit: {profit_val:+.2f}U)"
+                    )
+            context.user_data.pop("partial_settled_bet", None)
+            return
 
     # Check for share URLs (DraftKings or Kalshi)
     share_url_parsers = [
