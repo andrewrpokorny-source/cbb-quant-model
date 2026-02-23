@@ -16,6 +16,7 @@ import json
 import errno
 import fcntl
 import base64
+import shutil
 import tempfile
 import logging
 import logging.handlers
@@ -47,6 +48,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
 DAILY_PREDICTIONS = os.path.join(BASE_DIR, "daily_predictions.csv")
 PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -668,6 +670,8 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     then parse the text into structured bet data.
     Returns a list of parsed bet dicts.
     """
+    parse_id = uuid.uuid4().hex[:12]
+
     # Write bytes to a temp file for ocrmac
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
         tmp.write(image_bytes)
@@ -675,6 +679,11 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
 
     try:
         results = ocrmac.OCR(tmp_path, recognition_level="accurate").recognize()
+        # Save screenshot to disk for future re-testing
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        saved_path = os.path.join(SCREENSHOT_DIR, f"{parse_id}.jpg")
+        shutil.copy2(tmp_path, saved_path)
+        logger.info(f"Saved screenshot to {saved_path}")
     finally:
         os.unlink(tmp_path)
 
@@ -694,7 +703,6 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    parse_id = uuid.uuid4().hex[:12]
     bets = _parse_bet_slip_text(
         cleaned_text, platform=platform, raw_text=raw_text_for_detection,
         is_fd_settled=is_fd_settled,
