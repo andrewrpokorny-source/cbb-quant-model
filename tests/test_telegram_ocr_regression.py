@@ -8,6 +8,8 @@ import importlib.util
 import sys
 import types
 
+import pytest
+
 
 def _module_available(name: str) -> bool:
     try:
@@ -128,3 +130,152 @@ def test_kalshi_fixture_regression() -> None:
     assert bet["line"] == "UConn -15.5 YES"
     assert bet["odds"] == "n/a"
     assert bet["wager"] == 1.53
+
+
+# ---------------------------------------------------------------------------
+# FanDuel settled screenshot tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_seen_bet_ids():
+    """Clear cross-screenshot dedup set between tests."""
+    BOT._SEEN_FD_BET_IDS.clear()
+    yield
+    BOT._SEEN_FD_BET_IDS.clear()
+
+
+def test_fanduel_settled_multi_card_parsing() -> None:
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+
+    assert len(bets) == 3
+
+    # Card 1: Drexel
+    b0 = bets[0]
+    assert b0["platform"] == "FanDuel"
+    assert b0["line"] == "Drexel -1.5"
+    assert b0["game"] == "Drexel vs Towson"
+    assert b0["odds"] == "-110"
+    assert b0["wager"] == 1.0
+    assert b0["result"] == "win"
+    assert b0["payout"] == 1.91
+    assert b0["profit"] == 0.91
+    assert b0["date"] == "2026-02-19"
+    assert b0["bet_id"] == "FD-ABC-001"
+
+    # Card 2: Citadel
+    b1 = bets[1]
+    assert b1["line"] == "Citadel +5.5"
+    assert b1["game"] == "The Citadel vs VMI"
+    assert b1["odds"] == "-108"
+    assert b1["wager"] == 1.0
+    assert b1["result"] == "win"
+    assert b1["bet_id"] == "FD-ABC-002"
+
+    # Card 3: UTSA -- game name doesn't leak from card 1 or 2
+    b2 = bets[2]
+    assert b2["line"] == "UTSA +12.5"
+    assert b2["game"] == "UTSA vs UTEP"
+    assert b2["odds"] == "+100"
+    assert b2["wager"] == 1.0
+    assert b2["result"] == "win"
+    assert b2["payout"] == 2.0
+    assert b2["profit"] == 1.0
+    assert b2["bet_id"] == "FD-ABC-003"
+
+
+def test_fanduel_settled_void_detection() -> None:
+    raw = _read_fixture("fanduel_settled_void.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+
+    assert len(bets) == 1
+    bet = bets[0]
+    assert bet["result"] == "void"
+    assert bet["payout"] == bet["wager"]  # void: payout = wager
+    assert bet["profit"] == 0.0
+    assert bet["bet_id"] == "FD-VOID-001"
+
+
+def test_fanduel_settled_loss_detection() -> None:
+    raw = _read_fixture("fanduel_settled_loss.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    assert len(bets) == 1
+    bet = bets[0]
+    assert bet["result"] == "loss"
+    assert bet["payout"] == 0.0
+    assert bet["profit"] == -1.0
+    assert bet["bet_id"] == "FD-LOSS-001"
+
+
+def test_fanduel_settled_context_detection() -> None:
+    settled_text = "Some header\nWON ON FANDUEL\nDrexel -1.5\n$1.00"
+    pending_text = "FanDuel\nSportsbook\nDrexel -1.5\n$1.00"
+    assert BOT._detect_fd_settled(settled_text) is True
+    assert BOT._detect_fd_settled(pending_text) is False
+
+    returned_text = "FANDUEL\nSPORTSBOOK\nRETURNED\nDrexel -1.5\n$1.00"
+    assert BOT._detect_fd_settled(returned_text) is True
+
+    # "returned" without "sportsbook" should not trigger
+    ambiguous_text = "Player returned to lineup\nDrexel -1.5\n$1.00"
+    assert BOT._detect_fd_settled(ambiguous_text) is False
+
+
+def test_fanduel_settled_bet_id_extraction() -> None:
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    ids = [b["bet_id"] for b in bets]
+    assert ids == ["FD-ABC-001", "FD-ABC-002", "FD-ABC-003"]
+
+
+def test_fanduel_settled_game_date_extraction() -> None:
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    assert all(b["date"] == "2026-02-19" for b in bets)
+
+
+def test_fanduel_settled_does_not_break_pending() -> None:
+    """Existing pending FanDuel fixture still parses correctly."""
+    text = _read_fixture("fanduel_spread_single.txt")
+    bets = BOT._parse_bet_slip_text(text, platform="FanDuel")
+
+    assert len(bets) == 1
+    bet = bets[0]
+    assert bet["platform"] == "FanDuel"
+    assert bet["line"] == "Providence +15.5"
+    assert bet["wager"] == 1.25
+
+
+def test_fanduel_settled_cross_screenshot_dedup() -> None:
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    bets1 = BOT._parse_fd_settled_cards(raw)
+    assert len(bets1) == 3
+
+    # Same text again -- all BET IDs already seen
+    bets2 = BOT._parse_fd_settled_cards(raw)
+    assert len(bets2) == 0
+
+
+def test_fanduel_settled_card_without_bet_id() -> None:
+    """Card with no BET ID line still parses successfully."""
+    card = (
+        "FANDUEL\nSPORTSBOOK\nWON ON FANDUEL\n"
+        "Drexel -1.5\nDrexel @ Towson\n$1.00\n-110\n$1.91\n"
+        "FEB 19, 7:00PM ET"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    assert len(bets) == 1
+    assert bets[0]["bet_id"] == ""
+    assert bets[0]["line"] == "Drexel -1.5"
+
+
+def test_fanduel_settled_different_ids_second_screenshot() -> None:
+    """Different BET IDs in a second screenshot should be accepted."""
+    raw1 = _read_fixture("fanduel_settled_multi.txt")
+    bets1 = BOT._parse_fd_settled_cards(raw1)
+    assert len(bets1) == 3
+
+    raw2 = _read_fixture("fanduel_settled_void.txt")
+    bets2 = BOT._parse_fd_settled_cards(raw2)
+    assert len(bets2) == 1  # FD-VOID-001 is a different ID, should not be blocked

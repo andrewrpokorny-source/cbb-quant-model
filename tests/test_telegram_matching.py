@@ -1,7 +1,7 @@
 """Tests for settle-matching logic in telegram_bot.py.
 
-Covers _find_matching_pending_bet scoring and _find_kalshi_pending_by_spread
-fallback matching.
+Covers _find_matching_pending_bet scoring, _find_kalshi_pending_by_spread
+fallback matching, and FanDuel settled bet routing/dedup.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import importlib.util
 import os
 import sys
 import types
+
+import pytest
 
 
 def _module_available(name: str) -> bool:
@@ -278,3 +280,147 @@ def test_kalshi_fallback_different_spread_returns_none(tmp_path, monkeypatch):
     }
     result = BOT._find_kalshi_pending_by_spread(bet)
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: FanDuel settled bet routing and BET ID dedup
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_seen_bet_ids():
+    """Clear cross-screenshot dedup set between tests."""
+    BOT._SEEN_FD_BET_IDS.clear()
+    yield
+    BOT._SEEN_FD_BET_IDS.clear()
+
+
+def test_settled_updates_pending_bet(tmp_path, monkeypatch):
+    """Settled bet with matching pending -> updates the pending row."""
+    csv_path = tmp_path / "betting_history.csv"
+    _write_csv(csv_path, [
+        {"platform": "FanDuel", "game": "Drexel vs Towson",
+         "line": "Drexel -1.5", "wager": "1.00", "odds": "-110",
+         "result": "pending", "date": "2026-02-19"},
+    ])
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+
+    settled = {
+        "platform": "FanDuel",
+        "line": "Drexel -1.5",
+        "wager": 1.00,
+        "odds": "-110",
+        "result": "win",
+        "payout": 1.91,
+        "profit": 0.91,
+        "bet_id": "FD-ABC-001",
+        "game": "Drexel vs Towson",
+        "date": "2026-02-19",
+    }
+    msg = BOT.update_bet_result(settled)
+    assert msg is not None
+    assert "Updated" in msg
+    assert "WIN" in msg
+
+    # Verify CSV was updated
+    with open(csv_path) as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1
+    assert rows[0]["result"] == "win"
+    assert rows[0]["payout"] == "1.91"
+    assert rows[0]["bet_id"] == "FD-ABC-001"
+
+
+def test_settled_no_pending_appends_as_settled(tmp_path, monkeypatch):
+    """No matching pending bet -> append as settled."""
+    csv_path = tmp_path / "betting_history.csv"
+    _write_csv(csv_path, [])
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+
+    settled = {
+        "platform": "FanDuel",
+        "line": "Drexel -1.5",
+        "wager": 1.00,
+        "odds": "-110",
+        "result": "win",
+        "payout": 1.91,
+        "profit": 0.91,
+        "bet_id": "FD-ABC-001",
+        "date": "2026-02-19",
+    }
+    row = BOT.append_bet(settled)
+    assert row is not None
+    assert row["result"] == "win"
+    assert row["bet_id"] == "FD-ABC-001"
+
+
+def test_settled_duplicate_bet_id_skipped(tmp_path, monkeypatch):
+    """Same bet_id already in CSV -> duplicate skipped."""
+    csv_path = tmp_path / "betting_history.csv"
+    _write_csv(csv_path, [
+        {"platform": "FanDuel", "game": "Drexel vs Towson",
+         "line": "Drexel -1.5", "wager": "1.00", "odds": "-110",
+         "result": "win", "payout": "1.91", "profit": "0.91",
+         "date": "2026-02-19", "bet_id": "FD-ABC-001"},
+    ])
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+
+    settled = {
+        "platform": "FanDuel",
+        "line": "Drexel -1.5",
+        "wager": 1.00,
+        "result": "win",
+        "payout": 1.91,
+        "profit": 0.91,
+        "bet_id": "FD-ABC-001",
+    }
+    row = BOT.append_bet(settled)
+    assert row is None  # duplicate
+
+
+def test_settled_does_not_overwrite_existing_bet_id(tmp_path, monkeypatch):
+    """Existing bet_id should not be overwritten by a different bet_id."""
+    csv_path = tmp_path / "betting_history.csv"
+    _write_csv(csv_path, [
+        {"platform": "FanDuel", "game": "Drexel vs Towson",
+         "line": "Drexel -1.5", "wager": "1.00", "odds": "-110",
+         "result": "pending", "date": "2026-02-19", "bet_id": "FD-ORIGINAL"},
+    ])
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+
+    settled = {
+        "platform": "FanDuel", "line": "Drexel -1.5", "wager": 1.00,
+        "odds": "-110", "result": "win", "payout": 1.91, "profit": 0.91,
+        "bet_id": "FD-DIFFERENT", "game": "Drexel vs Towson", "date": "2026-02-19",
+    }
+    msg = BOT.update_bet_result(settled)
+    assert msg is not None
+
+    with open(csv_path) as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["bet_id"] == "FD-ORIGINAL"  # not overwritten
+
+
+def test_csv_migration_adds_bet_id_column(tmp_path, monkeypatch):
+    """Pre-existing CSV without bet_id column gets bet_id added."""
+    csv_path = tmp_path / "betting_history.csv"
+    old_headers = ["date", "platform", "game", "bet_type", "line",
+                   "odds", "wager", "result", "payout", "profit"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=old_headers)
+        writer.writeheader()
+        writer.writerow({
+            "date": "2026-02-18", "platform": "FanDuel", "game": "Duke vs UNC",
+            "bet_type": "spread", "line": "Duke -2.5", "odds": "-110",
+            "wager": "1.00", "result": "win", "payout": "1.91", "profit": "0.91",
+        })
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+    BOT.ensure_csv_exists()
+
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert "bet_id" in reader.fieldnames
+    assert len(rows) == 1
+    assert rows[0]["bet_id"] == ""
+    assert rows[0]["date"] == "2026-02-18"
