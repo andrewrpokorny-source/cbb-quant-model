@@ -197,14 +197,29 @@ def test_fanduel_settled_void_detection() -> None:
     assert bet["bet_id"] == "FD-VOID-001"
 
 
+def test_fanduel_settled_loss_detection() -> None:
+    raw = _read_fixture("fanduel_settled_loss.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    assert len(bets) == 1
+    bet = bets[0]
+    assert bet["result"] == "loss"
+    assert bet["payout"] == 0.0
+    assert bet["profit"] == -1.0
+    assert bet["bet_id"] == "FD-LOSS-001"
+
+
 def test_fanduel_settled_context_detection() -> None:
     settled_text = "Some header\nWON ON FANDUEL\nDrexel -1.5\n$1.00"
     pending_text = "FanDuel\nSportsbook\nDrexel -1.5\n$1.00"
     assert BOT._detect_fd_settled(settled_text) is True
     assert BOT._detect_fd_settled(pending_text) is False
 
-    returned_text = "RETURNED\nDrexel -1.5\n$1.00"
+    returned_text = "FANDUEL\nSPORTSBOOK\nRETURNED\nDrexel -1.5\n$1.00"
     assert BOT._detect_fd_settled(returned_text) is True
+
+    # "returned" without "sportsbook" should not trigger
+    ambiguous_text = "Player returned to lineup\nDrexel -1.5\n$1.00"
+    assert BOT._detect_fd_settled(ambiguous_text) is False
 
 
 def test_fanduel_settled_bet_id_extraction() -> None:
@@ -240,3 +255,27 @@ def test_fanduel_settled_cross_screenshot_dedup() -> None:
     # Same text again -- all BET IDs already seen
     bets2 = BOT._parse_fd_settled_cards(raw)
     assert len(bets2) == 0
+
+
+def test_fanduel_settled_card_without_bet_id() -> None:
+    """Card with no BET ID line still parses successfully."""
+    card = (
+        "FANDUEL\nSPORTSBOOK\nWON ON FANDUEL\n"
+        "Drexel -1.5\nDrexel @ Towson\n$1.00\n-110\n$1.91\n"
+        "FEB 19, 7:00PM ET"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    assert len(bets) == 1
+    assert bets[0]["bet_id"] == ""
+    assert bets[0]["line"] == "Drexel -1.5"
+
+
+def test_fanduel_settled_different_ids_second_screenshot() -> None:
+    """Different BET IDs in a second screenshot should be accepted."""
+    raw1 = _read_fixture("fanduel_settled_multi.txt")
+    bets1 = BOT._parse_fd_settled_cards(raw1)
+    assert len(bets1) == 3
+
+    raw2 = _read_fixture("fanduel_settled_void.txt")
+    bets2 = BOT._parse_fd_settled_cards(raw2)
+    assert len(bets2) == 1  # FD-VOID-001 is a different ID, should not be blocked

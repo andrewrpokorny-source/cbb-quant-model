@@ -376,3 +376,51 @@ def test_settled_duplicate_bet_id_skipped(tmp_path, monkeypatch):
     }
     row = BOT.append_bet(settled)
     assert row is None  # duplicate
+
+
+def test_settled_does_not_overwrite_existing_bet_id(tmp_path, monkeypatch):
+    """Existing bet_id should not be overwritten by a different bet_id."""
+    csv_path = tmp_path / "betting_history.csv"
+    _write_csv(csv_path, [
+        {"platform": "FanDuel", "game": "Drexel vs Towson",
+         "line": "Drexel -1.5", "wager": "1.00", "odds": "-110",
+         "result": "pending", "date": "2026-02-19", "bet_id": "FD-ORIGINAL"},
+    ])
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+
+    settled = {
+        "platform": "FanDuel", "line": "Drexel -1.5", "wager": 1.00,
+        "odds": "-110", "result": "win", "payout": 1.91, "profit": 0.91,
+        "bet_id": "FD-DIFFERENT", "game": "Drexel vs Towson", "date": "2026-02-19",
+    }
+    msg = BOT.update_bet_result(settled)
+    assert msg is not None
+
+    with open(csv_path) as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["bet_id"] == "FD-ORIGINAL"  # not overwritten
+
+
+def test_csv_migration_adds_bet_id_column(tmp_path, monkeypatch):
+    """Pre-existing CSV without bet_id column gets bet_id added."""
+    csv_path = tmp_path / "betting_history.csv"
+    old_headers = ["date", "platform", "game", "bet_type", "line",
+                   "odds", "wager", "result", "payout", "profit"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=old_headers)
+        writer.writeheader()
+        writer.writerow({
+            "date": "2026-02-18", "platform": "FanDuel", "game": "Duke vs UNC",
+            "bet_type": "spread", "line": "Duke -2.5", "odds": "-110",
+            "wager": "1.00", "result": "win", "payout": "1.91", "profit": "0.91",
+        })
+    monkeypatch.setattr(BOT, "BETTING_HISTORY", str(csv_path))
+    BOT.ensure_csv_exists()
+
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert "bet_id" in reader.fieldnames
+    assert len(rows) == 1
+    assert rows[0]["bet_id"] == ""
+    assert rows[0]["date"] == "2026-02-18"

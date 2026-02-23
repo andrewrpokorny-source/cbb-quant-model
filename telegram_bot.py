@@ -180,7 +180,12 @@ def _clean_ocr_text(lines: list[str]) -> list[str]:
 def _detect_fd_settled(raw_text: str) -> bool:
     """Detect whether raw OCR text is from a FanDuel settled screenshot."""
     lower = raw_text.lower()
-    return "won on fanduel" in lower or "returned" in lower
+    if "won on fanduel" in lower or "lost on fanduel" in lower:
+        return True
+    # "RETURNED" appears as a standalone line on FanDuel void slips
+    if re.search(r"^\s*returned\s*$", lower, re.MULTILINE) and "sportsbook" in lower:
+        return True
+    return False
 
 
 def ensure_csv_exists():
@@ -204,12 +209,23 @@ def ensure_csv_exists():
 
     with open(BETTING_HISTORY, "r", newline="") as f:
         rows = list(csv.DictReader(f))
-    with open(BETTING_HISTORY, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        writer.writeheader()
-        for row in rows:
-            row.setdefault("bet_id", "")
-            writer.writerow({h: row.get(h, "") for h in CSV_HEADERS})
+
+    logger.info("Migrating betting_history.csv: adding bet_id column (%d rows)", len(rows))
+    tmp_path = BETTING_HISTORY + ".migrate_tmp"
+    try:
+        with open(tmp_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+            writer.writeheader()
+            for row in rows:
+                row.setdefault("bet_id", "")
+                writer.writerow({h: row.get(h, "") for h in CSV_HEADERS})
+        os.replace(tmp_path, BETTING_HISTORY)
+        logger.info("Migration complete: bet_id column added")
+    except Exception:
+        logger.exception("CSV migration failed -- original file preserved")
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 def _normalize_line(line_str: str) -> str:
@@ -679,11 +695,13 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
 
     try:
         results = ocrmac.OCR(tmp_path, recognition_level="accurate").recognize()
-        # Save screenshot to disk for future re-testing
-        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-        saved_path = os.path.join(SCREENSHOT_DIR, f"{parse_id}.jpg")
-        shutil.copy2(tmp_path, saved_path)
-        logger.info(f"Saved screenshot to {saved_path}")
+        try:
+            os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+            saved_path = os.path.join(SCREENSHOT_DIR, f"{parse_id}.jpg")
+            shutil.copy2(tmp_path, saved_path)
+            logger.info("Saved screenshot to %s", saved_path)
+        except OSError as save_err:
+            logger.warning("Could not save screenshot for re-testing: %s", save_err)
     finally:
         os.unlink(tmp_path)
 
@@ -927,8 +945,8 @@ def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
     """
     # Split at FANDUEL ... SPORTSBOOK banners (OCR often puts them on separate lines)
     cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
-    # First chunk is header junk before the first banner; skip if empty
-    if cards and not cards[0].strip():
+    # First chunk is content before the first banner; always skip it
+    if cards:
         cards = cards[1:]
 
     bets = []
@@ -945,9 +963,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     bet_id_match = FD_BET_ID_RE.search(card_text)
     bet_id = bet_id_match.group(1) if bet_id_match else ""
 
-    # 2. Cross-screenshot dedup
+    # 2. Cross-screenshot dedup (performance optimization; CSV bet_id dedup is the source of truth)
     if bet_id:
         if bet_id in _SEEN_FD_BET_IDS:
+            logger.info("Cross-screenshot dedup: skipping already-seen bet_id %s", bet_id)
             return None
         _SEEN_FD_BET_IDS.add(bet_id)
 
@@ -1027,10 +1046,13 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             break
 
     # 6. Extract payout from raw text (second dollar amount in range)
-    raw_amounts = [
-        float(m) for m in re.findall(r"\$(\d+\.?\d{0,2})", card_text)
-        if 0.25 <= float(m) <= 500
-    ]
+    all_amounts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+    raw_amounts = [float(m) for m in all_amounts if 0.25 <= float(m) <= 500]
+    if len(raw_amounts) < 2:
+        logger.warning(
+            "FD settled card: expected >= 2 dollar amounts, found %d (bet_id=%s)",
+            len(raw_amounts), bet_id,
+        )
     payout = raw_amounts[1] if len(raw_amounts) >= 2 else 0.0
 
     # 7. Result-specific payout override
@@ -1046,6 +1068,12 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         profit = 0.0
 
     line = f"{team} {spread}" if team and spread else ""
+
+    if not line or wager <= 0:
+        logger.warning(
+            "FD settled card parse incomplete: line=%r wager=%s bet_id=%s",
+            line, wager, bet_id,
+        )
 
     return {
         "platform": "FanDuel",
@@ -1827,23 +1855,35 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if settled_bets:
         msgs = []
         for bet in settled_bets:
-            bet_copy = {k: v for k, v in bet.items() if not k.startswith("_")}
-            # Try to settle a matching pending bet first
-            update_msg = update_bet_result(bet_copy)
-            if update_msg:
-                msgs.append(update_msg)
-            else:
-                # No pending match -- append as settled (dedup catches existing)
-                row = append_bet(bet_copy)
-                if row is None:
-                    msgs.append(f"Duplicate: {bet.get('line', '?')} -- already logged.")
-                else:
-                    profit_val = float(row.get("profit", 0) or 0)
+            try:
+                bet_copy = {k: v for k, v in bet.items() if not k.startswith("_")}
+                if not bet_copy.get("line") or not bet_copy.get("wager"):
+                    logger.warning("Settled bet missing line or wager: %s", bet_copy)
                     msgs.append(
-                        f"Logged ({row['result'].upper()}): {row['line']}, "
-                        f"${float(row['wager']):.2f} on {row['platform']} "
-                        f"(profit: {profit_val:+.2f}U)"
+                        f"Could not parse settled bet fully"
+                        f" (bet_id={bet_copy.get('bet_id', '?')})."
+                        f" Try manual settlement."
                     )
+                    continue
+                # Try to settle a matching pending bet first
+                update_msg = update_bet_result(bet_copy)
+                if update_msg:
+                    msgs.append(update_msg)
+                else:
+                    # No pending match -- append as settled (dedup catches existing)
+                    row = append_bet(bet_copy)
+                    if row is None:
+                        msgs.append(f"Duplicate: {bet.get('line', '?')} -- already logged.")
+                    else:
+                        profit_val = float(row.get("profit", 0) or 0)
+                        msgs.append(
+                            f"Logged ({row['result'].upper()}): {row['line']}, "
+                            f"${float(row['wager']):.2f} on {row['platform']} "
+                            f"(profit: {profit_val:+.2f}U)"
+                        )
+            except Exception as e:
+                logger.exception("Failed to log settled bet %s: %s", bet.get("bet_id", "?"), e)
+                msgs.append(f"Error logging {bet.get('line', '?')}: could not write to CSV.")
         if msgs:
             await update.message.reply_text("\n".join(msgs))
         if not non_settled_bets:
