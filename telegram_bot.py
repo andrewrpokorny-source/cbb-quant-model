@@ -57,6 +57,14 @@ _allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USERS", "")
 ALLOWED_USER_IDS = set(int(uid.strip()) for uid in _allowed_users_str.split(",") if uid.strip())
 
 
+def _parse_edge_pct(s):
+    """Parse an edge string like '+4.2%' into a float (4.2). Returns 0.0 on failure."""
+    try:
+        return float(str(s).replace("%", "").replace("+", ""))
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def authorized_only(func):
     """Decorator to restrict access to authorized users only."""
     @functools.wraps(func)
@@ -1711,10 +1719,21 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [f"Today's picks ({len(value_bets)} value bets):\n"]
     for _, row in value_bets.iterrows():
-        units = row.get("Std_Units", row.get("Units", 0))
         conf = row.get("Conf", 0)
-        edge = row.get("Std_Edge_Pct", row.get("Edge_Pct", ""))
         pick = row.get("Pick", "")
+
+        # Use whichever source (Kalshi vs standard book) has the better edge
+        std_edge_str = row.get("Std_Edge_Pct", "")
+        kalshi_edge_str = row.get("Edge_Pct", "")
+        std_units = row.get("Std_Units", 0) or 0
+        kalshi_units = row.get("Units", 0) or 0
+
+        if _parse_edge_pct(kalshi_edge_str) > _parse_edge_pct(std_edge_str):
+            edge = kalshi_edge_str
+            units = kalshi_units
+        else:
+            edge = std_edge_str
+            units = std_units
 
         lines.append(f"{pick}  {conf:.0%} | {edge} | {units:.1f}U")
 
