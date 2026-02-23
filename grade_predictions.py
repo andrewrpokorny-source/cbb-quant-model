@@ -184,13 +184,16 @@ def grade_predictions():
         total_preds = len(preds)
         print(f"Loaded {total_preds} predictions from file")
         
-        # CRITICAL: Filter for actionable bets only (conf >= 53%)
-        CONFIDENCE_THRESHOLD = 0.53
-        preds = preds[preds['Conf'] >= CONFIDENCE_THRESHOLD].copy()
-        
-        print(f"   Filtered to {len(preds)} actionable bets (conf >= {CONFIDENCE_THRESHOLD:.0%})")
+        # Filter for actionable bets only (STRONG rating from either source)
+        std_rating = preds['Std_Rating'] if 'Std_Rating' in preds.columns else pd.Series('PASS', index=preds.index)
+        kalshi_rating = preds['Rating'] if 'Rating' in preds.columns else pd.Series('PASS', index=preds.index)
+        preds = preds[
+            (std_rating == 'STRONG') | (kalshi_rating == 'STRONG')
+        ].copy()
+
+        print(f"   Filtered to {len(preds)} actionable bets (STRONG rating)")
         if len(preds) < total_preds:
-            print(f"   Skipped {total_preds - len(preds)} low-confidence predictions")
+            print(f"   Skipped {total_preds - len(preds)} non-STRONG predictions")
             
     except Exception as e:
         print(f"Error loading predictions: {e}")
@@ -303,7 +306,7 @@ def grade_predictions():
         print(f"   Record: {wins}-{len(graded_df)-wins}")
         print(f"   Win Rate: {win_rate:.1%}")
         print(f"   Profit: {profit:+.2f} units")
-        print(f"   (Only includes bets with >=53% confidence)")
+        print(f"   (Only includes STRONG-rated bets)")
     else:
         print("\nNo predictions were graded.")
         print("   This likely means the predictions file contains games for today/tomorrow.")
