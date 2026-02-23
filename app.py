@@ -426,9 +426,10 @@ if os.path.exists(PRED_FILE):
     # --- SUMMARY BAR ---
     if 'Std_Rating' in df.columns:
         rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
+        value_ratings = ('STRONG', 'GOOD')
         value_bets = df[
-            (df['Std_Rating'] == 'STRONG') |
-            (rating_col == 'STRONG')
+            (df['Std_Rating'].isin(value_ratings)) |
+            (rating_col.isin(value_ratings))
         ].copy()
 
         num_value = len(value_bets)
@@ -470,9 +471,9 @@ if os.path.exists(PRED_FILE):
             else:
                 cols = [st.container()]
 
-            RATING_RANK = {'STRONG': 1, 'PASS': 0}
+            RATING_RANK = {'STRONG': 2, 'GOOD': 1, 'MARGINAL': 0, 'PASS': 0}
 
-            # Sort: STRONG first, then by best edge descending
+            # Sort: STRONG first, GOOD second, then by best edge descending
             std_rank = value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
             kalshi_rank = value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
             value_bets['_best_rank'] = np.maximum(std_rank, kalshi_rank)
@@ -584,9 +585,10 @@ if os.path.exists(PRED_FILE):
     # Apply filter (check both standard book and Kalshi ratings)
     if 'Std_Rating' in df.columns:
         kalshi_rating = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
+        value_ratings = ('STRONG', 'GOOD')
         is_value = (
-            (df['Std_Rating'] == 'STRONG') |
-            (kalshi_rating == 'STRONG')
+            (df['Std_Rating'].isin(value_ratings)) |
+            (kalshi_rating.isin(value_ratings))
         )
         if show_filter == "Value Bets Only":
             display_df = df[is_value].copy()
