@@ -184,13 +184,26 @@ def grade_predictions():
         total_preds = len(preds)
         print(f"Loaded {total_preds} predictions from file")
         
-        # CRITICAL: Filter for actionable bets only (conf >= 53%)
-        CONFIDENCE_THRESHOLD = 0.53
-        preds = preds[preds['Conf'] >= CONFIDENCE_THRESHOLD].copy()
-        
-        print(f"   Filtered to {len(preds)} actionable bets (conf >= {CONFIDENCE_THRESHOLD:.0%})")
+        # Filter for actionable bets only (STRONG rating from either source)
+        has_std = 'Std_Rating' in preds.columns
+        has_kalshi = 'Rating' in preds.columns
+
+        if not has_std and not has_kalshi:
+            print("ERROR: Prediction file has neither 'Std_Rating' nor 'Rating' column.")
+            print("   Cannot determine which bets are actionable.")
+            print(f"   Columns found: {list(preds.columns)}")
+            print("   Re-run predict.py to generate a file with rating columns.")
+            return
+
+        std_rating = preds['Std_Rating'] if has_std else pd.Series('PASS', index=preds.index)
+        kalshi_rating = preds['Rating'].fillna('PASS') if has_kalshi else pd.Series('PASS', index=preds.index)
+        preds = preds[
+            (std_rating == 'STRONG') | (kalshi_rating == 'STRONG')
+        ].copy()
+
+        print(f"   Filtered to {len(preds)} actionable bets (STRONG rating)")
         if len(preds) < total_preds:
-            print(f"   Skipped {total_preds - len(preds)} low-confidence predictions")
+            print(f"   Skipped {total_preds - len(preds)} non-STRONG predictions")
             
     except Exception as e:
         print(f"Error loading predictions: {e}")
@@ -303,7 +316,7 @@ def grade_predictions():
         print(f"   Record: {wins}-{len(graded_df)-wins}")
         print(f"   Win Rate: {win_rate:.1%}")
         print(f"   Profit: {profit:+.2f} units")
-        print(f"   (Only includes bets with >=53% confidence)")
+        print(f"   (Only includes STRONG-rated bets)")
     else:
         print("\nNo predictions were graded.")
         print("   This likely means the predictions file contains games for today/tomorrow.")
