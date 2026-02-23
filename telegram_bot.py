@@ -144,7 +144,9 @@ FD_GAME_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Cross-screenshot dedup for FanDuel BET IDs within a session
+# Cross-screenshot dedup for FanDuel BET IDs within a single bot session.
+# Not persisted across restarts -- CSV-level dedup in append_bet() provides
+# the durable duplicate check.
 _SEEN_FD_BET_IDS: set[str] = set()
 
 # Common OCR misreads to correct
@@ -959,11 +961,8 @@ def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
                 current = []
         # Remaining lines after last PLACED (truncated card at bottom)
         if current:
-            remainder = "\n".join(current)
-            if FD_BET_ID_RE.search(remainder):
-                chunks.append(remainder)
-        # Only parse chunks that contain a BET ID
-        cards = [c for c in chunks if FD_BET_ID_RE.search(c)]
+            chunks.append("\n".join(current))
+        cards = chunks
     else:
         # Fallback: split at FANDUEL ... SPORTSBOOK banners
         cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
@@ -987,7 +986,8 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     # 2. Cross-screenshot dedup check (don't mark as seen yet; incomplete cards shouldn't burn IDs)
     if bet_id and bet_id in _SEEN_FD_BET_IDS:
         logger.info("Cross-screenshot dedup: skipping already-seen bet_id %s", bet_id)
-        return {"_skipped": True, "_skip_reason": "dedup", "_settled": True, "bet_id": bet_id}
+        return {"_skipped": True, "_skip_reason": "dedup", "_settled": True,
+                "platform": "FanDuel", "bet_id": bet_id}
 
     # 3. Extract game date
     date_match = FD_GAME_DATE_RE.search(card_text)
@@ -1095,6 +1095,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         )
         return {
             "_skipped": True, "_skip_reason": "incomplete", "_settled": True,
+            "platform": "FanDuel",
             "bet_id": bet_id, "wager": wager, "result": result, "game": game,
         }
 
@@ -1913,9 +1914,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             f"${float(row['wager']):.2f} on {row['platform']} "
                             f"(profit: {profit_val:+.2f}U)"
                         )
+            except (OSError, csv.Error, ValueError) as e:
+                logger.exception("I/O error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
+                msgs.append(f"Error writing {bet.get('line', '?')} to CSV. Try again.")
             except Exception as e:
-                logger.exception("Failed to log settled bet %s: %s", bet.get("bet_id", "?"), e)
-                msgs.append(f"Error logging {bet.get('line', '?')}: could not write to CSV.")
+                logger.exception("Unexpected error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
+                msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
 
         # Per-card skip feedback
         if not actual_settled and not skipped_incomplete and skipped_dedup:
