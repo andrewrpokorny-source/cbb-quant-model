@@ -185,8 +185,18 @@ def grade_predictions():
         print(f"Loaded {total_preds} predictions from file")
         
         # Filter for actionable bets only (STRONG rating from either source)
-        std_rating = preds['Std_Rating'] if 'Std_Rating' in preds.columns else pd.Series('PASS', index=preds.index)
-        kalshi_rating = preds['Rating'] if 'Rating' in preds.columns else pd.Series('PASS', index=preds.index)
+        has_std = 'Std_Rating' in preds.columns
+        has_kalshi = 'Rating' in preds.columns
+
+        if not has_std and not has_kalshi:
+            print("ERROR: Prediction file has neither 'Std_Rating' nor 'Rating' column.")
+            print("   Cannot determine which bets are actionable.")
+            print(f"   Columns found: {list(preds.columns)}")
+            print("   Re-run predict.py to generate a file with rating columns.")
+            return
+
+        std_rating = preds['Std_Rating'] if has_std else pd.Series('PASS', index=preds.index)
+        kalshi_rating = preds['Rating'].fillna('PASS') if has_kalshi else pd.Series('PASS', index=preds.index)
         preds = preds[
             (std_rating == 'STRONG') | (kalshi_rating == 'STRONG')
         ].copy()
