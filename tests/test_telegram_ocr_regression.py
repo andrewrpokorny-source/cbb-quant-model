@@ -90,6 +90,11 @@ def _read_fixture(name: str) -> str:
     return (FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
+def _actual_bets(bets: list[dict]) -> list[dict]:
+    """Filter out _skipped entries, returning only fully-parsed bets."""
+    return [b for b in bets if not b.get("_skipped")]
+
+
 def test_draftkings_fixture_regression() -> None:
     text = _read_fixture("draftkings_spread_single.txt")
     bets = BOT._parse_bet_slip_text(text, platform="DraftKings")
@@ -221,6 +226,10 @@ def test_fanduel_settled_context_detection() -> None:
     ambiguous_text = "Player returned to lineup\nDrexel -1.5\n$1.00"
     assert BOT._detect_fd_settled(ambiguous_text) is False
 
+    # PLACED: line triggers settled detection even without result keywords
+    placed_text = "$1.50\nBET ID: 0/001\n$0.00\nPLACED: 2/19/2026 8:23AM ET"
+    assert BOT._detect_fd_settled(placed_text) is True
+
 
 def test_fanduel_settled_bet_id_extraction() -> None:
     raw = _read_fixture("fanduel_settled_multi.txt")
@@ -250,11 +259,11 @@ def test_fanduel_settled_does_not_break_pending() -> None:
 def test_fanduel_settled_cross_screenshot_dedup() -> None:
     raw = _read_fixture("fanduel_settled_multi.txt")
     bets1 = BOT._parse_fd_settled_cards(raw)
-    assert len(bets1) == 3
+    assert len(_actual_bets(bets1)) == 3
 
     # Same text again -- all BET IDs already seen
     bets2 = BOT._parse_fd_settled_cards(raw)
-    assert len(bets2) == 0
+    assert len(_actual_bets(bets2)) == 0
 
 
 def test_fanduel_settled_card_without_bet_id() -> None:
@@ -279,3 +288,86 @@ def test_fanduel_settled_different_ids_second_screenshot() -> None:
     raw2 = _read_fixture("fanduel_settled_void.txt")
     bets2 = BOT._parse_fd_settled_cards(raw2)
     assert len(bets2) == 1  # FD-VOID-001 is a different ID, should not be blocked
+
+
+def test_fanduel_settled_real_ocr_parsing() -> None:
+    """Real OCR output with PLACED lines parses complete cards correctly."""
+    raw = _read_fixture("fanduel_settled_real_ocr.txt")
+    all_bets = BOT._parse_fd_settled_cards(raw)
+    bets = _actual_bets(all_bets)
+
+    # Card 1 (top of scroll) is truncated -- no team/spread visible -> skipped
+    # Card 4 (UTSA, bottom of scroll) has no BET ID -> skipped
+    # Cards 2 and 3 should parse
+    assert len(bets) == 2
+
+    b0 = bets[0]
+    assert b0["platform"] == "FanDuel"
+    assert b0["line"] == "Drexel -1.5"
+    assert b0["game"] == "Drexel vs Northeastern"
+    assert b0["odds"] == "+102"
+    assert b0["wager"] == 1.5
+    assert b0["result"] == "win"
+    assert b0["payout"] == 3.03
+    assert b0["profit"] == 1.53
+    assert b0["bet_id"] == "0/0084650/0000183"
+
+    b1 = bets[1]
+    assert b1["line"] == "Citadel +10.5"
+    assert b1["game"] == "Samford vs Citadel"
+    assert b1["odds"] == "-114"
+    assert b1["wager"] == 2.0
+    assert b1["result"] == "win"
+    assert b1["payout"] == 3.75
+    assert b1["profit"] == 1.75
+    assert b1["bet_id"] == "0/0084650/0000182"
+
+
+def test_fanduel_settled_incomplete_card_no_burn() -> None:
+    """Truncated card should not burn BET ID, allowing retry from next screenshot."""
+    # First screenshot: truncated card (no team/spread) followed by complete card
+    raw = (
+        "$1.50\nTOTAL WAGER\nBET ID: TEST-NOBURN\n$0.00\nRETURNED\n"
+        "PLACED: 2/19/2026 8:23AM ET\n"
+        "Drexel -1.5\nDrexel @ Northeastern\n$1.50\n"
+        "BET ID: TEST-NOBURN\n+102\nFEB 19, 7:04PM ET\n$3.03\n"
+        "WON ON FANDUEL\nPLACED: 2/19/2026 8:24AM ET\n"
+    )
+    all_bets = BOT._parse_fd_settled_cards(raw)
+    bets = _actual_bets(all_bets)
+
+    # First chunk is incomplete (no team/spread) -> skip dict, BET ID not burned
+    # Second chunk has same BET ID with complete data -> parses successfully
+    assert len(bets) == 1
+    assert bets[0]["bet_id"] == "TEST-NOBURN"
+    assert bets[0]["line"] == "Drexel -1.5"
+
+
+def test_fanduel_settled_skip_entries_have_details() -> None:
+    """Incomplete skip entries preserve BET ID, wager, and result for user feedback."""
+    raw = _read_fixture("fanduel_settled_real_ocr.txt")
+    all_bets = BOT._parse_fd_settled_cards(raw)
+    skipped = [b for b in all_bets if b.get("_skipped")]
+    incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
+
+    assert len(incomplete) >= 1
+    for s in incomplete:
+        assert s["_settled"] is True
+        assert "bet_id" in s
+        assert "wager" in s
+        assert "result" in s
+
+
+def test_fanduel_settled_dedup_skip_entries() -> None:
+    """Dedup skip entries have _skip_reason 'dedup' and the bet_id."""
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    BOT._parse_fd_settled_cards(raw)  # first pass populates seen IDs
+
+    bets2 = BOT._parse_fd_settled_cards(raw)  # second pass: all deduped
+    assert len(_actual_bets(bets2)) == 0
+    dedup = [b for b in bets2 if b.get("_skip_reason") == "dedup"]
+    assert len(dedup) == 3
+    for d in dedup:
+        assert d["_skipped"] is True
+        assert d["_settled"] is True
+        assert d["bet_id"]  # non-empty
