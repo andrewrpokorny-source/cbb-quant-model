@@ -182,6 +182,8 @@ def _detect_fd_settled(raw_text: str) -> bool:
     lower = raw_text.lower()
     if "won on fanduel" in lower or "lost on fanduel" in lower:
         return True
+    if re.search(r"placed:\s*\d+/\d+/\d{4}", lower):
+        return True
     # "RETURNED" appears as a standalone line on FanDuel void slips
     if re.search(r"^\s*returned\s*$", lower, re.MULTILINE) and "sportsbook" in lower:
         return True
@@ -940,14 +942,33 @@ def _parse_fd_blocks(text: str) -> list[dict]:
 def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
     """Parse a FanDuel settled screenshot into individual bet dicts.
 
-    Splits on FANDUEL/SPORTSBOOK banners, then delegates each card to
-    _parse_single_fd_settled_card().
+    Splits on PLACED: lines (real OCR output), falling back to
+    FANDUEL/SPORTSBOOK banners for legacy fixtures.
     """
-    # Split at FANDUEL ... SPORTSBOOK banners (OCR often puts them on separate lines)
-    cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
-    # First chunk is content before the first banner; always skip it
-    if cards:
-        cards = cards[1:]
+    placed_re = re.compile(r"^\s*PLACED:\s*\d+/\d+/\d{4}", re.IGNORECASE | re.MULTILINE)
+
+    if placed_re.search(raw_text):
+        # Split after each PLACED: line (each card ends with PLACED)
+        lines = raw_text.split("\n")
+        chunks: list[str] = []
+        current: list[str] = []
+        for line in lines:
+            current.append(line)
+            if placed_re.match(line):
+                chunks.append("\n".join(current))
+                current = []
+        # Remaining lines after last PLACED (truncated card at bottom)
+        if current:
+            remainder = "\n".join(current)
+            if FD_BET_ID_RE.search(remainder):
+                chunks.append(remainder)
+        # Only parse chunks that contain a BET ID
+        cards = [c for c in chunks if FD_BET_ID_RE.search(c)]
+    else:
+        # Fallback: split at FANDUEL ... SPORTSBOOK banners
+        cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
+        if cards:
+            cards = cards[1:]
 
     bets = []
     for card_text in cards:
@@ -963,12 +984,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     bet_id_match = FD_BET_ID_RE.search(card_text)
     bet_id = bet_id_match.group(1) if bet_id_match else ""
 
-    # 2. Cross-screenshot dedup (performance optimization; CSV bet_id dedup is the source of truth)
-    if bet_id:
-        if bet_id in _SEEN_FD_BET_IDS:
-            logger.info("Cross-screenshot dedup: skipping already-seen bet_id %s", bet_id)
-            return None
-        _SEEN_FD_BET_IDS.add(bet_id)
+    # 2. Cross-screenshot dedup check (don't mark as seen yet; incomplete cards shouldn't burn IDs)
+    if bet_id and bet_id in _SEEN_FD_BET_IDS:
+        logger.info("Cross-screenshot dedup: skipping already-seen bet_id %s", bet_id)
+        return {"_skipped": True, "_skip_reason": "dedup", "_settled": True, "bet_id": bet_id}
 
     # 3. Extract game date
     date_match = FD_GAME_DATE_RE.search(card_text)
@@ -1074,6 +1093,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             "FD settled card parse incomplete: line=%r wager=%s bet_id=%s",
             line, wager, bet_id,
         )
+        return {
+            "_skipped": True, "_skip_reason": "incomplete", "_settled": True,
+            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+        }
+
+    # Mark BET ID as seen only after successful parse
+    if bet_id:
+        _SEEN_FD_BET_IDS.add(bet_id)
 
     return {
         "platform": "FanDuel",
@@ -1850,11 +1877,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Handle settled bets from the new settled card parser
-    settled_bets = [b for b in bets if b.get("_settled")]
+    settled_all = [b for b in bets if b.get("_settled")]
     non_settled_bets = [b for b in bets if not b.get("_settled") and not b.get("_partial")]
-    if settled_bets:
+    if settled_all:
+        actual_settled = [b for b in settled_all if not b.get("_skipped")]
+        skipped = [b for b in settled_all if b.get("_skipped")]
+        skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
+        skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
+
         msgs = []
-        for bet in settled_bets:
+        for bet in actual_settled:
             try:
                 bet_copy = {k: v for k, v in bet.items() if not k.startswith("_")}
                 if not bet_copy.get("line") or not bet_copy.get("wager"):
@@ -1884,6 +1916,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.exception("Failed to log settled bet %s: %s", bet.get("bet_id", "?"), e)
                 msgs.append(f"Error logging {bet.get('line', '?')}: could not write to CSV.")
+
+        # Per-card skip feedback
+        if not actual_settled and not skipped_incomplete and skipped_dedup:
+            # All cards were deduped, no new bets
+            msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
+        elif not actual_settled and not skipped:
+            # Nothing parsed at all
+            msgs.append(
+                "No bets could be parsed. Cards may be partially visible"
+                " -- try scrolling to show complete cards and resend."
+            )
+        else:
+            # Show missed incomplete cards
+            for s in skipped_incomplete:
+                parts = []
+                if s.get("bet_id"):
+                    parts.append(f"BET ID {s['bet_id']}")
+                if s.get("wager") and s["wager"] > 0:
+                    parts.append(f"${s['wager']:.2f}")
+                if s.get("result") and s["result"] != "pending":
+                    parts.append(s["result"].upper())
+                if parts:
+                    msgs.append(f"Missed: {', '.join(parts)}")
+            if skipped_incomplete:
+                msgs.append("Scroll to show full cards and resend for missed bets.")
+
         if msgs:
             await update.message.reply_text("\n".join(msgs))
         if not non_settled_bets:
