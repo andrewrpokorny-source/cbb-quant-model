@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["pytest>=9.0.2"]
 bot = ["python-telegram-bot>=21.0", "ocrmac>=1.0.0"]
 
 [project.scripts]

@@ -5,6 +5,8 @@ from .ev_calculator import (
     get_rating,
     EdgeRating,
     analyze_bet,
+    VALUE_RATINGS,
+    RATING_RANK,
 )
 from .kelly import kelly_fraction, recommended_units
 from .line_shopping import (
@@ -21,6 +23,8 @@ __all__ = [
     "get_rating",
     "EdgeRating",
     "analyze_bet",
+    "VALUE_RATINGS",
+    "RATING_RANK",
     "kelly_fraction",
     "recommended_units",
     "SpreadAnalysis",

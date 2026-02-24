@@ -41,7 +41,7 @@ class TestRecommendedUnits:
         assert recommended_units(-0.01, STD_IP) == 0.0
 
     def test_eight_pct_edge(self):
-        """8% edge (minimum STRONG) -> 1.5U."""
+        """8% edge (STRONG threshold) -> 1.5U."""
         units = recommended_units(0.08, STD_IP)
         assert units == 1.5
 

@@ -1707,10 +1707,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     df = pd.read_csv(DAILY_PREDICTIONS)
 
-    # Filter to value bets (STRONG only)
+    # Filter to value bets (STRONG or GOOD)
+    std_col = df["Std_Rating"] if "Std_Rating" in df.columns else pd.Series("PASS", index=df.index)
+    rating_col = df["Rating"] if "Rating" in df.columns else pd.Series("PASS", index=df.index)
     value_bets = df[
-        (df.get("Std_Rating", pd.Series(dtype=str)) == "STRONG")
-        | (df.get("Rating", pd.Series(dtype=str)) == "STRONG")
+        std_col.isin(("STRONG", "GOOD"))
+        | rating_col.isin(("STRONG", "GOOD"))
     ]
 
     if len(value_bets) == 0:

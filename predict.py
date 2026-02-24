@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
 from model import load_model
@@ -700,21 +700,26 @@ def main(spread_overrides=None):
             print(f"   {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
 
-        # Show value bets (STRONG edge from either source)
+        # Show value bets (STRONG or GOOD edge from either source)
         value_bets = pred_df[
-            (pred_df['Std_Rating'] == 'STRONG') |
-            (pred_df['Rating'] == 'STRONG')
+            (pred_df['Std_Rating'].isin(VALUE_RATINGS)) |
+            (pred_df['Rating'].isin(VALUE_RATINGS))
         ]
         if len(value_bets) > 0:
             print(f"\nVALUE BETS ({len(value_bets)} found):")
             for _, row in value_bets.iterrows():
                 std_rating = row.get('Std_Rating', 'PASS')
+                if pd.isna(std_rating):
+                    std_rating = 'PASS'
                 kalshi_rating = row.get('Rating', None) if pd.notna(row.get('Rating')) else None
-                print(f"   [STRONG] {row['Pick']}")
-                if kalshi_rating == 'STRONG':
+                std_rank = RATING_RANK.get(std_rating, 0)
+                kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
+                best_rating = kalshi_rating if kalshi_rank > std_rank else std_rating
+                print(f"   [{best_rating}] {row['Pick']}")
+                if kalshi_rating in VALUE_RATINGS:
                     side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
                     print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
-                if std_rating == 'STRONG':
+                if std_rating in VALUE_RATINGS:
                     print(f"      Std Book: Edge {row['Std_Edge_Pct']} | {row['Std_Units']:.1f}U")
     else:
         print("\nNo predictions generated.")
@@ -737,7 +742,7 @@ def get_latest_predictions():
 
 
 def check_live_prices():
-    """Re-fetch current Kalshi prices for today's STRONG picks and recalculate edge.
+    """Re-fetch current Kalshi prices for today's value picks and recalculate edge.
 
     Reads the daily predictions CSV, filters to rows with a Kalshi ticker,
     fetches live prices from the Kalshi API, and prints an updated table
@@ -765,15 +770,17 @@ def check_live_prices():
         print("No predictions with Kalshi tickers found.")
         return
 
-    # Filter to STRONG picks only (from either standard or Kalshi rating)
-    is_strong = (
-        (df_kalshi.get("Std_Rating") == "STRONG") |
-        (df_kalshi.get("Rating") == "STRONG")
+    # Filter to value picks (STRONG or GOOD from either source)
+    std_col = df_kalshi["Std_Rating"] if "Std_Rating" in df_kalshi.columns else pd.Series("PASS", index=df_kalshi.index)
+    rating_col = df_kalshi["Rating"] if "Rating" in df_kalshi.columns else pd.Series("PASS", index=df_kalshi.index)
+    is_value = (
+        std_col.isin(VALUE_RATINGS) |
+        rating_col.isin(VALUE_RATINGS)
     )
-    df_strong = df_kalshi[is_strong].copy()
+    df_strong = df_kalshi[is_value].copy()
 
     if df_strong.empty:
-        print("No STRONG-rated picks with Kalshi tickers found.")
+        print("No value-rated picks with Kalshi tickers found.")
         return
 
     # Initialize Kalshi client
@@ -860,11 +867,11 @@ def check_live_prices():
         print(line)
 
     # Summary
-    still_strong = sum(1 for r in results if r["Rating"] == "STRONG")
+    still_value = sum(1 for r in results if r["Rating"] in VALUE_RATINGS)
     total = len(results)
-    print(f"\n{still_strong}/{total} picks still STRONG at live prices.")
+    print(f"\n{still_value}/{total} picks still STRONG/GOOD at live prices.")
 
-    if still_strong < total:
+    if still_value < total:
         print("Some picks have lost edge -- consider skipping those bets.")
 
 
@@ -875,7 +882,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Re-fetch live Kalshi prices for today's STRONG picks and show updated edge.",
+        help="Re-fetch live Kalshi prices for today's value picks and show updated edge.",
     )
     args = parser.parse_args()
 
