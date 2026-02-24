@@ -115,11 +115,29 @@ p, span, div, .stMarkdown {
 }
 
 .bet-card.good {
-    border-left: 4px solid #2e6b3e;
+    border-left: 4px solid #8a6d1b;
 }
 
 .bet-badge.good {
-    background: #2e6b3e;
+    background: #8a6d1b;
+    color: #ffffff;
+}
+
+.bet-card.marginal {
+    border-left: 4px solid #7a5c2e;
+}
+
+.bet-badge.marginal {
+    background: #7a5c2e;
+    color: #ffffff;
+}
+
+.bet-card.pass {
+    border-left: 4px solid #6b7280;
+}
+
+.bet-badge.pass {
+    background: #6b7280;
     color: #ffffff;
 }
 
@@ -139,7 +157,8 @@ p, span, div, .stMarkdown {
 
 .bet-stats {
     display: flex;
-    gap: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid #f0f0eb;
@@ -165,13 +184,22 @@ p, span, div, .stMarkdown {
     color: #1a2e1a;
 }
 
-.stat-value.positive {
+.strong .stat-value.positive {
     color: #1a4d2e;
+}
+.good .stat-value.positive {
+    color: #8a6d1b;
+}
+.marginal .stat-value.positive {
+    color: #7a5c2e;
+}
+.pass .stat-value.positive {
+    color: #6b7280;
 }
 
 /* Kalshi badge */
 .kalshi-row {
-    background: #f5f7f5;
+    background: #f5f5f2;
     border-radius: 6px;
     padding: 10px 12px;
     margin-top: 12px;
@@ -224,6 +252,7 @@ p, span, div, .stMarkdown {
 
 .summary-divider {
     width: 1px;
+    align-self: stretch;
     background: #e5e5e0;
 }
 
