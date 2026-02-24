@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import pytz
 from difflib import get_close_matches
 
+from betting import VALUE_RATINGS
+
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PRED_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
@@ -184,7 +186,7 @@ def grade_predictions():
         total_preds = len(preds)
         print(f"Loaded {total_preds} predictions from file")
         
-        # Filter for actionable bets only (STRONG rating from either source)
+        # Filter for actionable bets only (value-rated from either source)
         has_std = 'Std_Rating' in preds.columns
         has_kalshi = 'Rating' in preds.columns
 
@@ -198,12 +200,12 @@ def grade_predictions():
         std_rating = preds['Std_Rating'] if has_std else pd.Series('PASS', index=preds.index)
         kalshi_rating = preds['Rating'].fillna('PASS') if has_kalshi else pd.Series('PASS', index=preds.index)
         preds = preds[
-            (std_rating == 'STRONG') | (kalshi_rating == 'STRONG')
+            (std_rating.isin(VALUE_RATINGS)) | (kalshi_rating.isin(VALUE_RATINGS))
         ].copy()
 
-        print(f"   Filtered to {len(preds)} actionable bets (STRONG rating)")
+        print(f"   Filtered to {len(preds)} actionable bets (value-rated)")
         if len(preds) < total_preds:
-            print(f"   Skipped {total_preds - len(preds)} non-STRONG predictions")
+            print(f"   Skipped {total_preds - len(preds)} non-value predictions")
             
     except Exception as e:
         print(f"Error loading predictions: {e}")
@@ -316,7 +318,7 @@ def grade_predictions():
         print(f"   Record: {wins}-{len(graded_df)-wins}")
         print(f"   Win Rate: {win_rate:.1%}")
         print(f"   Profit: {profit:+.2f} units")
-        print(f"   (Only includes STRONG-rated bets)")
+        print(f"   (Only includes value-rated bets)")
     else:
         print("\nNo predictions were graded.")
         print("   This likely means the predictions file contains games for today/tomorrow.")

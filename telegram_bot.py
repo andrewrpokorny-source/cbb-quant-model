@@ -40,6 +40,7 @@ from telegram.ext import (
 )
 from ocrmac import ocrmac
 
+from betting import VALUE_RATINGS
 from settle_bets import settle_pending_bets
 
 load_dotenv()
@@ -60,7 +61,8 @@ ALLOWED_USER_IDS = set(int(uid.strip()) for uid in _allowed_users_str.split(",")
 def _parse_edge_pct(s):
     """Parse an edge string like '+4.2%' into a float (4.2). Returns 0.0 on failure."""
     try:
-        return float(str(s).replace("%", "").replace("+", ""))
+        val = float(str(s).replace("%", "").replace("+", ""))
+        return val if val == val else 0.0  # NaN != NaN
     except (ValueError, TypeError):
         return 0.0
 
@@ -478,13 +480,22 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
     if not os.path.exists(BETTING_HISTORY):
         return None
 
-    df = pd.read_csv(BETTING_HISTORY)
+    try:
+        df = pd.read_csv(BETTING_HISTORY)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        logger.error("Could not read %s for pending bet matching: %s", BETTING_HISTORY, e)
+        return None
+
     pending = df[df["result"] == "pending"]
     if len(pending) == 0:
         return None
 
     platform = partial_bet["platform"].upper()
-    wager = float(partial_bet["wager"])
+    try:
+        wager = float(partial_bet["wager"])
+    except (ValueError, TypeError, KeyError) as e:
+        logger.warning("Invalid wager in partial bet for matching: %s", e)
+        return None
 
     matches = pending[
         (pending["platform"].str.upper() == platform)
@@ -1020,10 +1031,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     lower = card_text.lower()
     if "won on fanduel" in lower:
         result = "win"
-    elif "returned" in lower:
-        result = "void"
-    elif "lost" in lower:
+    elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
+    elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
+        result = "void"
     else:
         result = "pending"
 
@@ -1625,9 +1636,9 @@ def parse_shorthand(text: str) -> dict:
         remaining = remaining[1:]
     if remaining:
         try:
-            wager = float(remaining[0])
+            wager = float(remaining[0].lstrip("$"))
         except ValueError:
-            pass
+            logger.warning("Could not parse wager '%s' from shorthand input", remaining[0])
 
     return {
         "platform": platform,
@@ -1707,12 +1718,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     df = pd.read_csv(DAILY_PREDICTIONS)
 
-    # Filter to value bets (STRONG or GOOD)
+    # Filter to value bets
     std_col = df["Std_Rating"] if "Std_Rating" in df.columns else pd.Series("PASS", index=df.index)
     rating_col = df["Rating"] if "Rating" in df.columns else pd.Series("PASS", index=df.index)
     value_bets = df[
-        std_col.isin(("STRONG", "GOOD"))
-        | rating_col.isin(("STRONG", "GOOD"))
+        std_col.isin(VALUE_RATINGS)
+        | rating_col.isin(VALUE_RATINGS)
     ]
 
     if len(value_bets) == 0:
