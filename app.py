@@ -10,7 +10,7 @@ import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
-from betting import format_line_shopping_text
+from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -111,6 +111,15 @@ p, span, div, .stMarkdown {
 
 .bet-badge.strong {
     background: #1a4d2e;
+    color: #ffffff;
+}
+
+.bet-card.good {
+    border-left: 4px solid #2e6b3e;
+}
+
+.bet-badge.good {
+    background: #2e6b3e;
     color: #ffffff;
 }
 
@@ -426,7 +435,7 @@ if os.path.exists(PRED_FILE):
     # --- SUMMARY BAR ---
     if 'Std_Rating' in df.columns:
         rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
-        value_ratings = ('STRONG', 'GOOD')
+        value_ratings = VALUE_RATINGS
         value_bets = df[
             (df['Std_Rating'].isin(value_ratings)) |
             (rating_col.isin(value_ratings))
@@ -471,8 +480,6 @@ if os.path.exists(PRED_FILE):
             else:
                 cols = [st.container()]
 
-            RATING_RANK = {'STRONG': 2, 'GOOD': 1, 'MARGINAL': 0, 'PASS': 0}
-
             # Sort: STRONG first, GOOD second, then by best edge descending
             std_rank = value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
             kalshi_rank = value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
@@ -497,9 +504,11 @@ if os.path.exists(PRED_FILE):
                     game_time = row.get('Date/Time', '')
 
                     # Use whichever source gave the better rating
-                    std_rank = RATING_RANK.get(std_rating, 0)
-                    kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
-                    kalshi_is_primary = kalshi_rank > std_rank
+                    std_rank_val = RATING_RANK.get(std_rating, 0)
+                    kalshi_rank_val = RATING_RANK.get(kalshi_rating, 0)
+                    kalshi_is_primary = kalshi_rank_val > std_rank_val
+                    best_rating = kalshi_rating if kalshi_is_primary else std_rating
+                    badge_css = best_rating.lower()
 
                     # Pick edge/units from the source that triggered the rating
                     if kalshi_is_primary:
@@ -526,9 +535,9 @@ if os.path.exists(PRED_FILE):
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}</div>'
 
                     st.markdown(f'''
-                    <div class="bet-card strong">
+                    <div class="bet-card {badge_css}">
                         <div class="bet-header">
-                            <div class="bet-badge strong">Strong</div>
+                            <div class="bet-badge {badge_css}">{best_rating.title()}</div>
                             <div class="bet-time">{game_time}</div>
                         </div>
                         <div class="bet-pick">{row['Pick']}</div>
@@ -585,7 +594,7 @@ if os.path.exists(PRED_FILE):
     # Apply filter (check both standard book and Kalshi ratings)
     if 'Std_Rating' in df.columns:
         kalshi_rating = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
-        value_ratings = ('STRONG', 'GOOD')
+        value_ratings = VALUE_RATINGS
         is_value = (
             (df['Std_Rating'].isin(value_ratings)) |
             (kalshi_rating.isin(value_ratings))

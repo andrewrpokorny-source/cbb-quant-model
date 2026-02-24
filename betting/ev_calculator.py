@@ -17,6 +17,12 @@ STRONG_THRESHOLD = 0.08    # 8%
 GOOD_THRESHOLD = 0.04      # 4%
 MARGINAL_THRESHOLD = 0.02  # 2%
 
+# Ratings considered actionable value bets
+VALUE_RATINGS = ("STRONG", "GOOD")
+
+# Rank ordering for sorting/display (higher = better)
+RATING_RANK = {"STRONG": 3, "GOOD": 2, "MARGINAL": 1, "PASS": 0}
+
 
 def calculate_edge(model_prob: float, market_implied_prob: float) -> float:
     """

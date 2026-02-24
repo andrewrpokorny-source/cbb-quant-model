@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
 from model import load_model
@@ -701,22 +701,25 @@ def main(spread_overrides=None):
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
 
         # Show value bets (STRONG or GOOD edge from either source)
-        value_ratings = ('STRONG', 'GOOD')
         value_bets = pred_df[
-            (pred_df['Std_Rating'].isin(value_ratings)) |
-            (pred_df['Rating'].isin(value_ratings))
+            (pred_df['Std_Rating'].isin(VALUE_RATINGS)) |
+            (pred_df['Rating'].isin(VALUE_RATINGS))
         ]
         if len(value_bets) > 0:
             print(f"\nVALUE BETS ({len(value_bets)} found):")
             for _, row in value_bets.iterrows():
                 std_rating = row.get('Std_Rating', 'PASS')
+                if pd.isna(std_rating):
+                    std_rating = 'PASS'
                 kalshi_rating = row.get('Rating', None) if pd.notna(row.get('Rating')) else None
-                best_rating = std_rating if std_rating in value_ratings else (kalshi_rating or 'PASS')
+                std_rank = RATING_RANK.get(std_rating, 0)
+                kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
+                best_rating = kalshi_rating if kalshi_rank > std_rank else std_rating
                 print(f"   [{best_rating}] {row['Pick']}")
-                if kalshi_rating in value_ratings:
+                if kalshi_rating in VALUE_RATINGS:
                     side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
                     print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
-                if std_rating in value_ratings:
+                if std_rating in VALUE_RATINGS:
                     print(f"      Std Book: Edge {row['Std_Edge_Pct']} | {row['Std_Units']:.1f}U")
     else:
         print("\nNo predictions generated.")
@@ -768,10 +771,11 @@ def check_live_prices():
         return
 
     # Filter to value picks (STRONG or GOOD from either source)
-    value_ratings = ("STRONG", "GOOD")
+    std_col = df_kalshi["Std_Rating"] if "Std_Rating" in df_kalshi.columns else pd.Series("PASS", index=df_kalshi.index)
+    rating_col = df_kalshi["Rating"] if "Rating" in df_kalshi.columns else pd.Series("PASS", index=df_kalshi.index)
     is_value = (
-        (df_kalshi.get("Std_Rating").isin(value_ratings)) |
-        (df_kalshi.get("Rating").isin(value_ratings))
+        std_col.isin(VALUE_RATINGS) |
+        rating_col.isin(VALUE_RATINGS)
     )
     df_strong = df_kalshi[is_value].copy()
 
@@ -863,7 +867,7 @@ def check_live_prices():
         print(line)
 
     # Summary
-    still_value = sum(1 for r in results if r["Rating"] in ("STRONG", "GOOD"))
+    still_value = sum(1 for r in results if r["Rating"] in VALUE_RATINGS)
     total = len(results)
     print(f"\n{still_value}/{total} picks still STRONG/GOOD at live prices.")
 
