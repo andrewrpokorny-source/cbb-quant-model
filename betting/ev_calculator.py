@@ -6,10 +6,10 @@ from enum import Enum
 class EdgeRating(Enum):
     """Bet recommendation tiers based on edge size."""
 
-    STRONG = "STRONG"    # 8%+ edge
-    GOOD = "GOOD"        # 4-8% edge
-    MARGINAL = "MARGINAL"  # 2-4% edge
-    PASS = "PASS"        # <2% edge
+    STRONG = "STRONG"      # >=8% edge
+    GOOD = "GOOD"          # >=4% and <8% edge
+    MARGINAL = "MARGINAL"  # >=2% and <4% edge
+    PASS = "PASS"          # <2% edge
 
 
 # Rating thresholds (edge percentage)

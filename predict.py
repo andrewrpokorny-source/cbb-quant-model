@@ -97,15 +97,16 @@ def fetch_schedule():
     print(f"      Current Eastern Time: {now_eastern.strftime('%Y-%m-%d %I:%M %p %Z')}")
     
     games = []
-    
+    failed_dates = []
+
     # Fetch today through 5 days ahead (Eastern time)
     for days_ahead in range(6):
         target_date = now_eastern + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
         url = f"{BASE_URL}&dates={date_str}"
-        
+
         print(f"      Querying ESPN for: {date_str} ({target_date.strftime('%A, %B %d')})")
-        
+
         try:
             res = requests.get(url, timeout=10)
             data = res.json()
@@ -148,6 +149,7 @@ def fetch_schedule():
                         else:
                             spread_val = val
                 except (ValueError, IndexError):
+                    print(f"         Could not parse spread from: {details!r}")
                     spread_val = 0.0
 
                 game_id = event['id']
@@ -164,7 +166,12 @@ def fetch_schedule():
                     
         except Exception as e:
             print(f"         Error fetching {date_str}: {e}")
-            
+            failed_dates.append(date_str)
+
+    if failed_dates:
+        print(f"\n      WARNING: Failed to fetch {len(failed_dates)} date(s): {', '.join(failed_dates)}")
+        print(f"      Games for those dates are MISSING from predictions.")
+
     return sorted(games, key=lambda x: x['date'])
 
 def fetch_kalshi_markets():
@@ -744,8 +751,8 @@ def get_latest_predictions():
 def check_live_prices():
     """Re-fetch current Kalshi prices for today's value picks and recalculate edge.
 
-    Reads the daily predictions CSV, filters to rows with a Kalshi ticker,
-    fetches live prices from the Kalshi API, and prints an updated table
+    Reads the daily predictions CSV, filters to value-rated rows with a Kalshi
+    ticker, fetches live prices from the Kalshi API, and prints an updated table
     showing current edge so the user can verify value before placing a bet.
     """
     print("--- LIVE PRICE CHECK ---\n")
@@ -777,9 +784,9 @@ def check_live_prices():
         std_col.isin(VALUE_RATINGS) |
         rating_col.isin(VALUE_RATINGS)
     )
-    df_strong = df_kalshi[is_value].copy()
+    df_value = df_kalshi[is_value].copy()
 
-    if df_strong.empty:
+    if df_value.empty:
         print("No value-rated picks with Kalshi tickers found.")
         return
 
@@ -793,7 +800,7 @@ def check_live_prices():
 
     # Fetch live prices and recalculate edge for each pick
     results = []
-    for _, row in df_strong.iterrows():
+    for _, row in df_value.iterrows():
         ticker = row["Kalshi_Ticker"]
         side = row.get("Kalshi_Side", "YES")
         model_prob = row["Conf"]
