@@ -1,11 +1,14 @@
-import pandas as pd
-import numpy as np
+import argparse
 import os
 import sys
 
+import numpy as np
+import pandas as pd
+
+from league_config import get_league_artifact_paths, normalize_league
+
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
 
 def clean_stale_data(df):
     print("   -> 🧹 Cleaning stale columns...")
@@ -42,6 +45,13 @@ def calculate_advanced_stats(df):
 def calculate_rolling_stats(df):
     print("   -> Generating Rolling Averages (Honest Lag)...")
     df = df.sort_values(['team', 'date']).reset_index(drop=True)
+
+    # Recompute rest days from schedule history so training inputs are consistent
+    # across leagues, even if raw rows do not include a rest_days field.
+    df['prev_game_date'] = df.groupby('team')['date'].shift(1)
+    rest = (pd.to_datetime(df['date']) - pd.to_datetime(df['prev_game_date'])).dt.days
+    df['rest_days'] = rest.fillna(7).clip(lower=0, upper=7)
+    df = df.drop(columns=['prev_game_date'])
 
     stats_cols = ['eFG', 'TS', 'off_rating', 'poss', 'orb', 'to', 'team_score']
 
@@ -119,13 +129,16 @@ def merge_opponent_stats(df):
 
     return df_merged
 
-def main():
-    print("--- 🧠 FEATURE ENGINEERING (HONEST MODE: FIXED) 🧠 ---")
-    if not os.path.exists(DATA_FILE):
+def main(league="mens"):
+    league = normalize_league(league)
+    data_file = get_league_artifact_paths(BASE_DIR, league)["data_file"]
+
+    print(f"--- 🧠 FEATURE ENGINEERING (HONEST MODE: FIXED, {league}) 🧠 ---")
+    if not os.path.exists(data_file):
         print("❌ No data file found."); return
 
     # Suppress Mixed Type Warning
-    df = pd.read_csv(DATA_FILE, low_memory=False)
+    df = pd.read_csv(data_file, low_memory=False)
     
     # Normalize Dates
     df['date'] = pd.to_datetime(df['date']).dt.normalize()
@@ -142,7 +155,14 @@ def main():
     df_final = merge_opponent_stats(df)
     
     print(f"✅ Saving processed data ({len(df_final)} rows)...")
-    df_final.to_csv(DATA_FILE, index=False)
+    df_final.to_csv(data_file, index=False)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Generate engineered features for CBB model training.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to process: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+    main(args.league)

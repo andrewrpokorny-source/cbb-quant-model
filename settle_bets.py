@@ -8,6 +8,7 @@ Usage:
     python settle_bets.py
 """
 
+import argparse
 import os
 import re
 import logging
@@ -304,7 +305,7 @@ def _format_settlement_detail(line_str, game_str, result, payout, profit, platfo
     return msg
 
 
-def settle_pending_bets(csv_path=None):
+def settle_pending_bets(csv_path=None, league="mens"):
     """
     Settle all pending bets in betting_history.csv.
 
@@ -353,7 +354,7 @@ def settle_pending_bets(csv_path=None):
             if d_str not in fetched_dates:
                 fetched_dates.add(d_str)
                 try:
-                    games_by_date[d_str] = fetch_completed_games(d)
+                    games_by_date[d_str] = fetch_completed_games(d, league=league)
                 except Exception as e:
                     logger.error(f"ESPN API error for {d_str}: {e}")
                     games_by_date[d_str] = {}
@@ -452,11 +453,19 @@ def settle_pending_bets(csv_path=None):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Settle pending bets from betting_history.csv.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League scoreboard to use: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("SETTLING PENDING BETS")
     print("=" * 60)
 
-    summary = settle_pending_bets()
+    summary = settle_pending_bets(league=args.league)
 
     print(f"\nSettled: {summary['settled']}")
     print(f"Still pending: {summary['still_pending']}")

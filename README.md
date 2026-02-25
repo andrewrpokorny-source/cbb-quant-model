@@ -17,7 +17,7 @@ cp .env.example .env
 
 ## Usage
 
-### Generate Predictions
+### Generate Predictions (Men's default)
 ```bash
 uv run python predict.py
 ```
@@ -26,6 +26,33 @@ uv run python predict.py
 ```bash
 uv run streamlit run app.py
 ```
+Use the in-app league selector to switch between Men's CBB and Women's CBB.
+
+### Multi-League Commands
+
+All major scripts now support `--league` with `mens` (default) or `womens`.
+
+```bash
+# Update data + run features/backtest for women's CBB
+uv run python main.py --league womens
+
+# Train women's spread model
+uv run python model.py --league womens
+
+# Generate women's predictions
+uv run python predict.py --league womens
+
+# Backtest women's model
+uv run python backtest.py --league womens
+
+# Grade yesterday's women's predictions
+uv run python grade_predictions.py --league womens
+```
+
+### Model Artifacts
+
+- Men's canonical model: `cbb_model_v2.pkl`
+- Women's canonical model: `womens_cbb_spread_model_v2.pkl`
 
 ### Telegram Bot
 

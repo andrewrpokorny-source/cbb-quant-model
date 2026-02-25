@@ -11,13 +11,15 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
+from league_config import get_league_artifact_paths, get_league_settings, normalize_league
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PRED_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
-PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
+LEAGUE_OPTIONS = {
+    "Men's CBB": "mens",
+    "Women's CBB": "womens",
+}
 
 st.set_page_config(page_title="CBB Quant Edge", layout="centered")
 
@@ -420,6 +422,33 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
+if 'active_league' not in st.session_state:
+    st.session_state.active_league = "mens"
+
+# Keep current selection available before rendering controls.
+active_league = normalize_league(st.session_state.active_league)
+league_labels = list(LEAGUE_OPTIONS.keys())
+label_for_league = {v: k for k, v in LEAGUE_OPTIONS.items()}
+selected_label = st.selectbox(
+    "League",
+    league_labels,
+    index=league_labels.index(label_for_league.get(active_league, "Men's CBB")),
+)
+selected_league = LEAGUE_OPTIONS[selected_label]
+if selected_league != active_league:
+    st.session_state.active_league = selected_league
+    st.rerun()
+
+active_league = normalize_league(st.session_state.active_league)
+league_settings = get_league_settings(active_league)
+league_paths = get_league_artifact_paths(BASE_DIR, active_league)
+PRED_FILE = league_paths["predictions_file"]
+PERF_FILE = league_paths["performance_file"]
+DATA_FILE = league_paths["data_file"]
+MODEL_FILE = league_paths["model_file"]
+spread_overrides_key = f"spread_overrides_{active_league}"
+predictions_loaded_key = f"predictions_loaded_{active_league}"
+
 # --- AUTO-REFRESH PREDICTIONS ON STARTUP ---
 def should_refresh_predictions():
     """Check if predictions need refreshing (stale or missing)"""
@@ -435,20 +464,26 @@ def should_refresh_predictions():
         return True
 
 # Run predictions once on startup (always run to get line shopping data)
-if 'predictions_loaded' not in st.session_state:
+if not st.session_state.get(predictions_loaded_key, False):
     with st.spinner("Loading predictions..."):
-        predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
-    st.session_state.predictions_loaded = True
+        predict.main(
+            spread_overrides=st.session_state.get(spread_overrides_key, {}),
+            league=active_league,
+        )
+    st.session_state[predictions_loaded_key] = True
 
 # Get predictions with line shopping data
-predictions_with_line_shopping = predict.get_latest_predictions()
+predictions_with_line_shopping = predict.get_latest_predictions(active_league)
 
 # Check for games needing manual spreads (used later)
-games_needing_spreads = predict.get_games_needing_spreads()
+games_needing_spreads = predict.get_games_needing_spreads(active_league)
 
 # --- HEADER ---
 st.markdown('<div class="main-header">CBB Quant Edge</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Gradient Boosting Model · Spread Analysis</div>', unsafe_allow_html=True)
+st.markdown(
+    f'<div class="sub-header">Gradient Boosting Model · {league_settings["label"]} · Spread Analysis</div>',
+    unsafe_allow_html=True,
+)
 
 # ==========================================
 # MAIN CONTENT - No tabs, prioritized layout
@@ -701,12 +736,12 @@ if os.path.exists(PRED_FILE):
                         override_inputs[matchup] = st.text_input(
                             matchup,
                             placeholder="-7.5 or +3",
-                            key=f"spread_{game['id']}",
+                            key=f"spread_{active_league}_{game['id']}",
                             label_visibility="collapsed",
                         )
                 submitted = st.form_submit_button("Apply & Re-run")
                 if submitted:
-                    overrides = st.session_state.get('spread_overrides', {})
+                    overrides = st.session_state.get(spread_overrides_key, {})
                     for matchup, val in override_inputs.items():
                         val = val.strip()
                         if val:
@@ -714,8 +749,8 @@ if os.path.exists(PRED_FILE):
                                 overrides[matchup] = float(val)
                             except ValueError:
                                 st.error(f"Invalid spread for {matchup}: {val}")
-                    st.session_state.spread_overrides = overrides
-                    st.session_state.predictions_loaded = False
+                    st.session_state[spread_overrides_key] = overrides
+                    st.session_state[predictions_loaded_key] = False
                     st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -723,16 +758,22 @@ if os.path.exists(PRED_FILE):
     with col1:
         if st.button("Refresh"):
             with st.spinner("Running model..."):
-                predict.OUTPUT_FILE = PRED_FILE
-                predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
+                predict.main(
+                    spread_overrides=st.session_state.get(spread_overrides_key, {}),
+                    league=active_league,
+                )
+                st.session_state[predictions_loaded_key] = True
             st.rerun()
 
 else:
     st.warning("No predictions found.")
     if st.button("Run Prediction Engine"):
         with st.spinner("Calculating..."):
-            predict.OUTPUT_FILE = PRED_FILE
-            predict.main(spread_overrides=st.session_state.get('spread_overrides', {}))
+            predict.main(
+                spread_overrides=st.session_state.get(spread_overrides_key, {}),
+                league=active_league,
+            )
+            st.session_state[predictions_loaded_key] = True
         st.rerun()
 
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -752,7 +793,7 @@ if os.path.exists(BET_HIST_FILE):
 
             if st.button("Settle Bets"):
                 with st.spinner("Settling pending bets via ESPN scores..."):
-                    summary = settle_bets.settle_pending_bets()
+                    summary = settle_bets.settle_pending_bets(league=active_league)
                 st.success(f"Settled {summary['settled']} bets. {summary['still_pending']} still pending.")
                 if summary["details"]:
                     with st.expander("Settlement Details"):
@@ -881,9 +922,7 @@ with st.expander("Performance History"):
                 f = io.StringIO()
                 try:
                     with redirect_stdout(f):
-                        backtest.DATA_FILE = DATA_FILE
-                        backtest.OUTPUT_FILE = PERF_FILE
-                        backtest.run_backtest()
+                        backtest.run_backtest(league=active_league)
                     if os.path.exists(PERF_FILE):
                         st.success("Done!")
                         st.rerun()
@@ -891,6 +930,10 @@ with st.expander("Performance History"):
                     st.error(f"Error: {e}")
 
 with st.expander("System"):
+    st.caption(f"League: {league_settings['label']} ({active_league})")
+    st.caption(f"Model: {MODEL_FILE}")
+    st.caption(f"Predictions: {PRED_FILE}")
+    st.caption(f"Performance: {PERF_FILE}")
     st.caption(f"Data: {DATA_FILE}")
     if os.path.exists(DATA_FILE):
         st.caption(f"Size: {os.path.getsize(DATA_FILE) / 1024:.0f} KB")

@@ -1,13 +1,14 @@
 import argparse
-import pandas as pd
-import numpy as np
-import requests
-import joblib
 import json
 import os
 from datetime import datetime, timedelta
 from difflib import get_close_matches
+
+import joblib
+import numpy as np
+import pandas as pd
 import pytz
+import requests
 
 try:
     from dotenv import load_dotenv
@@ -19,25 +20,45 @@ from kalshi import KalshiClient, MarketMapper
 from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
+from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v2.pkl")
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
-BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
+ACTIVE_LEAGUE = "mens"
+MODEL_FILE = None
+DATA_FILE = None
+OUTPUT_FILE = None
+BASE_URL = None
+PREDICTIONS_ARCHIVE_PREFIX = None
 
 # Module-level storage for predictions with line shopping data (for app.py access)
-_latest_predictions = None
+_latest_predictions = {}
 
 # Games that need manual spread entry (no ESPN spread available)
-_games_needing_spreads = None
+_games_needing_spreads = {}
 
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
 with open(TEAM_MAP_FILE, 'r') as f:
     TEAM_MAP = json.load(f)
+
+
+def configure_league(league="mens"):
+    """Set module-level paths/urls for the requested league."""
+    global ACTIVE_LEAGUE, MODEL_FILE, DATA_FILE, OUTPUT_FILE, BASE_URL, PREDICTIONS_ARCHIVE_PREFIX
+    ACTIVE_LEAGUE = normalize_league(league)
+    paths = get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)
+    MODEL_FILE = paths["model_file"]
+    DATA_FILE = paths["data_file"]
+    OUTPUT_FILE = paths["predictions_file"]
+    BASE_URL = get_scoreboard_base_url(ACTIVE_LEAGUE)
+    PREDICTIONS_ARCHIVE_PREFIX = paths["predictions_archive_prefix"]
+    return ACTIVE_LEAGUE
+
+
+# Default to men's config unless caller overrides via --league / function argument.
+configure_league("mens")
 
 def find_best_match(name, known_teams):
     """Match ESPN team name to historical data team name."""
@@ -423,12 +444,15 @@ def calculate_production_features(row, h_stats, a_stats):
 
     return row
 
-def fetch_games_needing_spreads():
+def fetch_games_needing_spreads(league=None):
     """Fetch schedule and return games that have no ESPN spread.
 
     Returns list of dicts with 'away_raw', 'home_raw', 'date', 'id' for each
     game missing a spread, or empty list if all games have spreads.
     """
+    if league is not None:
+        configure_league(league)
+
     schedule = fetch_schedule()
     missing = []
     for g in schedule:
@@ -450,12 +474,13 @@ def fetch_games_needing_spreads():
     return missing
 
 
-def get_games_needing_spreads():
+def get_games_needing_spreads(league="mens"):
     """Return cached list of games needing manual spreads."""
-    return _games_needing_spreads
+    canonical = normalize_league(league)
+    return _games_needing_spreads.get(canonical)
 
 
-def main(spread_overrides=None):
+def main(spread_overrides=None, league="mens"):
     """Run prediction engine.
 
     Args:
@@ -463,10 +488,12 @@ def main(spread_overrides=None):
             e.g. {"Northwestern Wildcats @ Iowa Hawkeyes": -7.5}
             Convention: negative = home favored, positive = away favored.
     """
+    configure_league(league)
+
     if spread_overrides is None:
         spread_overrides = {}
 
-    print("--- PREDICTION ENGINE (GBM + Sigmoid Calibration, 15 features) ---")
+    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 15 features) ---")
 
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
@@ -474,7 +501,7 @@ def main(spread_overrides=None):
 
     # Load model + sigma
     try:
-        model, sigma = load_model()
+        model, sigma = load_model(league=ACTIVE_LEAGUE)
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -689,13 +716,14 @@ def main(spread_overrides=None):
         csv_df.to_csv(OUTPUT_FILE, index=False)
         
         # ALSO save to dated archive file (for grading)
-        archive_file = OUTPUT_FILE.replace("daily_predictions.csv",
-                                          f"predictions_{now_eastern.strftime('%Y%m%d')}.csv")
+        archive_file = os.path.join(
+            BASE_DIR,
+            f"{PREDICTIONS_ARCHIVE_PREFIX}_{now_eastern.strftime('%Y%m%d')}.csv",
+        )
         csv_df.to_csv(archive_file, index=False)
         
         # Store predictions with line shopping data for app.py access
-        global _latest_predictions
-        _latest_predictions = pred_df
+        _latest_predictions[ACTIVE_LEAGUE] = pred_df
 
         print(f"\nSUCCESS: Generated {len(pred_df)} predictions")
         print(f"   Saved to: {OUTPUT_FILE}")
@@ -738,24 +766,25 @@ def main(spread_overrides=None):
             print(f"   - {s}")
 
     # Store games that still need manual spreads
-    global _games_needing_spreads
-    _games_needing_spreads = games_needing_spreads
+    _games_needing_spreads[ACTIVE_LEAGUE] = games_needing_spreads
     if games_needing_spreads:
         print(f"\n{len(games_needing_spreads)} game(s) need manual spread entry.")
 
-def get_latest_predictions():
+def get_latest_predictions(league="mens"):
     """Return the latest predictions DataFrame with line shopping data."""
-    return _latest_predictions
+    canonical = normalize_league(league)
+    return _latest_predictions.get(canonical)
 
 
-def check_live_prices():
+def check_live_prices(league="mens"):
     """Re-fetch current Kalshi prices for today's value picks and recalculate edge.
 
     Reads the daily predictions CSV, filters to value-rated rows with a Kalshi
     ticker, fetches live prices from the Kalshi API, and prints an updated table
     showing current edge so the user can verify value before placing a bet.
     """
-    print("--- LIVE PRICE CHECK ---\n")
+    configure_league(league)
+    print(f"--- LIVE PRICE CHECK ({ACTIVE_LEAGUE}) ---\n")
 
     # Load predictions CSV
     if not os.path.exists(OUTPUT_FILE):
@@ -887,6 +916,11 @@ if __name__ == "__main__":
         description="CBB prediction engine -- generate picks or check live prices."
     )
     parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to run: mens or womens (aliases supported).",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Re-fetch live Kalshi prices for today's value picks and show updated edge.",
@@ -894,6 +928,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.check:
-        check_live_prices()
+        check_live_prices(args.league)
     else:
-        main()
+        main(league=args.league)

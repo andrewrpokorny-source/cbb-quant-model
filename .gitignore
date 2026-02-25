@@ -11,6 +11,11 @@ __pycache__/
 predictions_*.csv
 performance_log.csv
 daily_predictions.csv
+predictions_wbb_*.csv
+performance_log_wbb.csv
+daily_predictions_wbb.csv
+wbb_training_data_processed.csv
+wbb_model_v2.pkl
 telegram_bot.log
 .telegram_bot.lock
 

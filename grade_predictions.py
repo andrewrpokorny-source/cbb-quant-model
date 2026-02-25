@@ -1,18 +1,21 @@
-import pandas as pd
-import numpy as np
-import requests
+import argparse
 import os
-from datetime import datetime, timedelta
-import pytz
 from difflib import get_close_matches
+from datetime import datetime, timedelta
+
+import pandas as pd
+import pytz
+import requests
 
 from betting import VALUE_RATINGS
+from league_config import (
+    get_league_artifact_paths,
+    get_scoreboard_base_url,
+    normalize_league,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PRED_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
-PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
-BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
 
 def normalize_team_name(name):
     """Normalize team names for matching."""
@@ -23,15 +26,18 @@ def normalize_team_name(name):
     name = name.replace(" State", "").replace(" St.", "").replace(" St", "")
     return name.strip()
 
-def fetch_completed_games(date_obj):
+def fetch_completed_games(date_obj, league="mens"):
     """
     Fetch completed games for a specific date from ESPN.
     Returns dict: {(home_team, away_team): {home_score, away_score, spread}}
     """
+    league = normalize_league(league)
+    base_url = get_scoreboard_base_url(league)
+
     print(f"   -> Fetching completed games for {date_obj.strftime('%Y-%m-%d')}...")
     
     date_str = date_obj.strftime("%Y%m%d")
-    url = f"{BASE_URL}&dates={date_str}"
+    url = f"{base_url}&dates={date_str}"
     
     games = {}
     
@@ -145,12 +151,18 @@ def grade_pick(pick_str, spread, home_score, away_score, matchup):
     
     return pick_won
 
-def grade_predictions():
+def grade_predictions(league="mens"):
     """
     Main function to grade yesterday's predictions.
     """
+    league = normalize_league(league)
+    paths = get_league_artifact_paths(BASE_DIR, league)
+    pred_file = paths["predictions_file"]
+    perf_file = paths["performance_file"]
+    archive_prefix = paths["predictions_archive_prefix"]
+
     print("="*60)
-    print("GRADING YESTERDAY'S PREDICTIONS")
+    print(f"GRADING YESTERDAY'S PREDICTIONS ({league})")
     print("="*60)
     
     # 1. Determine yesterday's date (Eastern time)
@@ -163,20 +175,23 @@ def grade_predictions():
     print(f"Grading date: {yesterday_date}\n")
     
     # 2. Check if we have predictions file
-    # Try dated file first (e.g., predictions_20260109.csv)
-    dated_pred_file = os.path.join(BASE_DIR, f"predictions_{yesterday_date.strftime('%Y%m%d')}.csv")
+    # Try dated file first (e.g., predictions_20260109.csv / predictions_wbb_20260109.csv)
+    dated_pred_file = os.path.join(
+        BASE_DIR,
+        f"{archive_prefix}_{yesterday_date.strftime('%Y%m%d')}.csv",
+    )
     
     if os.path.exists(dated_pred_file):
         pred_source = dated_pred_file
         print(f"Found dated prediction file: {os.path.basename(dated_pred_file)}")
-    elif os.path.exists(PRED_FILE):
-        pred_source = PRED_FILE
-        print(f"Using daily_predictions.csv (no dated file found)")
+    elif os.path.exists(pred_file):
+        pred_source = pred_file
+        print(f"Using {os.path.basename(pred_file)} (no dated file found)")
         print(f"   Note: This may contain today's games instead of yesterday's")
     else:
         print("No predictions file found")
         print(f"   Looked for: {dated_pred_file}")
-        print(f"   Looked for: {PRED_FILE}")
+        print(f"   Looked for: {pred_file}")
         print("   Run predict.py to generate predictions first.")
         return
     
@@ -222,7 +237,7 @@ def grade_predictions():
     print(f"\nPredictions to grade: {len(preds)} (actionable bets only)")
     
     # 5. Fetch yesterday's completed games
-    completed_games = fetch_completed_games(yesterday)
+    completed_games = fetch_completed_games(yesterday, league=league)
     
     if not completed_games:
         print("\nNo completed games found for yesterday.")
@@ -294,8 +309,8 @@ def grade_predictions():
         graded_df = pd.DataFrame(graded_bets)
         
         # Append to existing performance log or create new one
-        if os.path.exists(PERF_FILE):
-            existing = pd.read_csv(PERF_FILE)
+        if os.path.exists(perf_file):
+            existing = pd.read_csv(perf_file)
             existing['date'] = pd.to_datetime(existing['date']).dt.date
             
             # Remove any existing entries for yesterday (in case re-grading)
@@ -303,11 +318,11 @@ def grade_predictions():
             
             # Combine
             combined = pd.concat([existing, graded_df], ignore_index=True)
-            combined.to_csv(PERF_FILE, index=False)
-            print(f"\nAdded {len(graded_bets)} graded bets to performance_log.csv")
+            combined.to_csv(perf_file, index=False)
+            print(f"\nAdded {len(graded_bets)} graded bets to {os.path.basename(perf_file)}")
         else:
-            graded_df.to_csv(PERF_FILE, index=False)
-            print(f"\nCreated performance_log.csv with {len(graded_bets)} bets")
+            graded_df.to_csv(perf_file, index=False)
+            print(f"\nCreated {os.path.basename(perf_file)} with {len(graded_bets)} bets")
         
         # Show win rate
         wins = sum(graded_df['pick_correct'])
@@ -324,4 +339,11 @@ def grade_predictions():
         print("   This likely means the predictions file contains games for today/tomorrow.")
 
 if __name__ == "__main__":
-    grade_predictions()
+    parser = argparse.ArgumentParser(description="Grade yesterday's value-rated spread predictions.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to grade: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+    grade_predictions(args.league)
