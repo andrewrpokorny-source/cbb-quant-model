@@ -199,6 +199,9 @@ def _detect_fd_settled(raw_text: str) -> bool:
     # "RETURNED" appears as a standalone line on FanDuel void slips
     if re.search(r"^\s*returned\s*$", lower, re.MULTILINE) and "sportsbook" in lower:
         return True
+    # "Finished" format: settled tab with scores instead of WON/LOST banners
+    if re.search(r"^\s*finished\s*$", lower, re.MULTILINE):
+        return True
     return False
 
 
@@ -869,10 +872,16 @@ def _parse_fd_settled_fallback(raw_text: str) -> dict | None:
     odds = odds_match.group(1) if odds_match else "n/a"
 
     # Determine result from payout
+    lower_text = raw_text.lower()
     if payout > wager:
         result = "win"
-    elif payout == 0 or "returned" in raw_text.lower():
-        result = "void" if "returned" in raw_text.lower() else "loss"
+    elif re.search(r"\$0\.00\s*\n?\s*returned", lower_text):
+        # "$0.00 RETURNED" = loss (bettor gets nothing back)
+        result = "loss"
+    elif "returned" in lower_text:
+        result = "void"
+    elif payout == 0:
+        result = "loss"
     elif abs(payout - wager) < 0.01:
         result = "void"
     else:
@@ -987,6 +996,11 @@ def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
         cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
         if cards:
             cards = cards[1:]
+        if not cards:
+            logger.warning(
+                "FD settled card splitting found no card boundaries "
+                "(no PLACED: lines and no FANDUEL/SPORTSBOOK banners)"
+            )
 
     bets = []
     for card_text in cards:
@@ -994,6 +1008,54 @@ def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
         if bet is not None:
             bets.append(bet)
     return bets
+
+
+def _resolve_game_date(team_name: str) -> str:
+    """Look up the game date for a team from prediction files.
+
+    Searches daily_predictions.csv and recent predictions_YYYYMMDD.csv files
+    for a matching team in the Pick or Matchup column. Returns YYYY-MM-DD or "".
+    """
+    if not team_name:
+        return ""
+
+    team_upper = team_name.upper()
+    eastern = pytz.timezone("US/Eastern")
+    now = datetime.now(eastern)
+
+    # Build list of prediction files to search (most recent first)
+    pred_files = []
+    if os.path.exists(DAILY_PREDICTIONS):
+        pred_files.append(DAILY_PREDICTIONS)
+    for days_back in range(14):
+        dt = now - timedelta(days=days_back)
+        fname = os.path.join(BASE_DIR, f"predictions_{dt.strftime('%Y%m%d')}.csv")
+        if os.path.exists(fname) and fname not in pred_files:
+            pred_files.append(fname)
+
+    for fpath in pred_files:
+        try:
+            df = pd.read_csv(fpath)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+            logger.warning("Could not read prediction file %s for date resolution: %s", fpath, e)
+            continue
+        if "Date/Time" not in df.columns or "Matchup" not in df.columns:
+            continue
+
+        for _, row in df.iterrows():
+            matchup = str(row.get("Matchup", "")).upper()
+            pick = str(row.get("Pick", "")).upper()
+            if team_upper in matchup or team_upper in pick:
+                dt_str = str(row["Date/Time"]).strip()
+                # Format: "MM/DD HH:MM AM|PM"
+                m = re.match(r"(\d{1,2})/(\d{1,2})", dt_str)
+                if m:
+                    month, day = int(m.group(1)), int(m.group(2))
+                    year = now.year
+                    if month == 12 and now.month <= 2:
+                        year -= 1
+                    return f"{year}-{month:02d}-{day:02d}"
+    return ""
 
 
 def _parse_single_fd_settled_card(card_text: str) -> dict | None:
@@ -1018,7 +1080,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
             "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
         }
-        month = month_map.get(month_str, 1)
+        month = month_map.get(month_str)
+        if month is None:
+            logger.warning(
+                "Unrecognized month abbreviation %r in FD settled card (bet_id=%s), "
+                "falling back to month=1",
+                month_str, bet_id,
+            )
+            month = 1
         eastern = pytz.timezone("US/Eastern")
         now = datetime.now(eastern)
         year = now.year
@@ -1033,10 +1102,39 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         result = "win"
     elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
+    elif re.search(r"\$0\.00\s*\n?\s*returned", lower):
+        # "$0.00 RETURNED" = loss ($0.00 payout means bet lost)
+        result = "loss"
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
+        # Non-zero RETURNED (wager refunded) = void
         result = "void"
     else:
-        result = "pending"
+        # No keyword markers found -- infer result from payout vs wager.
+        # Covers "Finished" format (scores visible) and cases where OCR
+        # misses colored "WON/LOST ON FANDUEL" text on dark backgrounds.
+        # Assumes first dollar amount in [0.25, 500] is wager and second is payout.
+        all_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+        amts_in_range = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
+        if len(amts_in_range) >= 2:
+            w, p = amts_in_range[0], amts_in_range[1]
+            if p > w:
+                result = "win"
+            elif p < w:
+                result = "loss"
+            else:
+                result = "void"
+            logger.info(
+                "FD settled card: no WON/LOST keyword, inferred result=%s "
+                "from wager=$%.2f payout=$%.2f (bet_id=%s)",
+                result, w, p, bet_id,
+            )
+        else:
+            result = "pending"
+            logger.warning(
+                "FD settled card: no result keywords and < 2 dollar amounts, "
+                "defaulting to pending (bet_id=%s, amounts=%s)",
+                bet_id, amts_in_range,
+            )
 
     # 5. Clean and parse structured fields
     lines = card_text.split("\n")
@@ -1064,6 +1162,34 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             if mm:
                 game = f"{mm.group(1).strip()} vs {mm.group(2).strip()}"
                 continue
+
+    # Fallback game detection: in the FanDuel "Finished" format, team names
+    # appear between "SPREAD BETTING" and the wager ($X.XX / TOTAL WAGER).
+    if not game:
+        raw_lines = card_text.split("\n")
+        game_teams = []
+        in_team_zone = False
+        for raw_line in raw_lines:
+            stripped = raw_line.strip()
+            if "SPREAD BETTING" in stripped.upper():
+                in_team_zone = True
+                continue
+            if in_team_zone:
+                if (
+                    stripped.startswith("$")
+                    or "TOTAL WAGER" in stripped.upper()
+                    or "BET ID" in stripped.upper()
+                ):
+                    break
+                if (
+                    stripped
+                    and re.match(r"^[A-Za-z]", stripped)
+                    and stripped.lower() not in JUNK_LINES
+                    and len(stripped) >= 3
+                ):
+                    game_teams.append(stripped)
+        if len(game_teams) >= 2:
+            game = f"{game_teams[0]} vs {game_teams[1]}"
 
     # Wager: first dollar amount in range from cleaned text
     for cl in cleaned:
@@ -1097,7 +1223,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     if result == "win":
         profit = round(payout - wager, 2)
     elif result == "void":
-        payout = wager  # FD shows $0.00 for voids
+        payout = wager  # void = wager refunded; override raw $0.00 from OCR
         profit = 0.0
     elif result == "loss":
         payout = 0.0
@@ -1106,6 +1232,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         profit = 0.0
 
     line = f"{team} {spread}" if team and spread else ""
+
+    # Resolve game date from prediction files if not found in OCR text
+    if not game_date and team:
+        game_date = _resolve_game_date(team)
 
     if not line or wager <= 0:
         logger.warning(
