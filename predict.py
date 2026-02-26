@@ -195,9 +195,11 @@ def fetch_schedule():
 
     return sorted(games, key=lambda x: x['date'])
 
-def fetch_kalshi_markets():
-    """Fetch Kalshi NCAAB markets and build mapper."""
-    print("   -> Fetching Kalshi markets...")
+def fetch_kalshi_markets(league=None):
+    """Fetch Kalshi college basketball markets and build mapper."""
+    target_league = ACTIVE_LEAGUE if league is None else normalize_league(league)
+    league_label = "NCAAW" if target_league == "womens" else "NCAAM"
+    print(f"   -> Fetching Kalshi markets ({league_label})...")
 
     api_key = os.getenv("KALSHI_API_KEY")
     if not api_key:
@@ -206,14 +208,14 @@ def fetch_kalshi_markets():
 
     try:
         client = KalshiClient(api_key)
-        markets = client.get_ncaab_markets()
+        markets = client.get_college_basketball_markets(league=target_league)
 
         if markets:
-            print(f"      Found {len(markets)} NCAAB markets")
+            print(f"      Found {len(markets)} Kalshi {league_label} markets")
             mapper = MarketMapper(markets)
             return client, mapper
         else:
-            print("      No NCAAB markets found")
+            print(f"      No Kalshi {league_label} markets found")
             return client, None
     except Exception as e:
         print(f"      Kalshi API error: {e}")
@@ -243,7 +245,6 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         spread_markets = [m for m in all_markets if "SPREAD" in m.get("ticker", "")]
 
         if not spread_markets:
-            print(f"      No Kalshi SPREAD markets found for {away_team} @ {home_team}")
             return None, None
 
         # Get the first spread market and extract info
@@ -532,7 +533,7 @@ def main(spread_overrides=None, league="mens"):
     print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
 
     # Fetch Kalshi markets
-    kalshi_client, kalshi_mapper = fetch_kalshi_markets()
+    kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
 
     predictions = []
     skipped = []
@@ -560,14 +561,26 @@ def main(spread_overrides=None, league="mens"):
                 g['raw_odds'] = f"Manual {g['spread']}"
                 g['has_espn_spread'] = True  # Treat as valid
             else:
-                games_needing_spreads.append({
-                    'id': g['id'],
-                    'away_raw': g['away_raw'],
-                    'home_raw': g['home_raw'],
-                    'matchup': matchup_key,
-                })
-                skipped.append(f"{matchup_key} (No spread -- needs manual entry)")
-                continue
+                # Fallback to Kalshi spread markets when ESPN has no spread.
+                kalshi_spread, _ = get_kalshi_spread(
+                    kalshi_mapper,
+                    g['home_raw'],
+                    g['away_raw'],
+                    g['date'],
+                )
+                if kalshi_spread is not None:
+                    g['spread'] = float(kalshi_spread)
+                    g['raw_odds'] = f"Kalshi {g['spread']:+.1f}"
+                    g['has_espn_spread'] = True
+                else:
+                    games_needing_spreads.append({
+                        'id': g['id'],
+                        'away_raw': g['away_raw'],
+                        'home_raw': g['home_raw'],
+                        'matchup': matchup_key,
+                    })
+                    skipped.append(f"{matchup_key} (No spread -- needs manual entry)")
+                    continue
 
         # Build feature row
         row = {'is_home': 1, 'spread': g['spread']}

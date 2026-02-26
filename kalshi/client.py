@@ -166,27 +166,54 @@ class KalshiClient:
         Returns:
             List of NCAAB market dictionaries
         """
+        return self.get_college_basketball_markets(league="mens")
+
+    def get_college_basketball_markets(self, league: str = "mens") -> list:
+        """
+        Get all open college basketball markets for a target league.
+
+        Args:
+            league: 'mens' or 'womens' (aliases: men/women/m/w)
+
+        Returns:
+            List of Kalshi market dictionaries.
+        """
+        key = str(league or "mens").strip().lower()
+        if key in {"women", "womens", "w"}:
+            canonical = "womens"
+        else:
+            canonical = "mens"
+
+        # Known Kalshi series ticker families.
+        # Men's: KXNCAAMB*
+        # Women's: KXNCAAWB* (observed game markets) with potential spread/total variants.
+        series_by_league = {
+            "mens": [
+                "KXNCAAMBSPREAD",
+                "KXNCAAMBGAME",
+                "KXNCAAMBTOTAL",
+            ],
+            "womens": [
+                "KXNCAAWBSPREAD",
+                "KXNCAAWBGAME",
+                "KXNCAAWBTOTAL",
+            ],
+        }
+        prefix_by_league = {
+            "mens": "KXNCAAMB",
+            "womens": "KXNCAAWB",
+        }
+
         markets = []
-
-        # Kalshi NCAAB series tickers
-        series_tickers = [
-            "KXNCAAMBSPREAD",  # Spread markets
-            "KXNCAAMBGAME",    # Game winner (moneyline)
-            "KXNCAAMBTOTAL",   # Totals
-        ]
-
-        for series in series_tickers:
+        for series in series_by_league[canonical]:
             result = self.search_markets(series_ticker=series, status="open", limit=200)
             if result:
                 markets.extend(result)
 
-        # If series search doesn't work, try fetching all and filtering by ticker prefix
         if not markets:
             all_markets = self.search_markets(status="open", limit=1000)
-            markets = [
-                m for m in all_markets
-                if m.get("ticker", "").startswith("KXNCAAMB")
-            ]
+            prefix = prefix_by_league[canonical]
+            markets = [m for m in all_markets if m.get("ticker", "").startswith(prefix)]
 
         return markets
 
