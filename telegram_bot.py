@@ -1089,39 +1089,22 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
         # Non-zero RETURNED (wager refunded) = void
         result = "void"
-    elif re.search(r"^\s*finished\s*$", lower, re.MULTILINE):
-        # "Finished" format: infer result from payout vs wager amounts
-        # Extract all dollar amounts from the card (including $0.00)
+    else:
+        # No keyword markers found -- infer result from payout vs wager.
+        # Covers "Finished" format (scores visible) and cases where OCR
+        # misses colored "WON/LOST ON FANDUEL" text on dark backgrounds.
         all_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
-        card_wager_amts = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
-        card_payout_amts = [float(m) for m in all_amts if float(m) <= 500]
-        # Remove the wager from the payout candidates
-        if card_wager_amts and len(card_payout_amts) >= 2:
-            w = card_wager_amts[0]
-            # Find the first amount after the wager position
-            wager_idx = next(
-                (i for i, m in enumerate(all_amts)
-                 if abs(float(m) - w) < 0.01 and 0.25 <= float(m) <= 500),
-                -1,
-            )
-            remaining = [
-                float(m) for m in all_amts[wager_idx + 1:]
-                if float(m) <= 500
-            ] if wager_idx >= 0 else []
-            if remaining:
-                p = remaining[0]
-                if p > w:
-                    result = "win"
-                elif p < 0.01:
-                    result = "loss"
-                else:
-                    result = "loss" if p < w else "void"
+        amts_in_range = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
+        if len(amts_in_range) >= 2:
+            w, p = amts_in_range[0], amts_in_range[1]
+            if p > w:
+                result = "win"
+            elif p < w:
+                result = "loss"
             else:
-                result = "pending"
+                result = "void"
         else:
             result = "pending"
-    else:
-        result = "pending"
 
     # 5. Clean and parse structured fields
     lines = card_text.split("\n")
