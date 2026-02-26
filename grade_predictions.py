@@ -2,6 +2,7 @@ import argparse
 import os
 from difflib import get_close_matches
 from datetime import datetime, timedelta
+import re
 
 import pandas as pd
 import pytz
@@ -151,6 +152,54 @@ def grade_pick(pick_str, spread, home_score, away_score, matchup):
     
     return pick_won
 
+
+def parse_game_pick(pick_str):
+    """
+    Parse GAME pick strings like:
+      - "UConn ML YES"
+      - "South Carolina ML NO"
+      - "Duke ML"
+    """
+    match = re.match(r"^(.+?)\s+ML(?:\s+(YES|NO))?$", str(pick_str).strip(), re.IGNORECASE)
+    if not match:
+        return None
+    team = match.group(1).strip()
+    side = (match.group(2) or "YES").upper()
+    return {"team": team, "side": side}
+
+
+def grade_game_pick(game_pick, game_result):
+    """Grade a GAME market winner pick (YES/NO on team ML)."""
+    team = game_pick["team"]
+    side = game_pick["side"]
+
+    home_name = game_result["home_name"]
+    away_name = game_result["away_name"]
+    home_score = game_result["home_score"]
+    away_score = game_result["away_score"]
+
+    if home_score == away_score:
+        return None
+
+    team_lower = team.lower()
+    home_lower = home_name.lower()
+    away_lower = away_name.lower()
+
+    if team_lower == home_lower:
+        team_won = home_score > away_score
+    elif team_lower == away_lower:
+        team_won = away_score > home_score
+    else:
+        # fallback for minor naming differences
+        if team_lower in home_lower or home_lower in team_lower:
+            team_won = home_score > away_score
+        elif team_lower in away_lower or away_lower in team_lower:
+            team_won = away_score > home_score
+        else:
+            return None
+
+    return team_won if side == "YES" else (not team_won)
+
 def grade_predictions(league="mens"):
     """
     Main function to grade yesterday's predictions.
@@ -254,7 +303,10 @@ def grade_predictions(league="mens"):
         matchup = pred['Matchup']
         pick = pred['Pick']
         conf = pred['Conf']
-        spread = pred.get('Spread', 0.0)
+        spread = pd.to_numeric(pred.get('Spread', 0.0), errors='coerce')
+        if pd.isna(spread):
+            spread = 0.0
+        bet_type = str(pred.get("Bet_Type", "spread") or "spread").strip().lower()
         
         # Find the corresponding game
         game_result = match_prediction_to_game(matchup, completed_games)
@@ -264,26 +316,39 @@ def grade_predictions(league="mens"):
             unmatched.append(matchup)
             continue
         
-        # Grade the pick
-        pick_correct = grade_pick(
-            pick, 
-            game_result['spread'],
-            game_result['home_score'],
-            game_result['away_score'],
-            matchup
-        )
-        
+        if bet_type == "game":
+            parsed_game_pick = parse_game_pick(pick)
+            if parsed_game_pick is None:
+                unmatched.append(matchup)
+                continue
+            pick_correct = grade_game_pick(parsed_game_pick, game_result)
+            picked_team = (
+                parsed_game_pick["team"]
+                if parsed_game_pick["side"] == "YES"
+                else f"NO {parsed_game_pick['team']}"
+            )
+            picked_spread = 0.0
+        else:
+            # Grade spread pick using the spread value captured at prediction time.
+            pick_correct = grade_pick(
+                pick,
+                spread,
+                game_result['home_score'],
+                game_result['away_score'],
+                matchup
+            )
+            # Extract picked team and spread
+            pick_parts = pick.split()
+            picked_team = " ".join(pick_parts[:-1])
+            picked_spread = float(pick_parts[-1])
+
         if pick_correct is None:
             unmatched.append(matchup)
             continue
-        
-        # Extract picked team and spread
-        pick_parts = pick.split()
-        picked_team = " ".join(pick_parts[:-1])
-        picked_spread = float(pick_parts[-1])
-        
+
         graded_bets.append({
             'date': yesterday_date,
+            'bet_type': bet_type,
             'picked_team': picked_team,
             'picked_spread': picked_spread,
             'conf': conf,
