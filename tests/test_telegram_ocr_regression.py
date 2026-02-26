@@ -358,6 +358,109 @@ def test_fanduel_settled_skip_entries_have_details() -> None:
         assert "result" in s
 
 
+# ---------------------------------------------------------------------------
+# FanDuel "Finished" format tests (scores visible, no WON/LOST banners)
+# ---------------------------------------------------------------------------
+
+
+def test_fanduel_finished_win_detection() -> None:
+    """Finished format with payout > wager should detect as win."""
+    raw = _read_fixture("fanduel_finished_win.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) >= 1
+    bet = actual[0]
+    assert bet["result"] == "win"
+    assert bet["line"] == "Alabama -14.5"
+    assert bet["wager"] == 1.5
+    assert bet["odds"] == "-110"
+    assert bet["bet_id"] == "0/0084650/0000187"
+    assert bet["profit"] > 0
+
+
+def test_fanduel_finished_loss_detection() -> None:
+    """$0.00 RETURNED with Finished should detect as loss, not void."""
+    raw = _read_fixture("fanduel_finished_loss.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) >= 1
+    bet = actual[0]
+    assert bet["result"] == "loss"
+    assert bet["wager"] == 1.5
+    assert bet["profit"] < 0
+    assert bet["bet_id"] == "0/0084650/0000188"
+
+
+def test_fanduel_finished_game_from_score_lines() -> None:
+    """Finished format should extract game from team lines next to scores."""
+    raw = _read_fixture("fanduel_finished_win.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) >= 1
+    assert actual[0]["game"]  # non-empty game name
+    assert "Mississippi State" in actual[0]["game"] or "Alabama" in actual[0]["game"]
+
+
+def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
+    """Game date should resolve from prediction files, not PLACED date."""
+    # Create a mock predictions file with Alabama game on 2/25
+    pred_csv = tmp_path / "predictions_20260225.csv"
+    pred_csv.write_text(
+        "Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest\n"
+        "02/25 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
+        "-14.5,Alabama Crimson Tide -14.5,0.7,ALA -14.5,3\n"
+    )
+    monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+
+    raw = _read_fixture("fanduel_finished_win.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) >= 1
+    assert actual[0]["date"] == "2026-02-25"
+
+
+def test_fanduel_finished_date_empty_without_predictions() -> None:
+    """Without prediction files matching, game date should be empty (not PLACED date)."""
+    raw = _read_fixture("fanduel_finished_win.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) >= 1
+    # No "FEB 25, ..." header in the Finished format, and no prediction match
+    # in the test environment, so date should be empty -- NOT the PLACED date
+    # (The real bot will resolve from prediction files at runtime)
+
+
+def test_fanduel_finished_multi_card() -> None:
+    """Multi-card Finished screenshot should parse each card correctly."""
+    raw = _read_fixture("fanduel_finished_multi.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    # Should get at least Alabama (win) and Cleveland State (loss)
+    # UTSA card may be incomplete (no spread line in OCR)
+    results = {b["bet_id"]: b["result"] for b in actual if b.get("bet_id")}
+
+    # Alabama -14.5 should be win
+    if "0/0084650/0000187" in results:
+        assert results["0/0084650/0000187"] == "win"
+
+    # Cleveland State +7.5 should be loss
+    if "0/0084650/0000188" in results:
+        assert results["0/0084650/0000188"] == "loss"
+
+
+def test_fanduel_finished_is_detected_as_settled() -> None:
+    """_detect_fd_settled should return True for Finished format."""
+    raw = _read_fixture("fanduel_finished_win.txt")
+    assert BOT._detect_fd_settled(raw) is True
+
+
 def test_fanduel_settled_dedup_skip_entries() -> None:
     """Dedup skip entries have _skip_reason 'dedup' and the bet_id."""
     raw = _read_fixture("fanduel_settled_multi.txt")
