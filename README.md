@@ -39,6 +39,9 @@ uv run python main.py --league womens
 # Train women's spread model
 uv run python model.py --league womens
 
+# Train women's game-winner P(win) model bundle
+uv run python model_win.py --league womens
+
 # Generate women's predictions
 uv run python predict.py --league womens
 
@@ -53,6 +56,8 @@ uv run python grade_predictions.py --league womens
 
 - Men's canonical model: `cbb_model_v2.pkl`
 - Women's canonical model: `womens_cbb_spread_model_v2.pkl`
+- Men's game-winner model bundle: `cbb_win_model_v1.pkl`
+- Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
 
 ### Telegram Bot
 
