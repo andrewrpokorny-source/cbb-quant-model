@@ -57,6 +57,29 @@ def test_predict_falls_back_to_no_line_when_with_line_missing():
     assert prob == pytest.approx(0.58)
 
 
+def test_predict_respects_allow_with_line_false():
+    bundle = {
+        "model_no_line": DummyModel(0.59),
+        "features_no_line": FEATURES_NO_LINE,
+        "model_with_line": DummyModel(0.77),
+        "features_with_line": FEATURES_WITH_LINE,
+    }
+    prob, variant = predict_home_win_prob({"spread": -4.0}, bundle, allow_with_line=False)
+    assert variant == "no_line"
+    assert prob == pytest.approx(0.59)
+
+
+def test_predict_raises_without_no_line_model():
+    bundle = {
+        "model_no_line": None,
+        "features_no_line": FEATURES_NO_LINE,
+        "model_with_line": None,
+        "features_with_line": FEATURES_WITH_LINE,
+    }
+    with pytest.raises(ValueError, match="No available no-line model"):
+        predict_home_win_prob({"spread": -1.5}, bundle)
+
+
 def test_load_bundle_supports_raw_legacy_model(tmp_path):
     legacy_model = DummyModel(0.64)
     p = tmp_path / "legacy.pkl"

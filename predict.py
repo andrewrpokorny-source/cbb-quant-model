@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import re
+import threading
 
 import joblib
 import numpy as np
@@ -15,7 +16,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
 from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
@@ -41,6 +42,7 @@ _latest_game_predictions = {}
 
 # Games that need manual spread entry (no ESPN spread available)
 _games_needing_spreads = {}
+_RUNTIME_LOCK = threading.Lock()
 
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
@@ -135,6 +137,7 @@ def fetch_schedule():
 
         try:
             res = requests.get(url, timeout=10)
+            res.raise_for_status()
             data = res.json()
             
             events_count = len(data.get('events', []))
@@ -190,8 +193,11 @@ def fetch_schedule():
                         'has_espn_spread': spread_val != 0.0
                     })
                     
-        except Exception as e:
-            print(f"         Error fetching {date_str}: {e}")
+        except requests.RequestException as e:
+            print(f"         HTTP/network error fetching {date_str}: {e}")
+            failed_dates.append(date_str)
+        except ValueError as e:
+            print(f"         JSON parse error fetching {date_str}: {e}")
             failed_dates.append(date_str)
 
     if failed_dates:
@@ -222,7 +228,7 @@ def fetch_kalshi_markets(league=None):
         else:
             print(f"      No Kalshi {league_label} markets found")
             return client, None
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
         print(f"      Kalshi API error: {e}")
         return None, None
 
@@ -564,7 +570,7 @@ def get_kalshi_game_edge(
             "Kalshi_Yes_Team": best_choice["yes_team"],
             "Picked_Team": best_choice["picked_team"],
         }
-    except Exception as e:
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
         print(
             f"      Unexpected Kalshi GAME market error for "
             f"{away_team} @ {home_team}: {type(e).__name__}: {e}"
@@ -622,6 +628,15 @@ def calculate_production_features(row, h_stats, a_stats):
 
     return row
 
+def _with_runtime_lock(func):
+    """Serialize prediction runtime operations that rely on module state."""
+    def wrapper(*args, **kwargs):
+        with _RUNTIME_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
+
+
+@_with_runtime_lock
 def fetch_games_needing_spreads(league=None):
     """Fetch schedule and return games that have no ESPN spread.
 
@@ -658,6 +673,7 @@ def get_games_needing_spreads(league="mens"):
     return _games_needing_spreads.get(canonical)
 
 
+@_with_runtime_lock
 def main(spread_overrides=None, league="mens"):
     """Run prediction engine.
 
@@ -718,7 +734,7 @@ def main(spread_overrides=None, league="mens"):
             f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
             f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
         )
-    except Exception as e:
+    except (FileNotFoundError, EOFError, IOError, ValueError) as e:
         print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
     # Fetch Kalshi markets
@@ -843,7 +859,7 @@ def main(spread_overrides=None, league="mens"):
                         "Std_Units": 0.0,
                         "Breakeven_Spread": np.nan,
                     })
-            except Exception as e:
+            except (KeyError, TypeError, ValueError) as e:
                 print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
 
         # Spread pick requires a market spread (ESPN/manual/Kalshi fallback).
@@ -905,7 +921,7 @@ def main(spread_overrides=None, league="mens"):
                 picked_team,
                 is_home_pick,
             )
-        except Exception as e:
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
             print(f"      WARNING: Line shopping failed for {matchup_key}: {type(e).__name__}: {e}")
             line_shopping = LineShoppingResult(
                 picked_team=picked_team,
@@ -1035,6 +1051,7 @@ def get_latest_game_predictions(league="mens"):
     return _latest_game_predictions.get(canonical)
 
 
+@_with_runtime_lock
 def check_live_prices(league="mens"):
     """Re-fetch current Kalshi prices for today's value picks and recalculate edge.
 
@@ -1106,7 +1123,7 @@ def check_live_prices(league="mens"):
 
         try:
             prices = client.get_market_prices(ticker)
-        except Exception as e:
+        except (requests.RequestException, ValueError, TypeError) as e:
             print(f"   Error fetching {ticker}: {e}")
             results.append(_placeholder("ERR"))
             continue

@@ -1,6 +1,7 @@
 """Kalshi API client for fetching prediction market data."""
 
 import os
+import json
 import base64
 import time
 import requests
@@ -49,14 +50,14 @@ class KalshiClient:
         except Exception as e:
             print(f"      Failed to load private key: {e}")
 
-    def _sign_request(self, method: str, path: str, timestamp: str) -> str:
+    def _sign_request(self, method: str, path: str, timestamp: str) -> Optional[str]:
         """
         Sign request with RSA private key.
 
         Returns base64-encoded signature.
         """
         if not self.private_key:
-            return ""
+            return None
 
         try:
             from cryptography.hazmat.primitives import hashes
@@ -73,7 +74,7 @@ class KalshiClient:
             return base64.b64encode(signature).decode()
         except Exception as e:
             print(f"      Signing error: {e}")
-            return ""
+            return None
 
     def _get_auth_headers(self, method: str, path: str) -> dict:
         """Get authentication headers for request."""
@@ -85,8 +86,11 @@ class KalshiClient:
         if self.private_key:
             timestamp = str(int(time.time() * 1000))
             signature = self._sign_request(method, path, timestamp)
-            headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp
-            headers["KALSHI-ACCESS-SIGNATURE"] = signature
+            if signature:
+                headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp
+                headers["KALSHI-ACCESS-SIGNATURE"] = signature
+            else:
+                print("      Skipping signed headers due to signature generation failure")
 
         return headers
 
@@ -99,7 +103,7 @@ class KalshiClient:
             response = self.session.get(url, params=params, headers=headers, timeout=10)
             response.raise_for_status()
             return response.json()
-        except requests.RequestException as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             print(f"      Kalshi API error: {e}")
             return {}
 

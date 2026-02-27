@@ -2,7 +2,7 @@
 
 import argparse
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import joblib
 import numpy as np
@@ -191,7 +191,7 @@ def train_win_models(league: str = "mens"):
 
     payload = {
         "league": league,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "model_no_line": no_line["model"] if no_line else None,
         "features_no_line": no_line["features"] if no_line else FEATURES_NO_LINE,
         "metrics_no_line": no_line["metrics"] if no_line else None,

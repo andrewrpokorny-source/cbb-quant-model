@@ -78,6 +78,11 @@ class TestParseBetLine:
         result = parse_bet_line("UConn ML NO")
         assert result == {"team": "UConn", "spread": None, "side": "NO", "bet_type": "game"}
 
+    def test_game_market_bare_ml(self):
+        """Bare ML line defaults to YES semantics for game market."""
+        result = parse_bet_line("UConn ML")
+        assert result == {"team": "UConn", "spread": None, "side": None, "bet_type": "game"}
+
 
 class TestDetermineBetResult:
     """Tests for determine_bet_result function."""
@@ -239,6 +244,54 @@ class TestDetermineBetResult:
     def test_game_no_win(self):
         """GAME NO wins when team loses."""
         parsed = {"team": "UConn", "spread": None, "side": "NO", "bet_type": "game"}
+        game = {
+            "home_score": 70,
+            "away_score": 75,
+            "home_name": "UConn",
+            "away_name": "Providence",
+        }
+        result = determine_bet_result(parsed, game, "Providence vs UConn")
+        assert result == "win"
+
+    def test_game_yes_loss(self):
+        """GAME YES loses when team loses."""
+        parsed = {"team": "UConn", "spread": None, "side": "YES", "bet_type": "game"}
+        game = {
+            "home_score": 68,
+            "away_score": 72,
+            "home_name": "UConn",
+            "away_name": "Providence",
+        }
+        result = determine_bet_result(parsed, game, "Providence vs UConn")
+        assert result == "loss"
+
+    def test_game_no_loss(self):
+        """GAME NO loses when team wins."""
+        parsed = {"team": "UConn", "spread": None, "side": "NO", "bet_type": "game"}
+        game = {
+            "home_score": 80,
+            "away_score": 70,
+            "home_name": "UConn",
+            "away_name": "Providence",
+        }
+        result = determine_bet_result(parsed, game, "Providence vs UConn")
+        assert result == "loss"
+
+    def test_game_tie_void(self):
+        """GAME market should void if score tie is returned."""
+        parsed = {"team": "UConn", "spread": None, "side": "YES", "bet_type": "game"}
+        game = {
+            "home_score": 75,
+            "away_score": 75,
+            "home_name": "UConn",
+            "away_name": "Providence",
+        }
+        result = determine_bet_result(parsed, game, "Providence vs UConn")
+        assert result == "void"
+
+    def test_game_away_team_yes_win(self):
+        """GAME YES works when the picked team is away."""
+        parsed = {"team": "Providence", "spread": None, "side": "YES", "bet_type": "game"}
         game = {
             "home_score": 70,
             "away_score": 75,

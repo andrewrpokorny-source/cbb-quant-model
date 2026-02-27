@@ -2,10 +2,12 @@
 Auto-settlement engine for betting_history.csv.
 
 Matches pending bets to ESPN completed game scores, determines results,
-and updates the CSV with payout/profit calculations.
+and updates the CSV with payout/profit calculations for:
+- spread bets (standard and Kalshi YES/NO thresholds)
+- game-winner bets (ML / GAME YES/NO)
 
 Usage:
-    python settle_bets.py
+    python settle_bets.py --league mens|womens
 """
 
 import argparse

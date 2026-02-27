@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from difflib import get_close_matches
 from datetime import datetime, timedelta
 import re
@@ -44,6 +45,7 @@ def fetch_completed_games(date_obj, league="mens"):
     
     try:
         res = requests.get(url, timeout=10)
+        res.raise_for_status()
         data = res.json()
         
         for event in data.get('events', []):
@@ -81,7 +83,10 @@ def fetch_completed_games(date_obj, league="mens"):
                         
                         spread = -val if is_home_fav else val
                 except (ValueError, IndexError):
-                    pass
+                    print(
+                        f"      WARNING: Could not parse closing spread '{details}' "
+                        f"for {away_name} @ {home_name}"
+                    )
             
             # Store with multiple key formats for easier matching
             game_key = (home_name, away_name)
@@ -96,8 +101,11 @@ def fetch_completed_games(date_obj, league="mens"):
         print(f"      Found {len(games)} completed games")
         return games
         
-    except Exception as e:
-        print(f"      Error fetching games: {e}")
+    except requests.HTTPError as e:
+        print(f"      ESPN HTTP error fetching games: {e}")
+        return {}
+    except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
+        print(f"      ESPN fetch/parse error: {e}")
         return {}
 
 def match_prediction_to_game(pred_matchup, games):
@@ -192,8 +200,10 @@ def grade_game_pick(game_pick, game_result):
     else:
         # fallback for minor naming differences
         if team_lower in home_lower or home_lower in team_lower:
+            print(f"      INFO: Fuzzy matched GAME pick '{team}' to home '{home_name}'")
             team_won = home_score > away_score
         elif team_lower in away_lower or away_lower in team_lower:
+            print(f"      INFO: Fuzzy matched GAME pick '{team}' to away '{away_name}'")
             team_won = away_score > home_score
         else:
             return None
@@ -303,9 +313,9 @@ def grade_predictions(league="mens"):
         matchup = pred['Matchup']
         pick = pred['Pick']
         conf = pred['Conf']
-        spread = pd.to_numeric(pred.get('Spread', 0.0), errors='coerce')
-        if pd.isna(spread):
-            spread = 0.0
+        pred_spread = pd.to_numeric(pred.get('Spread', 0.0), errors='coerce')
+        if pd.isna(pred_spread):
+            pred_spread = 0.0
         bet_type = str(pred.get("Bet_Type", "spread") or "spread").strip().lower()
         
         # Find the corresponding game
@@ -329,7 +339,12 @@ def grade_predictions(league="mens"):
             )
             picked_spread = 0.0
         else:
-            # Grade spread pick using the spread value captured at prediction time.
+            # Use ESPN closing spread when available; fall back to prediction-time spread
+            # for manual/Kalshi-sourced lines where closing spread is missing.
+            closing_spread = pd.to_numeric(game_result.get("spread", 0.0), errors="coerce")
+            if pd.isna(closing_spread):
+                closing_spread = 0.0
+            spread = closing_spread if closing_spread != 0.0 else pred_spread
             pick_correct = grade_pick(
                 pick,
                 spread,
@@ -404,7 +419,9 @@ def grade_predictions(league="mens"):
         print("   This likely means the predictions file contains games for today/tomorrow.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Grade yesterday's value-rated spread predictions.")
+    parser = argparse.ArgumentParser(
+        description="Grade yesterday's value-rated spread and GAME predictions."
+    )
     parser.add_argument(
         "--league",
         default="mens",
