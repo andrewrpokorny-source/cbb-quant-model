@@ -731,8 +731,16 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     finally:
         os.unlink(tmp_path)
 
+    # Sort OCR results by y-coordinate (descending: y=1 is top in macOS coords)
+    # so text flows top-to-bottom in visual reading order.  Without this,
+    # ocrmac returns all left-column text first then right-column text,
+    # which breaks card splitting on multi-card settled screenshots.
+    # Quantize y to ~0.5% bands so items on the same visual line sort
+    # left-to-right by x instead of by sub-pixel y jitter.
+    results = sorted(results, key=lambda r: (-round(r[2][1] * 200), r[2][0]))
+
     # Combine OCR text lines (confidence threshold 0.5)
-    lines = [text for text, confidence, bbox in results if confidence > 0.5]
+    lines = [text for text, confidence, bbox in results if confidence >= 0.5]
     logger.info(f"OCR raw lines:\n{chr(10).join(lines)}")
 
     # Detect platform from RAW text (before cleaning removes identifiers)
@@ -1096,18 +1104,30 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             year -= 1
         game_date = f"{year}-{month:02d}-{day:02d}"
 
+    # 3b. Fallback: extract date from PLACED line ("PLACED: M/DD/YYYY ...")
+    if not game_date:
+        placed_date_match = re.search(
+            r"PLACED:\s*(\d{1,2})/(\d{1,2})/(\d{4})", card_text, re.IGNORECASE
+        )
+        if placed_date_match:
+            p_month = int(placed_date_match.group(1))
+            p_day = int(placed_date_match.group(2))
+            p_year = int(placed_date_match.group(3))
+            game_date = f"{p_year}-{p_month:02d}-{p_day:02d}"
+
     # 4. Detect result from raw text
     lower = card_text.lower()
     if "won on fanduel" in lower:
         result = "win"
     elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
-    elif re.search(r"\$0\.00\s*\n?\s*returned", lower):
-        # "$0.00 RETURNED" = loss ($0.00 payout means bet lost)
-        result = "loss"
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
-        # Non-zero RETURNED (wager refunded) = void
-        result = "void"
+        # RETURNED present -- distinguish loss ($0.00 payout) from void (wager refunded).
+        # After y-sorting, "$0.00" and "RETURNED" may not be adjacent lines.
+        if "$0.00" in card_text:
+            result = "loss"
+        else:
+            result = "void"
     else:
         # No keyword markers found -- infer result from payout vs wager.
         # Covers "Finished" format (scores visible) and cases where OCR

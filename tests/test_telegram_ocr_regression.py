@@ -424,16 +424,16 @@ def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
     assert actual[0]["date"] == "2026-02-25"
 
 
-def test_fanduel_finished_date_empty_without_predictions() -> None:
-    """Without prediction files matching, game date should be empty (not PLACED date)."""
+def test_fanduel_finished_date_falls_back_to_placed() -> None:
+    """Without prediction files or game date header, date comes from PLACED line."""
     raw = _read_fixture("fanduel_finished_win.txt")
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
 
     assert len(actual) >= 1
-    # No "FEB 25, ..." header in the Finished format, and no prediction match
-    # in the test environment, so date should be empty -- NOT the PLACED date
-    # (The real bot will resolve from prediction files at runtime)
+    # No "FEB 25, ..." game date header and no prediction file match,
+    # so date should fall back to the PLACED date
+    assert actual[0]["date"] == "2026-02-25"
 
 
 def test_fanduel_finished_multi_card() -> None:
@@ -442,17 +442,22 @@ def test_fanduel_finished_multi_card() -> None:
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
 
-    # Should get at least Alabama (win) and Cleveland State (loss)
-    # UTSA card may be incomplete (no spread line in OCR)
-    results = {b["bet_id"]: b["result"] for b in actual if b.get("bet_id")}
+    by_id = {b["bet_id"]: b for b in actual if b.get("bet_id")}
 
     # Alabama -14.5 should be win
-    if "0/0084650/0000187" in results:
-        assert results["0/0084650/0000187"] == "win"
+    assert "0/0084650/0000187" in by_id
+    assert by_id["0/0084650/0000187"]["result"] == "win"
+    assert by_id["0/0084650/0000187"]["line"] == "Alabama -14.5"
 
-    # Cleveland State +7.5 should be loss
-    if "0/0084650/0000188" in results:
-        assert results["0/0084650/0000188"] == "loss"
+    # UTSA +4.5 should be win (spread header now captured with >= 0.5 threshold)
+    assert "0/0084650/0000189" in by_id
+    assert by_id["0/0084650/0000189"]["result"] == "win"
+    assert by_id["0/0084650/0000189"]["line"] == "UTSA +4.5"
+
+    # Cleveland State card is truncated at bottom of screenshot (no PLACED line),
+    # so it may be incomplete -- but if parsed, must not be void
+    if "0/0084650/0000188" in by_id:
+        assert by_id["0/0084650/0000188"]["result"] != "void"
 
 
 def test_fanduel_finished_is_detected_as_settled() -> None:
