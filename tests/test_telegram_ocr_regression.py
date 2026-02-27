@@ -454,10 +454,8 @@ def test_fanduel_finished_multi_card() -> None:
     assert by_id["0/0084650/0000189"]["result"] == "win"
     assert by_id["0/0084650/0000189"]["line"] == "UTSA +4.5"
 
-    # Cleveland State card is truncated at bottom of screenshot (no PLACED line),
-    # so it may be incomplete -- but if parsed, must not be void
-    if "0/0084650/0000188" in by_id:
-        assert by_id["0/0084650/0000188"]["result"] != "void"
+    # Cleveland State card is truncated (no bet_id), so only 2 cards parse fully
+    assert len(actual) == 2, f"Expected 2 parseable cards, got {len(actual)}"
 
 
 def test_fanduel_finished_is_detected_as_settled() -> None:
@@ -479,3 +477,101 @@ def test_fanduel_settled_dedup_skip_entries() -> None:
         assert d["_skipped"] is True
         assert d["_settled"] is True
         assert d["bet_id"]  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# _ocr_sort_key tests
+# ---------------------------------------------------------------------------
+
+def test_ocr_sort_key_reading_order() -> None:
+    """Synthetic two-column OCR results should sort top-to-bottom, left-to-right."""
+    # (text, confidence, (x, y)) -- y=1 is top in macOS coords
+    results = [
+        ("left-col-top", 0.99, (0.05, 0.90)),
+        ("right-col-top", 0.99, (0.55, 0.90)),
+        ("left-col-mid", 0.99, (0.05, 0.50)),
+        ("right-col-mid", 0.99, (0.55, 0.50)),
+        ("left-col-bot", 0.99, (0.05, 0.10)),
+        ("right-col-bot", 0.99, (0.55, 0.10)),
+    ]
+    sorted_results = sorted(results, key=BOT._ocr_sort_key)
+    texts = [r[0] for r in sorted_results]
+    assert texts == [
+        "left-col-top", "right-col-top",
+        "left-col-mid", "right-col-mid",
+        "left-col-bot", "right-col-bot",
+    ]
+
+
+def test_ocr_sort_key_identical_y_tiebreak() -> None:
+    """Items with identical y coordinates should sort left-to-right by x."""
+    results = [
+        ("right", 0.99, (0.80, 0.50)),
+        ("left", 0.99, (0.10, 0.50)),
+        ("middle", 0.99, (0.45, 0.50)),
+    ]
+    sorted_results = sorted(results, key=BOT._ocr_sort_key)
+    texts = [r[0] for r in sorted_results]
+    assert texts == ["left", "middle", "right"]
+
+
+# ---------------------------------------------------------------------------
+# RETURNED detection tests
+# ---------------------------------------------------------------------------
+
+def test_returned_with_zero_payout_is_loss() -> None:
+    """Card with $0.00 payout and RETURNED should classify as loss."""
+    card_text = "\n".join([
+        "Spread",
+        "Michigan +3.5",
+        "-110",
+        "$1.00",
+        "$0.00",
+        "RETURNED",
+        "BET ID: 0/1234567/0000001",
+        "PLACED: 2/25/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "loss"
+
+
+def test_returned_with_refund_is_void() -> None:
+    """Card with equal wager/payout and RETURNED should classify as void."""
+    card_text = "\n".join([
+        "Spread",
+        "Michigan +3.5",
+        "-110",
+        "$1.00",
+        "$1.00",
+        "RETURNED",
+        "BET ID: 0/1234567/0000002",
+        "PLACED: 2/25/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "void"
+
+
+# ---------------------------------------------------------------------------
+# PLACED date validation test
+# ---------------------------------------------------------------------------
+
+def test_placed_date_validation_rejects_out_of_range() -> None:
+    """Out-of-range PLACED date (month 13, day 99) should produce no game_date."""
+    card_text = "\n".join([
+        "Spread",
+        "Faketestuniv +3.5",
+        "-110",
+        "$1.00",
+        "$2.00",
+        "WON ON FANDUEL",
+        "BET ID: 0/1234567/0000003",
+        "PLACED: 13/99/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["date"] == ""
