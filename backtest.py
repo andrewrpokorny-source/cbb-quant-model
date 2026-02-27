@@ -1,18 +1,19 @@
-import pandas as pd
+import argparse
+import os
+from datetime import timedelta
+
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import brier_score_loss
 from sklearn.base import clone
-from datetime import timedelta
-import os
+from sklearn.metrics import brier_score_loss
 
+from league_config import get_league_artifact_paths, normalize_league
 from model import FEATURES
 
 # --- BULLETPROOF PATHS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-OUTPUT_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 WEEKS_BACK = 4
 
 # High confidence threshold
@@ -116,14 +117,19 @@ def compute_metrics(log_df):
     }
 
 
-def run_backtest():
-    print("--- WALK-FORWARD BACKTEST (GBM + Sigmoid, 15 features) ---")
+def run_backtest(league="mens"):
+    league = normalize_league(league)
+    paths = get_league_artifact_paths(BASE_DIR, league)
+    data_file = paths["data_file"]
+    output_file = paths["performance_file"]
 
-    if not os.path.exists(DATA_FILE):
-        print("CRITICAL ERROR: Training data not found at", DATA_FILE)
+    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, 15 features) ---")
+
+    if not os.path.exists(data_file):
+        print("CRITICAL ERROR: Training data not found at", data_file)
         return
 
-    df = pd.read_csv(DATA_FILE)
+    df = pd.read_csv(data_file)
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
 
@@ -204,10 +210,17 @@ def run_backtest():
     if full is not None:
         action_log = full[full['conf'] >= HIGH_CONF_THRESHOLD].copy()
         action_log[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct']].to_csv(
-            OUTPUT_FILE, index=False
+            output_file, index=False
         )
-        print(f"\nSaved {len(action_log)} high-confidence bets to {OUTPUT_FILE}")
+        print(f"\nSaved {len(action_log)} high-confidence bets to {output_file}")
 
 
 if __name__ == "__main__":
-    run_backtest()
+    parser = argparse.ArgumentParser(description="Run walk-forward backtest for CBB spread model.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to backtest: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+    run_backtest(args.league)

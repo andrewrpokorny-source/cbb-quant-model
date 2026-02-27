@@ -17,15 +17,64 @@ cp .env.example .env
 
 ## Usage
 
-### Generate Predictions
+### Generate Predictions (Men's default)
 ```bash
 uv run python predict.py
 ```
+Predictions now include both spread picks and Kalshi game-market picks when available.
 
 ### Run Dashboard
 ```bash
 uv run streamlit run app.py
 ```
+Use the in-app league selector to switch between Men's CBB and Women's CBB.
+Use the in-app **Jump to section** control to quickly navigate directly to:
+- Spread Value Bets
+- Kalshi Game Markets
+- Spread Slate
+- Betting Log
+- Performance History
+- System
+
+### Multi-League Commands
+
+All major scripts now support `--league` with `mens` (default) or `womens`.
+
+```bash
+# Update data + run features/backtest for women's CBB
+uv run python main.py --league womens
+
+# Train women's spread model
+uv run python model.py --league womens
+
+# Train women's game-winner P(win) model bundle
+uv run python model_win.py --league womens
+
+# Generate women's predictions
+uv run python predict.py --league womens
+
+# Backtest women's model
+uv run python backtest.py --league womens
+
+# Grade yesterday's women's predictions
+uv run python grade_predictions.py --league womens
+```
+
+### Model Artifacts
+
+- Men's canonical model: `cbb_model_v2.pkl`
+- Women's canonical model: `womens_cbb_spread_model_v2.pkl`
+- Men's game-winner model bundle: `cbb_win_model_v1.pkl`
+- Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
+
+### Kalshi GAME Markets (P(win))
+
+`predict.py` now evaluates Kalshi GAME contracts with the P(win) model bundle:
+- Uses `model_win.py` bundle (`no_line` / `with_line` variants) to estimate `P(home wins)`.
+- Finds matching Kalshi `GAME` markets and chooses the better side (`YES` or `NO`) by edge.
+- Writes combined output to the daily predictions CSV with a `Bet_Type` column:
+  - `spread` for spread picks
+  - `game` for Kalshi game-market picks
 
 ### Telegram Bot
 

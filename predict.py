@@ -1,43 +1,71 @@
 import argparse
-import pandas as pd
-import numpy as np
-import requests
-import joblib
 import json
 import os
 from datetime import datetime, timedelta
 from difflib import get_close_matches
+import re
+import threading
+
+import joblib
+import numpy as np
+import pandas as pd
 import pytz
+import requests
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
 from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
+from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
+from model_win import load_win_model_bundle, predict_home_win_prob
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v2.pkl")
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-OUTPUT_FILE = os.path.join(BASE_DIR, "daily_predictions.csv")
-BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=1000"
+ACTIVE_LEAGUE = "mens"
+MODEL_FILE = None
+WIN_MODEL_FILE = None
+DATA_FILE = None
+OUTPUT_FILE = None
+BASE_URL = None
+PREDICTIONS_ARCHIVE_PREFIX = None
 
 # Module-level storage for predictions with line shopping data (for app.py access)
-_latest_predictions = None
+_latest_predictions = {}
+_latest_game_predictions = {}
 
 # Games that need manual spread entry (no ESPN spread available)
-_games_needing_spreads = None
+_games_needing_spreads = {}
+_RUNTIME_LOCK = threading.Lock()
 
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
 with open(TEAM_MAP_FILE, 'r') as f:
     TEAM_MAP = json.load(f)
+
+
+def configure_league(league="mens"):
+    """Set module-level paths/urls for the requested league."""
+    global ACTIVE_LEAGUE, MODEL_FILE, WIN_MODEL_FILE, DATA_FILE, OUTPUT_FILE, BASE_URL, PREDICTIONS_ARCHIVE_PREFIX
+    ACTIVE_LEAGUE = normalize_league(league)
+    paths = get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)
+    MODEL_FILE = paths["model_file"]
+    WIN_MODEL_FILE = paths["win_model_file"]
+    DATA_FILE = paths["data_file"]
+    OUTPUT_FILE = paths["predictions_file"]
+    BASE_URL = get_scoreboard_base_url(ACTIVE_LEAGUE)
+    PREDICTIONS_ARCHIVE_PREFIX = paths["predictions_archive_prefix"]
+    return ACTIVE_LEAGUE
+
+
+# Default to men's config unless caller overrides via --league / function argument.
+configure_league("mens")
 
 def find_best_match(name, known_teams):
     """Match ESPN team name to historical data team name."""
@@ -109,6 +137,7 @@ def fetch_schedule():
 
         try:
             res = requests.get(url, timeout=10)
+            res.raise_for_status()
             data = res.json()
             
             events_count = len(data.get('events', []))
@@ -164,8 +193,11 @@ def fetch_schedule():
                         'has_espn_spread': spread_val != 0.0
                     })
                     
-        except Exception as e:
-            print(f"         Error fetching {date_str}: {e}")
+        except requests.RequestException as e:
+            print(f"         HTTP/network error fetching {date_str}: {e}")
+            failed_dates.append(date_str)
+        except ValueError as e:
+            print(f"         JSON parse error fetching {date_str}: {e}")
             failed_dates.append(date_str)
 
     if failed_dates:
@@ -174,9 +206,11 @@ def fetch_schedule():
 
     return sorted(games, key=lambda x: x['date'])
 
-def fetch_kalshi_markets():
-    """Fetch Kalshi NCAAB markets and build mapper."""
-    print("   -> Fetching Kalshi markets...")
+def fetch_kalshi_markets(league=None):
+    """Fetch Kalshi college basketball markets and build mapper."""
+    target_league = ACTIVE_LEAGUE if league is None else normalize_league(league)
+    league_label = "NCAAW" if target_league == "womens" else "NCAAM"
+    print(f"   -> Fetching Kalshi markets ({league_label})...")
 
     api_key = os.getenv("KALSHI_API_KEY")
     if not api_key:
@@ -185,16 +219,16 @@ def fetch_kalshi_markets():
 
     try:
         client = KalshiClient(api_key)
-        markets = client.get_ncaab_markets()
+        markets = client.get_college_basketball_markets(league=target_league)
 
         if markets:
-            print(f"      Found {len(markets)} NCAAB markets")
+            print(f"      Found {len(markets)} Kalshi {league_label} markets")
             mapper = MarketMapper(markets)
             return client, mapper
         else:
-            print("      No NCAAB markets found")
+            print(f"      No Kalshi {league_label} markets found")
             return client, None
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
         print(f"      Kalshi API error: {e}")
         return None, None
 
@@ -222,7 +256,6 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         spread_markets = [m for m in all_markets if "SPREAD" in m.get("ticker", "")]
 
         if not spread_markets:
-            print(f"      No Kalshi SPREAD markets found for {away_team} @ {home_team}")
             return None, None
 
         # Get the first spread market and extract info
@@ -379,6 +412,172 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
     return result
 
 
+def _infer_yes_team_from_game_market(market, home_team, away_team):
+    """Infer which team maps to YES for a Kalshi GAME market."""
+    from kalshi.market_mapper import extract_school_keyword
+
+    home_keyword = extract_school_keyword(home_team).lower()
+    away_keyword = extract_school_keyword(away_team).lower()
+    title = str(market.get("title", "")).lower()
+    rules = str(market.get("rules_primary", "")).lower()
+
+    def _is_match(candidate: str, team_keyword: str) -> bool:
+        if not candidate:
+            return False
+        cleaned = re.sub(r"[^a-z0-9\s]", " ", candidate.lower())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return team_keyword in cleaned or cleaned in team_keyword
+
+    patterns = [
+        r"resolves?\s+to\s+yes\s+if\s+(.+?)\s+wins",
+        r"yes\s+if\s+(.+?)\s+wins",
+        r"will\s+(.+?)\s+beat",
+        r"does\s+(.+?)\s+win",
+    ]
+    for pattern in patterns:
+        for source in (rules, title):
+            match = re.search(pattern, source, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = match.group(1).strip()
+            if _is_match(candidate, home_keyword):
+                return home_team
+            if _is_match(candidate, away_keyword):
+                return away_team
+
+    home_in_title = home_keyword in title
+    away_in_title = away_keyword in title
+    if home_in_title and not away_in_title:
+        return home_team
+    if away_in_title and not home_in_title:
+        return away_team
+
+    return None
+
+
+def get_kalshi_game_edge(
+    client,
+    mapper,
+    home_team,
+    away_team,
+    game_date,
+    model_home_win_prob,
+):
+    """
+    Get best Kalshi GAME market side and edge based on model P(home wins).
+    """
+    result = {
+        "Kalshi_Yes": None,
+        "Kalshi_No": None,
+        "Kalshi_Price": None,
+        "Edge": None,
+        "Edge_Pct": None,
+        "Rating": None,
+        "Units": None,
+        "Kalshi_Ticker": None,
+        "Kalshi_Side": None,
+        "Kalshi_Title": None,
+        "Kalshi_Yes_Team": None,
+        "Picked_Team": None,
+    }
+
+    if not client or not mapper:
+        return result
+
+    try:
+        all_markets = mapper.find_all_markets_for_game(home_team, away_team, game_date)
+        game_markets = [m for m in all_markets if "GAME" in m.get("ticker", "")]
+        if not game_markets:
+            return result
+
+        best_choice = None
+        for market in game_markets:
+            yes_team = _infer_yes_team_from_game_market(market, home_team, away_team)
+            if not yes_team:
+                continue
+
+            ticker = market.get("ticker", "")
+            prices = client.get_market_prices(ticker) if ticker else mapper.get_market_prices(market)
+            yes_price = prices.get("yes_price")
+            no_price = prices.get("no_price")
+            if yes_price is None and no_price is None:
+                continue
+
+            yes_prob = model_home_win_prob if yes_team == home_team else (1.0 - model_home_win_prob)
+            side_candidates = []
+
+            if yes_price is not None:
+                implied_yes = yes_price / 100.0
+                edge_yes = calculate_edge(yes_prob, implied_yes)
+                side_candidates.append(
+                    {
+                        "side": "YES",
+                        "price": yes_price,
+                        "prob": yes_prob,
+                        "edge": edge_yes,
+                        "picked_team": yes_team,
+                    }
+                )
+
+            if no_price is not None:
+                no_prob = 1.0 - yes_prob
+                implied_no = no_price / 100.0
+                edge_no = calculate_edge(no_prob, implied_no)
+                picked_team = away_team if yes_team == home_team else home_team
+                side_candidates.append(
+                    {
+                        "side": "NO",
+                        "price": no_price,
+                        "prob": no_prob,
+                        "edge": edge_no,
+                        "picked_team": picked_team,
+                    }
+                )
+
+            if not side_candidates:
+                continue
+
+            best_market_side = max(side_candidates, key=lambda c: c["edge"])
+            best_market_side.update(
+                {
+                    "yes_price": yes_price,
+                    "no_price": no_price,
+                    "ticker": prices.get("ticker", ""),
+                    "title": prices.get("title", ""),
+                    "yes_team": yes_team,
+                }
+            )
+
+            if best_choice is None or best_market_side["edge"] > best_choice["edge"]:
+                best_choice = best_market_side
+
+        if best_choice is None:
+            return result
+
+        rating = get_rating(best_choice["edge"])
+        units = recommended_units(best_choice["edge"], best_choice["price"] / 100.0)
+        return {
+            "Kalshi_Yes": best_choice["yes_price"],
+            "Kalshi_No": best_choice["no_price"],
+            "Kalshi_Price": best_choice["price"],
+            "Edge": best_choice["edge"],
+            "Edge_Pct": f"{best_choice['edge'] * 100:+.1f}%",
+            "Rating": rating.value,
+            "Units": units,
+            "Kalshi_Ticker": best_choice["ticker"],
+            "Kalshi_Side": best_choice["side"],
+            "Kalshi_Title": best_choice["title"],
+            "Kalshi_Yes_Team": best_choice["yes_team"],
+            "Picked_Team": best_choice["picked_team"],
+        }
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+        print(
+            f"      Unexpected Kalshi GAME market error for "
+            f"{away_team} @ {home_team}: {type(e).__name__}: {e}"
+        )
+        return result
+
+
 def calculate_production_features(row, h_stats, a_stats):
     """Calculate features needed for prediction."""
     # --- Original Features ---
@@ -417,18 +616,36 @@ def calculate_production_features(row, h_stats, a_stats):
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
-    # 11-12. Spread interaction features
+    # 11-14. Win-model team strength features (used by Kalshi GAME scoring)
+    row['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
+    row['prev_season_off_rating'] = h_stats.get('prev_season_off_rating', 100.0)
+    row['opp_season_off_rating'] = a_stats.get('prev_season_off_rating', 100.0)
+    row['off_rating_gap'] = row['prev_season_off_rating'] - row['opp_season_off_rating']
+
+    # 15-16. Spread interaction features
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
 
     return row
 
-def fetch_games_needing_spreads():
+def _with_runtime_lock(func):
+    """Serialize prediction runtime operations that rely on module state."""
+    def wrapper(*args, **kwargs):
+        with _RUNTIME_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
+
+
+@_with_runtime_lock
+def fetch_games_needing_spreads(league=None):
     """Fetch schedule and return games that have no ESPN spread.
 
     Returns list of dicts with 'away_raw', 'home_raw', 'date', 'id' for each
     game missing a spread, or empty list if all games have spreads.
     """
+    if league is not None:
+        configure_league(league)
+
     schedule = fetch_schedule()
     missing = []
     for g in schedule:
@@ -450,12 +667,14 @@ def fetch_games_needing_spreads():
     return missing
 
 
-def get_games_needing_spreads():
+def get_games_needing_spreads(league="mens"):
     """Return cached list of games needing manual spreads."""
-    return _games_needing_spreads
+    canonical = normalize_league(league)
+    return _games_needing_spreads.get(canonical)
 
 
-def main(spread_overrides=None):
+@_with_runtime_lock
+def main(spread_overrides=None, league="mens"):
     """Run prediction engine.
 
     Args:
@@ -463,10 +682,12 @@ def main(spread_overrides=None):
             e.g. {"Northwestern Wildcats @ Iowa Hawkeyes": -7.5}
             Convention: negative = home favored, positive = away favored.
     """
+    configure_league(league)
+
     if spread_overrides is None:
         spread_overrides = {}
 
-    print("--- PREDICTION ENGINE (GBM + Sigmoid Calibration, 15 features) ---")
+    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 15 features) ---")
 
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
@@ -474,7 +695,7 @@ def main(spread_overrides=None):
 
     # Load model + sigma
     try:
-        model, sigma = load_model()
+        model, sigma = load_model(league=ACTIVE_LEAGUE)
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -504,63 +725,148 @@ def main(spread_overrides=None):
     games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
     print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
 
-    # Fetch Kalshi markets
-    kalshi_client, kalshi_mapper = fetch_kalshi_markets()
+    # Optional P(win) bundle for Kalshi GAME markets
+    win_bundle = None
+    try:
+        win_bundle = load_win_model_bundle(league=ACTIVE_LEAGUE)
+        has_with_line = win_bundle.get("model_with_line") is not None
+        print(
+            f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
+            f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
+        )
+    except (FileNotFoundError, EOFError, IOError, ValueError) as e:
+        print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
-    predictions = []
+    # Fetch Kalshi markets
+    kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
+
+    spread_predictions = []
+    game_predictions = []
     skipped = []
     games_needing_spreads = []
 
     for g in schedule:
+        matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
+
         # Match team names to historical data
         home_matched = find_best_match(g['home_raw'], known_teams)
         away_matched = find_best_match(g['away_raw'], known_teams)
 
         # Skip if we can't match teams or don't have stats
         if not home_matched or not away_matched:
-            skipped.append(f"{g['away_raw']} @ {g['home_raw']} (Team matching failed)")
+            skipped.append(f"{matchup_key} (Team matching failed)")
             continue
 
         if home_matched not in team_stats or away_matched not in team_stats:
-            skipped.append(f"{g['away_raw']} @ {g['home_raw']} (No historical stats)")
+            skipped.append(f"{matchup_key} (No historical stats)")
             continue
 
-        # If no ESPN spread, check for manual override
-        matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
-        if not g.get('has_espn_spread', False):
-            if matchup_key in spread_overrides:
-                g['spread'] = spread_overrides[matchup_key]
-                g['raw_odds'] = f"Manual {g['spread']}"
-                g['has_espn_spread'] = True  # Treat as valid
-            else:
-                games_needing_spreads.append({
-                    'id': g['id'],
-                    'away_raw': g['away_raw'],
-                    'home_raw': g['home_raw'],
-                    'matchup': matchup_key,
-                })
-                skipped.append(f"{matchup_key} (No spread -- needs manual entry)")
-                continue
+        # Resolve spread availability for spread model path.
+        resolved_spread = float(g.get('spread', 0.0) or 0.0)
+        spread_source = g.get("raw_odds", "0")
+        has_spread_for_spread_model = bool(g.get('has_espn_spread', False))
 
-        # Build feature row
-        row = {'is_home': 1, 'spread': g['spread']}
+        if not has_spread_for_spread_model:
+            if matchup_key in spread_overrides:
+                resolved_spread = float(spread_overrides[matchup_key])
+                spread_source = f"Manual {resolved_spread:+.1f}"
+                has_spread_for_spread_model = True
+            else:
+                # Fallback to Kalshi spread markets when ESPN has no spread.
+                kalshi_spread, _ = get_kalshi_spread(
+                    kalshi_mapper,
+                    g['home_raw'],
+                    g['away_raw'],
+                    g['date'],
+                )
+                if kalshi_spread is not None:
+                    resolved_spread = float(kalshi_spread)
+                    spread_source = f"Kalshi {resolved_spread:+.1f}"
+                    has_spread_for_spread_model = True
+                else:
+                    games_needing_spreads.append({
+                        'id': g['id'],
+                        'away_raw': g['away_raw'],
+                        'home_raw': g['home_raw'],
+                        'matchup': matchup_key,
+                    })
+                    skipped.append(f"{matchup_key} (No spread -- spread pick skipped)")
+
         h_stats = team_stats[home_matched]
         a_stats = team_stats[away_matched]
-        
-        # Calculate rest days for BOTH teams
+
+        # Calculate rest days for both teams
         home_last_date = pd.to_datetime(h_stats.get('last_game_date', datetime.now()))
         away_last_date = pd.to_datetime(a_stats.get('last_game_date', datetime.now()))
-        
         home_actual_rest = max(0, (g['date'].replace(tzinfo=None) - home_last_date).days)
         away_actual_rest = max(0, (g['date'].replace(tzinfo=None) - away_last_date).days)
-        
-        # For model: use home team's rest, capped at 7 to match training data
+
+        # Build common feature row (for both spread and game models)
+        row = {'is_home': 1, 'spread': resolved_spread}
         row['rest_days'] = min(home_actual_rest, 7)
-        
-        # Add production features
         row = calculate_production_features(row, h_stats, a_stats)
-        
-        # Prepare for model
+
+        # Format game time in Eastern once
+        try:
+            local_ts = g['date'].tz_convert('US/Eastern')
+            time_str = local_ts.strftime("%m/%d %I:%M %p")
+        except (TypeError, AttributeError):
+            time_str = g['date'].strftime("%m/%d %I:%M %p")
+
+        # Build GAME market picks (Kalshi-only) from P(win) model.
+        if win_bundle is not None:
+            try:
+                home_win_prob, win_variant = predict_home_win_prob(row, win_bundle)
+                game_kalshi = get_kalshi_game_edge(
+                    kalshi_client,
+                    kalshi_mapper,
+                    g['home_raw'],
+                    g['away_raw'],
+                    g['date'],
+                    home_win_prob,
+                )
+                if game_kalshi.get("Kalshi_Ticker"):
+                    yes_team = game_kalshi.get("Kalshi_Yes_Team")
+                    yes_prob = home_win_prob if yes_team == g['home_raw'] else (1.0 - home_win_prob)
+                    side = game_kalshi.get("Kalshi_Side", "YES")
+                    side_prob = yes_prob if side == "YES" else (1.0 - yes_prob)
+                    pick_line = f"{yes_team} ML {side}"
+                    game_predictions.append({
+                        "Bet_Type": "game",
+                        "Date/Time": time_str,
+                        "Matchup": matchup_key,
+                        "Spread": resolved_spread if has_spread_for_spread_model else np.nan,
+                        "Pick": pick_line,
+                        "Conf": side_prob,
+                        "Raw Odds": "Kalshi GAME",
+                        "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
+                        "Kalshi_Side": side,
+                        "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
+                        "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
+                        "Edge": game_kalshi.get("Edge"),
+                        "Edge_Pct": game_kalshi.get("Edge_Pct"),
+                        "Rating": game_kalshi.get("Rating"),
+                        "Units": game_kalshi.get("Units"),
+                        "Home_Matched": home_matched,
+                        "Away_Matched": away_matched,
+                        "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
+                        "Kalshi_Yes_Team": yes_team,
+                        "Win_Model_Home_Prob": home_win_prob,
+                        "Win_Model_Variant": win_variant,
+                        "Std_Edge": 0.0,
+                        "Std_Edge_Pct": "",
+                        "Std_Rating": "PASS",
+                        "Std_Units": 0.0,
+                        "Breakeven_Spread": np.nan,
+                    })
+            except (KeyError, TypeError, ValueError) as e:
+                print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
+
+        # Spread pick requires a market spread (ESPN/manual/Kalshi fallback).
+        if not has_spread_for_spread_model:
+            continue
+
+        # Prepare spread model input
         cols = model.feature_names_in_
         input_df = pd.DataFrame([row])
         for c in cols:
@@ -568,8 +874,6 @@ def main(spread_overrides=None):
                 input_df[c] = 0.0
 
         input_df.columns = input_df.columns.astype(str)
-
-        # Fill any NaN values with defaults
         input_df = input_df.fillna({
             'diff_eFG': 0, 'diff_Rebound': 0, 'diff_TO': 0,
             'momentum_gap': 0, 'roll5_cover_margin': 0,
@@ -577,62 +881,48 @@ def main(spread_overrides=None):
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
             'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
             'spread_abs': 0, 'spread_squared': 0,
-        })
-        input_df = input_df.fillna(0)  # Catch any remaining NaNs
-        
-        # Make prediction
+        }).fillna(0)
+
         prob = model.predict_proba(input_df)[0][1]
-        conf = max(prob, 1-prob)
-        
-        # Determine pick - USE ORIGINAL ESPN NAMES
+        conf = max(prob, 1 - prob)
+
         if prob > 0.5:
-            sign = "+" if g['spread'] > 0 else ""
-            pick_str = f"{g['home_raw']} {sign}{g['spread']}"  # Original name
+            sign = "+" if resolved_spread > 0 else ""
+            pick_str = f"{g['home_raw']} {sign}{resolved_spread}"
             picked_team = g['home_raw']
-            picked_spread = g['spread']  # Home team's spread
-            picked_team_rest = home_actual_rest  # Picked home team
+            picked_spread = resolved_spread
+            picked_team_rest = home_actual_rest
         else:
-            away_spread = -1 * g['spread']
+            away_spread = -1 * resolved_spread
             sign = "+" if away_spread > 0 else ""
-            pick_str = f"{g['away_raw']} {sign}{away_spread}"  # Original name
+            pick_str = f"{g['away_raw']} {sign}{away_spread}"
             picked_team = g['away_raw']
-            picked_spread = away_spread  # Away team's spread
-            picked_team_rest = away_actual_rest  # Picked away team
+            picked_spread = away_spread
+            picked_team_rest = away_actual_rest
 
-        # Format time in Eastern
-        try:
-            local_ts = g['date'].tz_convert('US/Eastern')
-            time_str = local_ts.strftime("%m/%d %I:%M %p")
-        except (TypeError, AttributeError):
-            time_str = g['date'].strftime("%m/%d %I:%M %p")
-
-        # Get Kalshi edge data (now that we know the picked team)
         kalshi_data = get_kalshi_edge(
             kalshi_client,
             kalshi_mapper,
             g['home_raw'],
             g['away_raw'],
             g['date'],
-            g['spread'],
-            conf,  # Use confidence as model probability
-            picked_team,  # Pass picked team to determine YES/NO side
-            picked_spread,  # Pass the spread for our pick
+            resolved_spread,
+            conf,
+            picked_team,
+            picked_spread,
         )
 
-        # Calculate line shopping recommendations using classifier prob + CDF
         is_home_pick = (prob > 0.5)
-
         try:
             line_shopping = calculate_line_shopping(
-                conf,       # classifier's confidence (P(picked team covers))
+                conf,
                 sigma,
                 picked_spread,
                 picked_team,
                 is_home_pick,
             )
-        except Exception as e:
-            print(f"      WARNING: Line shopping failed for {matchup_key}: "
-                  f"{type(e).__name__}: {e}")
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+            print(f"      WARNING: Line shopping failed for {matchup_key}: {type(e).__name__}: {e}")
             line_shopping = LineShoppingResult(
                 picked_team=picked_team,
                 market_spread=picked_spread,
@@ -640,16 +930,15 @@ def main(spread_overrides=None):
                 recommendations=[],
             )
 
-        # CRITICAL FIX: Use ORIGINAL ESPN names for display
         prediction_row = {
+            "Bet_Type": "spread",
             "Date/Time": time_str,
-            "Matchup": f"{g['away_raw']} @ {g['home_raw']}",
-            "Spread": g['spread'],
+            "Matchup": matchup_key,
+            "Spread": resolved_spread,
             "Pick": pick_str,
             "Conf": conf,
-            "Raw Odds": g['raw_odds'],
+            "Raw Odds": spread_source,
             "Rest": picked_team_rest,
-            # Kalshi edge data
             "Kalshi_Side": kalshi_data.get("Kalshi_Side"),
             "Kalshi_Price": kalshi_data.get("Kalshi_Price"),
             "Kalshi_Title": kalshi_data.get("Kalshi_Title"),
@@ -657,60 +946,68 @@ def main(spread_overrides=None):
             "Edge_Pct": kalshi_data.get("Edge_Pct"),
             "Rating": kalshi_data.get("Rating"),
             "Units": kalshi_data.get("Units"),
-            # Debug fields
             "Home_Matched": home_matched,
             "Away_Matched": away_matched,
             "Kalshi_Ticker": kalshi_data.get("Kalshi_Ticker"),
-            # Line shopping data
             "Breakeven_Spread": line_shopping.breakeven_spread,
             "Line_Shopping_Data": line_shopping,
-            # Standard book edge (vs -110 odds, for non-Kalshi sportsbooks)
             "Std_Edge": conf - STANDARD_IMPLIED_PROB,
             "Std_Edge_Pct": f"{(conf - STANDARD_IMPLIED_PROB) * 100:+.1f}%",
             "Std_Rating": get_rating(conf - STANDARD_IMPLIED_PROB).value,
             "Std_Units": recommended_units(conf - STANDARD_IMPLIED_PROB, STANDARD_IMPLIED_PROB),
         }
 
-        # VALIDATION: Ensure pick mentions a team that's actually in the matchup
-        pick_team_mentioned = pick_str.split()[0] + " " + pick_str.split()[1]
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:
             print(f"      WARNING: Pick '{pick_str}' doesn't match matchup '{prediction_row['Matchup']}'")
 
-        predictions.append(prediction_row)
+        spread_predictions.append(prediction_row)
 
-    # Save predictions
-    if predictions:
-        pred_df = pd.DataFrame(predictions).sort_values(by="Conf", ascending=False)
+    spread_df = (
+        pd.DataFrame(spread_predictions).sort_values(by="Conf", ascending=False)
+        if spread_predictions else pd.DataFrame()
+    )
+    game_df = (
+        pd.DataFrame(game_predictions).sort_values(by="Conf", ascending=False)
+        if game_predictions else pd.DataFrame()
+    )
 
-        # Drop complex objects before CSV save (can't serialize)
-        csv_df = pred_df.drop(columns=["Line_Shopping_Data"], errors="ignore")
+    _latest_predictions[ACTIVE_LEAGUE] = spread_df
+    _latest_game_predictions[ACTIVE_LEAGUE] = game_df
 
-        # Save to current file (for app)
+    # Save combined predictions for app, grading, and live price checks.
+    combined_csv_frames = []
+    if not spread_df.empty:
+        combined_csv_frames.append(spread_df.drop(columns=["Line_Shopping_Data"], errors="ignore"))
+    if not game_df.empty:
+        combined_csv_frames.append(game_df.drop(columns=["Line_Shopping_Data"], errors="ignore"))
+
+    if combined_csv_frames:
+        csv_df = pd.concat(combined_csv_frames, ignore_index=True)
+        csv_df = csv_df.sort_values(by="Conf", ascending=False)
         csv_df.to_csv(OUTPUT_FILE, index=False)
-        
-        # ALSO save to dated archive file (for grading)
-        archive_file = OUTPUT_FILE.replace("daily_predictions.csv",
-                                          f"predictions_{now_eastern.strftime('%Y%m%d')}.csv")
-        csv_df.to_csv(archive_file, index=False)
-        
-        # Store predictions with line shopping data for app.py access
-        global _latest_predictions
-        _latest_predictions = pred_df
 
-        print(f"\nSUCCESS: Generated {len(pred_df)} predictions")
+        archive_file = os.path.join(
+            BASE_DIR,
+            f"{PREDICTIONS_ARCHIVE_PREFIX}_{now_eastern.strftime('%Y%m%d')}.csv",
+        )
+        csv_df.to_csv(archive_file, index=False)
+
+        print(
+            f"\nSUCCESS: Generated {len(csv_df)} predictions "
+            f"({len(spread_df)} spread, {len(game_df)} game)"
+        )
         print(f"   Saved to: {OUTPUT_FILE}")
         print(f"   Archive: {archive_file}")
 
-        # Show summary
         print("\nPREDICTION SUMMARY:")
-        for _, row in pred_df.head(5).iterrows():
-            print(f"   {row['Matchup']}")
+        for _, row in csv_df.head(5).iterrows():
+            bet_type = row.get("Bet_Type", "spread")
+            print(f"   [{bet_type}] {row['Matchup']}")
             print(f"      Pick: {row['Pick']} (Conf: {row['Conf']:.1%})")
 
-        # Show value bets (STRONG or GOOD edge from either source)
-        value_bets = pred_df[
-            (pred_df['Std_Rating'].isin(VALUE_RATINGS)) |
-            (pred_df['Rating'].isin(VALUE_RATINGS))
+        value_bets = csv_df[
+            (csv_df['Std_Rating'].isin(VALUE_RATINGS)) |
+            (csv_df['Rating'].isin(VALUE_RATINGS))
         ]
         if len(value_bets) > 0:
             print(f"\nVALUE BETS ({len(value_bets)} found):")
@@ -722,7 +1019,7 @@ def main(spread_overrides=None):
                 std_rank = RATING_RANK.get(std_rating, 0)
                 kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
                 best_rating = kalshi_rating if kalshi_rank > std_rank else std_rating
-                print(f"   [{best_rating}] {row['Pick']}")
+                print(f"   [{row.get('Bet_Type', 'spread')}:{best_rating}] {row['Pick']}")
                 if kalshi_rating in VALUE_RATINGS:
                     side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
                     print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
@@ -738,24 +1035,32 @@ def main(spread_overrides=None):
             print(f"   - {s}")
 
     # Store games that still need manual spreads
-    global _games_needing_spreads
-    _games_needing_spreads = games_needing_spreads
+    _games_needing_spreads[ACTIVE_LEAGUE] = games_needing_spreads
     if games_needing_spreads:
         print(f"\n{len(games_needing_spreads)} game(s) need manual spread entry.")
 
-def get_latest_predictions():
+def get_latest_predictions(league="mens"):
     """Return the latest predictions DataFrame with line shopping data."""
-    return _latest_predictions
+    canonical = normalize_league(league)
+    return _latest_predictions.get(canonical)
 
 
-def check_live_prices():
+def get_latest_game_predictions(league="mens"):
+    """Return latest Kalshi GAME market picks."""
+    canonical = normalize_league(league)
+    return _latest_game_predictions.get(canonical)
+
+
+@_with_runtime_lock
+def check_live_prices(league="mens"):
     """Re-fetch current Kalshi prices for today's value picks and recalculate edge.
 
     Reads the daily predictions CSV, filters to value-rated rows with a Kalshi
     ticker, fetches live prices from the Kalshi API, and prints an updated table
     showing current edge so the user can verify value before placing a bet.
     """
-    print("--- LIVE PRICE CHECK ---\n")
+    configure_league(league)
+    print(f"--- LIVE PRICE CHECK ({ACTIVE_LEAGUE}) ---\n")
 
     # Load predictions CSV
     if not os.path.exists(OUTPUT_FILE):
@@ -818,7 +1123,7 @@ def check_live_prices():
 
         try:
             prices = client.get_market_prices(ticker)
-        except Exception as e:
+        except (requests.RequestException, ValueError, TypeError) as e:
             print(f"   Error fetching {ticker}: {e}")
             results.append(_placeholder("ERR"))
             continue
@@ -887,6 +1192,11 @@ if __name__ == "__main__":
         description="CBB prediction engine -- generate picks or check live prices."
     )
     parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to run: mens or womens (aliases supported).",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Re-fetch live Kalshi prices for today's value picks and show updated edge.",
@@ -894,6 +1204,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.check:
-        check_live_prices()
+        check_live_prices(args.league)
     else:
-        main()
+        main(league=args.league)

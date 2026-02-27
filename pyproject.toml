@@ -24,5 +24,6 @@ bot = ["python-telegram-bot>=21.0", "ocrmac>=1.0.0"]
 
 [project.scripts]
 train = "model:train_and_evaluate"
+train-win = "model_win:train_win_models"
 predict = "predict:main"
 features = "features:main"
