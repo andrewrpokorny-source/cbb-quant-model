@@ -1109,7 +1109,9 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             year -= 1
         game_date = f"{year}-{month:02d}-{day:02d}"
 
-    # 3b. Fallback: extract date from PLACED line ("PLACED: M/DD/YYYY ...")
+    # 3b. Extract PLACED date as a last-resort fallback (used only if prediction
+    # lookup also fails -- see step 6b below).
+    placed_date = ""
     if not game_date:
         placed_date_match = re.search(
             r"PLACED:\s*(\d{1,2})/(\d{1,2})/(\d{4})", card_text, re.IGNORECASE
@@ -1119,11 +1121,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             p_day = int(placed_date_match.group(2))
             p_year = int(placed_date_match.group(3))
             if 1 <= p_month <= 12 and 1 <= p_day <= 31 and 2020 <= p_year <= 2030:
-                game_date = f"{p_year}-{p_month:02d}-{p_day:02d}"
-                logger.info(
-                    "FD settled card: using PLACED date fallback %s (bet_id=%s)",
-                    game_date, bet_id,
-                )
+                placed_date = f"{p_year}-{p_month:02d}-{p_day:02d}"
             else:
                 logger.warning(
                     "FD settled card: PLACED date out of range month=%d day=%d "
@@ -1276,9 +1274,15 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     line = f"{team} {spread}" if team and spread else ""
 
-    # Resolve game date from prediction files if not found in OCR text
+    # 6b. Resolve game date: prediction files take precedence over PLACED date
     if not game_date and team:
         game_date = _resolve_game_date(team)
+    if not game_date and placed_date:
+        game_date = placed_date
+        logger.info(
+            "FD settled card: using PLACED date fallback %s (bet_id=%s)",
+            game_date, bet_id,
+        )
 
     if not line or wager <= 0:
         logger.warning(

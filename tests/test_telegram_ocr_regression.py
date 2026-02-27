@@ -405,12 +405,15 @@ def test_fanduel_finished_game_from_score_lines() -> None:
 
 
 def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
-    """Game date should resolve from prediction files, not PLACED date."""
-    # Create a mock predictions file with Alabama game on 2/25
-    pred_csv = tmp_path / "predictions_20260225.csv"
+    """Prediction-file date should take precedence over PLACED date.
+
+    The fixture has PLACED: 2/25/2026, but the mock prediction file dates the
+    game to 2/24 -- verifying prediction lookup wins over PLACED.
+    """
+    pred_csv = tmp_path / "predictions_20260224.csv"
     pred_csv.write_text(
         "Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest\n"
-        "02/25 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
+        "02/24 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
         "-14.5,Alabama Crimson Tide -14.5,0.7,ALA -14.5,3\n"
     )
     monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
@@ -421,18 +424,22 @@ def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
     actual = _actual_bets(bets)
 
     assert len(actual) >= 1
-    assert actual[0]["date"] == "2026-02-25"
+    # Prediction date (2/24) should win over PLACED date (2/25)
+    assert actual[0]["date"] == "2026-02-24"
 
 
-def test_fanduel_finished_date_falls_back_to_placed() -> None:
+def test_fanduel_finished_date_falls_back_to_placed(tmp_path, monkeypatch) -> None:
     """Without prediction files or game date header, date comes from PLACED line."""
+    # Point prediction lookup at an empty directory so it can't resolve a date
+    monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+
     raw = _read_fixture("fanduel_finished_win.txt")
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
 
     assert len(actual) >= 1
-    # No "FEB 25, ..." game date header and no prediction file match,
-    # so date should fall back to the PLACED date
+    # No prediction file match, so date should fall back to the PLACED date
     assert actual[0]["date"] == "2026-02-25"
 
 
