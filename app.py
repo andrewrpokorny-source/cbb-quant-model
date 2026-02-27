@@ -514,14 +514,31 @@ def should_show(section_name: str) -> bool:
     return st.session_state.get(section_key) in ("All Sections", section_name)
 
 
+_KALSHI_SERIES_SLUGS = {
+    "KXNCAAMBSPREAD": "mens-college-basketball-spread",
+    "KXNCAAMBGAME": "mens-college-basketball-mens-game",
+    "KXNCAAWBSPREAD": "womens-college-basketball-spread",
+    "KXNCAAWBGAME": "college-basketball-womens-game",
+}
+
+
 def kalshi_event_url(ticker) -> str:
-    """Build a Kalshi event page URL from a market ticker."""
+    """Build a Kalshi event page URL from a market ticker.
+
+    Kalshi URLs follow: /markets/{series_lower}/{slug}/{event_ticker_lower}
+    """
     if not ticker or not isinstance(ticker, str):
         return ""
     # Event ticker is everything before the last dash-segment (team suffix)
     parts = ticker.rsplit("-", 1)
     event_ticker = parts[0] if len(parts) > 1 else ticker
-    return f"https://kalshi.com/markets/{event_ticker}"
+    # Series ticker is the prefix before the date portion (e.g. KXNCAAMBSPREAD from KXNCAAMBSPREAD-26FEB27YALECOR)
+    series = event_ticker.split("-", 1)[0]
+    slug = _KALSHI_SERIES_SLUGS.get(series.upper(), "")
+    if not slug:
+        # Fallback: link to series page (Kalshi will redirect to first event)
+        return f"https://kalshi.com/markets/{series.lower()}"
+    return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event_ticker.lower()}"
 
 
 # ==========================================
