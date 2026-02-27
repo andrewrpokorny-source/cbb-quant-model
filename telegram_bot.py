@@ -706,6 +706,11 @@ def append_bet(bet: dict):
     return row
 
 
+def _ocr_sort_key(result):
+    """Sort key for OCR results: top-to-bottom, left-to-right reading order."""
+    return (-round(result[2][1] * 200), result[2][0])
+
+
 def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     """
     Use macOS native OCR (ocrmac) to extract text from a bet slip screenshot,
@@ -731,8 +736,16 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     finally:
         os.unlink(tmp_path)
 
+    # Sort OCR results by y-coordinate (descending: y=1 is top in macOS coords)
+    # so text flows top-to-bottom in visual reading order.  Without this,
+    # ocrmac returns all left-column text first then right-column text,
+    # which breaks card splitting on multi-card settled screenshots.
+    # Quantize y to ~0.5% bands so items on the same visual line sort
+    # left-to-right by x instead of by sub-pixel y jitter.
+    results = sorted(results, key=_ocr_sort_key)
+
     # Combine OCR text lines (confidence threshold 0.5)
-    lines = [text for text, confidence, bbox in results if confidence > 0.5]
+    lines = [text for text, confidence, bbox in results if confidence >= 0.5]
     logger.info(f"OCR raw lines:\n{chr(10).join(lines)}")
 
     # Detect platform from RAW text (before cleaning removes identifiers)
@@ -875,11 +888,11 @@ def _parse_fd_settled_fallback(raw_text: str) -> dict | None:
     lower_text = raw_text.lower()
     if payout > wager:
         result = "win"
-    elif re.search(r"\$0\.00\s*\n?\s*returned", lower_text):
-        # "$0.00 RETURNED" = loss (bettor gets nothing back)
-        result = "loss"
     elif "returned" in lower_text:
-        result = "void"
+        if abs(payout - wager) < 0.01:
+            result = "void"
+        else:
+            result = "loss"
     elif payout == 0:
         result = "loss"
     elif abs(payout - wager) < 0.01:
@@ -1096,18 +1109,46 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             year -= 1
         game_date = f"{year}-{month:02d}-{day:02d}"
 
+    # 3b. Extract PLACED date as a last-resort fallback (used only if prediction
+    # lookup also fails -- see step 6b below).
+    placed_date = ""
+    if not game_date:
+        placed_date_match = re.search(
+            r"PLACED:\s*(\d{1,2})/(\d{1,2})/(\d{4})", card_text, re.IGNORECASE
+        )
+        if placed_date_match:
+            p_month = int(placed_date_match.group(1))
+            p_day = int(placed_date_match.group(2))
+            p_year = int(placed_date_match.group(3))
+            if 1 <= p_month <= 12 and 1 <= p_day <= 31 and 2020 <= p_year <= 2030:
+                placed_date = f"{p_year}-{p_month:02d}-{p_day:02d}"
+            else:
+                logger.warning(
+                    "FD settled card: PLACED date out of range month=%d day=%d "
+                    "year=%d (bet_id=%s)",
+                    p_month, p_day, p_year, bet_id,
+                )
+
     # 4. Detect result from raw text
     lower = card_text.lower()
     if "won on fanduel" in lower:
         result = "win"
     elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
-    elif re.search(r"\$0\.00\s*\n?\s*returned", lower):
-        # "$0.00 RETURNED" = loss ($0.00 payout means bet lost)
-        result = "loss"
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
-        # Non-zero RETURNED (wager refunded) = void
-        result = "void"
+        # RETURNED present -- distinguish loss ($0.00 payout) from void (wager refunded).
+        # Extract dollar amounts in betting range; if two found and approximately
+        # equal, wager was refunded (void). Otherwise loss.
+        ret_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+        ret_in_range = [float(m) for m in ret_amts if 0.25 <= float(m) <= 500]
+        if len(ret_in_range) >= 2 and abs(ret_in_range[1] - ret_in_range[0]) < 0.01:
+            result = "void"
+        else:
+            result = "loss"
+        logger.info(
+            "FD settled card: RETURNED -> %s (bet_id=%s, amounts_in_range=%s)",
+            result, bet_id, ret_in_range,
+        )
     else:
         # No keyword markers found -- infer result from payout vs wager.
         # Covers "Finished" format (scores visible) and cases where OCR
@@ -1233,9 +1274,15 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     line = f"{team} {spread}" if team and spread else ""
 
-    # Resolve game date from prediction files if not found in OCR text
+    # 6b. Resolve game date: prediction files take precedence over PLACED date
     if not game_date and team:
         game_date = _resolve_game_date(team)
+    if not game_date and placed_date:
+        game_date = placed_date
+        logger.info(
+            "FD settled card: using PLACED date fallback %s (bet_id=%s)",
+            game_date, bet_id,
+        )
 
     if not line or wager <= 0:
         logger.warning(

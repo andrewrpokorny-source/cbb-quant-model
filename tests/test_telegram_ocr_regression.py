@@ -405,12 +405,15 @@ def test_fanduel_finished_game_from_score_lines() -> None:
 
 
 def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
-    """Game date should resolve from prediction files, not PLACED date."""
-    # Create a mock predictions file with Alabama game on 2/25
-    pred_csv = tmp_path / "predictions_20260225.csv"
+    """Prediction-file date should take precedence over PLACED date.
+
+    The fixture has PLACED: 2/25/2026, but the mock prediction file dates the
+    game to 2/24 -- verifying prediction lookup wins over PLACED.
+    """
+    pred_csv = tmp_path / "predictions_20260224.csv"
     pred_csv.write_text(
         "Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest\n"
-        "02/25 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
+        "02/24 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
         "-14.5,Alabama Crimson Tide -14.5,0.7,ALA -14.5,3\n"
     )
     monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
@@ -421,19 +424,23 @@ def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
     actual = _actual_bets(bets)
 
     assert len(actual) >= 1
-    assert actual[0]["date"] == "2026-02-25"
+    # Prediction date (2/24) should win over PLACED date (2/25)
+    assert actual[0]["date"] == "2026-02-24"
 
 
-def test_fanduel_finished_date_empty_without_predictions() -> None:
-    """Without prediction files matching, game date should be empty (not PLACED date)."""
+def test_fanduel_finished_date_falls_back_to_placed(tmp_path, monkeypatch) -> None:
+    """Without prediction files or game date header, date comes from PLACED line."""
+    # Point prediction lookup at an empty directory so it can't resolve a date
+    monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+
     raw = _read_fixture("fanduel_finished_win.txt")
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
 
     assert len(actual) >= 1
-    # No "FEB 25, ..." header in the Finished format, and no prediction match
-    # in the test environment, so date should be empty -- NOT the PLACED date
-    # (The real bot will resolve from prediction files at runtime)
+    # No prediction file match, so date should fall back to the PLACED date
+    assert actual[0]["date"] == "2026-02-25"
 
 
 def test_fanduel_finished_multi_card() -> None:
@@ -442,17 +449,20 @@ def test_fanduel_finished_multi_card() -> None:
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
 
-    # Should get at least Alabama (win) and Cleveland State (loss)
-    # UTSA card may be incomplete (no spread line in OCR)
-    results = {b["bet_id"]: b["result"] for b in actual if b.get("bet_id")}
+    by_id = {b["bet_id"]: b for b in actual if b.get("bet_id")}
 
     # Alabama -14.5 should be win
-    if "0/0084650/0000187" in results:
-        assert results["0/0084650/0000187"] == "win"
+    assert "0/0084650/0000187" in by_id
+    assert by_id["0/0084650/0000187"]["result"] == "win"
+    assert by_id["0/0084650/0000187"]["line"] == "Alabama -14.5"
 
-    # Cleveland State +7.5 should be loss
-    if "0/0084650/0000188" in results:
-        assert results["0/0084650/0000188"] == "loss"
+    # UTSA +4.5 should be win (spread header now captured with >= 0.5 threshold)
+    assert "0/0084650/0000189" in by_id
+    assert by_id["0/0084650/0000189"]["result"] == "win"
+    assert by_id["0/0084650/0000189"]["line"] == "UTSA +4.5"
+
+    # Cleveland State card is truncated (no bet_id), so only 2 cards parse fully
+    assert len(actual) == 2, f"Expected 2 parseable cards, got {len(actual)}"
 
 
 def test_fanduel_finished_is_detected_as_settled() -> None:
@@ -474,3 +484,101 @@ def test_fanduel_settled_dedup_skip_entries() -> None:
         assert d["_skipped"] is True
         assert d["_settled"] is True
         assert d["bet_id"]  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# _ocr_sort_key tests
+# ---------------------------------------------------------------------------
+
+def test_ocr_sort_key_reading_order() -> None:
+    """Synthetic two-column OCR results should sort top-to-bottom, left-to-right."""
+    # (text, confidence, (x, y)) -- y=1 is top in macOS coords
+    results = [
+        ("left-col-top", 0.99, (0.05, 0.90)),
+        ("right-col-top", 0.99, (0.55, 0.90)),
+        ("left-col-mid", 0.99, (0.05, 0.50)),
+        ("right-col-mid", 0.99, (0.55, 0.50)),
+        ("left-col-bot", 0.99, (0.05, 0.10)),
+        ("right-col-bot", 0.99, (0.55, 0.10)),
+    ]
+    sorted_results = sorted(results, key=BOT._ocr_sort_key)
+    texts = [r[0] for r in sorted_results]
+    assert texts == [
+        "left-col-top", "right-col-top",
+        "left-col-mid", "right-col-mid",
+        "left-col-bot", "right-col-bot",
+    ]
+
+
+def test_ocr_sort_key_identical_y_tiebreak() -> None:
+    """Items with identical y coordinates should sort left-to-right by x."""
+    results = [
+        ("right", 0.99, (0.80, 0.50)),
+        ("left", 0.99, (0.10, 0.50)),
+        ("middle", 0.99, (0.45, 0.50)),
+    ]
+    sorted_results = sorted(results, key=BOT._ocr_sort_key)
+    texts = [r[0] for r in sorted_results]
+    assert texts == ["left", "middle", "right"]
+
+
+# ---------------------------------------------------------------------------
+# RETURNED detection tests
+# ---------------------------------------------------------------------------
+
+def test_returned_with_zero_payout_is_loss() -> None:
+    """Card with $0.00 payout and RETURNED should classify as loss."""
+    card_text = "\n".join([
+        "Spread",
+        "Michigan +3.5",
+        "-110",
+        "$1.00",
+        "$0.00",
+        "RETURNED",
+        "BET ID: 0/1234567/0000001",
+        "PLACED: 2/25/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "loss"
+
+
+def test_returned_with_refund_is_void() -> None:
+    """Card with equal wager/payout and RETURNED should classify as void."""
+    card_text = "\n".join([
+        "Spread",
+        "Michigan +3.5",
+        "-110",
+        "$1.00",
+        "$1.00",
+        "RETURNED",
+        "BET ID: 0/1234567/0000002",
+        "PLACED: 2/25/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "void"
+
+
+# ---------------------------------------------------------------------------
+# PLACED date validation test
+# ---------------------------------------------------------------------------
+
+def test_placed_date_validation_rejects_out_of_range() -> None:
+    """Out-of-range PLACED date (month 13, day 99) should produce no game_date."""
+    card_text = "\n".join([
+        "Spread",
+        "Faketestuniv +3.5",
+        "-110",
+        "$1.00",
+        "$2.00",
+        "WON ON FANDUEL",
+        "BET ID: 0/1234567/0000003",
+        "PLACED: 13/99/2026 7:00 PM",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["date"] == ""
