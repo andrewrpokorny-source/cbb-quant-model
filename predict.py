@@ -867,12 +867,13 @@ def main(spread_overrides=None, league="mens"):
             continue
 
         # Prepare spread model input
-        cols = model.feature_names_in_
+        cols = list(model.feature_names_in_)
         input_df = pd.DataFrame([row])
         for c in cols:
             if c not in input_df.columns:
                 input_df[c] = 0.0
 
+        input_df = input_df[cols]
         input_df.columns = input_df.columns.astype(str)
         input_df = input_df.fillna({
             'diff_eFG': 0, 'diff_Rebound': 0, 'diff_TO': 0,
