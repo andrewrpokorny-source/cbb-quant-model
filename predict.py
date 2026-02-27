@@ -429,6 +429,7 @@ def _infer_yes_team_from_game_market(market, home_team, away_team):
         return team_keyword in cleaned or cleaned in team_keyword
 
     patterns = [
+        r"if\s+(.+?)\s+wins",
         r"resolves?\s+to\s+yes\s+if\s+(.+?)\s+wins",
         r"yes\s+if\s+(.+?)\s+wins",
         r"will\s+(.+?)\s+beat",
