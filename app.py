@@ -218,6 +218,16 @@ p, span, div, .stMarkdown {
     margin-right: 8px;
 }
 
+.kalshi-link {
+    color: #1a6b1a;
+    text-decoration: none;
+    font-size: 0.8rem;
+}
+.kalshi-link:hover {
+    text-decoration: underline;
+    color: #0d4a0d;
+}
+
 /* Summary bar */
 .summary-bar {
     display: flex;
@@ -503,6 +513,17 @@ selected_section = st.selectbox("Jump to section", section_options, key=section_
 def should_show(section_name: str) -> bool:
     return st.session_state.get(section_key) in ("All Sections", section_name)
 
+
+def kalshi_event_url(ticker) -> str:
+    """Build a Kalshi event page URL from a market ticker."""
+    if not ticker or not isinstance(ticker, str):
+        return ""
+    # Event ticker is everything before the last dash-segment (team suffix)
+    parts = ticker.rsplit("-", 1)
+    event_ticker = parts[0] if len(parts) > 1 else ticker
+    return f"https://kalshi.com/markets/{event_ticker}"
+
+
 # ==========================================
 # MAIN CONTENT - No tabs, prioritized layout
 # ==========================================
@@ -628,7 +649,12 @@ if os.path.exists(PRED_FILE):
                     kalshi_html = ""
                     if has_kalshi:
                         kalshi_edge = row.get('Edge_Pct', 'N/A')
-                        kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}</div>'
+                        kalshi_ticker = row.get('Kalshi_Ticker', '')
+                        kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}"
+                        if kalshi_ticker:
+                            kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_event_url(kalshi_ticker)}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
+                        else:
+                            kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">{kalshi_text}</span></div>'
 
                     st.markdown(f'''
                     <div class="bet-card {badge_css}">
@@ -691,6 +717,13 @@ if os.path.exists(PRED_FILE):
                 for _, row in game_value.sort_values(by='Conf', ascending=False).iterrows():
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
+                    game_kalshi_ticker = row.get('Kalshi_Ticker', '')
+                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢"
+                    game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
+                    if game_kalshi_url:
+                        game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
+                    else:
+                        game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
                     st.markdown(f'''
                     <div class="bet-card {badge_css}">
                         <div class="bet-header">
@@ -717,13 +750,17 @@ if os.path.exists(PRED_FILE):
                                 <span class="stat-value">{row.get('Win_Model_Variant', 'no_line')}</span>
                             </div>
                         </div>
-                        <div class="kalshi-row"><span class="kalshi-label">Kalshi</span> {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢</div>
+                        <div class="kalshi-row">{game_kalshi_html}</div>
                     </div>
                     ''', unsafe_allow_html=True)
 
             table_game = game_df.copy()
             table_game["Confidence"] = table_game["Conf"].apply(lambda x: f"{x:.1%}") if "Conf" in table_game.columns else ""
-            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Edge_Pct", "Units", "Rating"]
+            if "Kalshi_Ticker" in table_game.columns:
+                table_game["Link"] = table_game["Kalshi_Ticker"].apply(
+                    lambda t: kalshi_event_url(t) if pd.notna(t) and t else None
+                )
+            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Edge_Pct", "Units", "Rating", "Link"]
             game_cols = [c for c in game_cols if c in table_game.columns]
             table_game = table_game[game_cols].rename(columns={
                 "Date/Time": "Time",
@@ -743,6 +780,7 @@ if os.path.exists(PRED_FILE):
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                     "Rating": st.column_config.TextColumn("Rating", width="small"),
+                    "Link": st.column_config.LinkColumn("Kalshi", width="small", display_text="Trade"),
                 }
             )
 
