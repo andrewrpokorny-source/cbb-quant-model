@@ -514,8 +514,10 @@ def should_show(section_name: str) -> bool:
     return st.session_state.get(section_key) in ("All Sections", section_name)
 
 
-def kalshi_event_url(ticker: str) -> str:
+def kalshi_event_url(ticker) -> str:
     """Build a Kalshi event page URL from a market ticker."""
+    if not ticker or not isinstance(ticker, str):
+        return ""
     # Event ticker is everything before the last dash-segment (team suffix)
     parts = ticker.rsplit("-", 1)
     event_ticker = parts[0] if len(parts) > 1 else ticker
@@ -715,6 +717,13 @@ if os.path.exists(PRED_FILE):
                 for _, row in game_value.sort_values(by='Conf', ascending=False).iterrows():
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
+                    game_kalshi_ticker = row.get('Kalshi_Ticker', '')
+                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢"
+                    game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
+                    if game_kalshi_url:
+                        game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
+                    else:
+                        game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
                     st.markdown(f'''
                     <div class="bet-card {badge_css}">
                         <div class="bet-header">
@@ -741,7 +750,7 @@ if os.path.exists(PRED_FILE):
                                 <span class="stat-value">{row.get('Win_Model_Variant', 'no_line')}</span>
                             </div>
                         </div>
-                        <div class="kalshi-row"><a href="{kalshi_event_url(row.get('Kalshi_Ticker', ''))}" target="_blank" class="kalshi-link">Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢</a></div>
+                        <div class="kalshi-row">{game_kalshi_html}</div>
                     </div>
                     ''', unsafe_allow_html=True)
 
