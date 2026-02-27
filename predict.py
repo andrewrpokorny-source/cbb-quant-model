@@ -610,7 +610,13 @@ def calculate_production_features(row, h_stats, a_stats):
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
-    # 11-12. Spread interaction features
+    # 11-14. Win-model team strength features (used by Kalshi GAME scoring)
+    row['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
+    row['prev_season_off_rating'] = h_stats.get('prev_season_off_rating', 100.0)
+    row['opp_season_off_rating'] = a_stats.get('prev_season_off_rating', 100.0)
+    row['off_rating_gap'] = row['prev_season_off_rating'] - row['opp_season_off_rating']
+
+    # 15-16. Spread interaction features
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
 
