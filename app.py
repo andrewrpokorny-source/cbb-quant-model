@@ -667,7 +667,9 @@ if os.path.exists(PRED_FILE):
                     if has_kalshi:
                         kalshi_edge = row.get('Edge_Pct', 'N/A')
                         kalshi_ticker = row.get('Kalshi_Ticker', '')
-                        kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}¢ · {kalshi_edge}"
+                        kalshi_fee = row.get('Kalshi_Fee')
+                        fee_str = f" + {kalshi_fee}¢ fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
+                        kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}¢{fee_str} · {kalshi_edge}"
                         if kalshi_ticker:
                             kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_event_url(kalshi_ticker)}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
                         else:
@@ -735,7 +737,9 @@ if os.path.exists(PRED_FILE):
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
                     game_kalshi_ticker = row.get('Kalshi_Ticker', '')
-                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢"
+                    game_fee = row.get('Kalshi_Fee')
+                    game_fee_str = f" + {game_fee}¢ fee" if pd.notna(game_fee) and game_fee else ""
+                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢{game_fee_str}"
                     game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
                     if game_kalshi_url:
                         game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
@@ -777,11 +781,12 @@ if os.path.exists(PRED_FILE):
                 table_game["Link"] = table_game["Kalshi_Ticker"].apply(
                     lambda t: kalshi_event_url(t) if pd.notna(t) and t else None
                 )
-            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Edge_Pct", "Units", "Rating", "Link"]
+            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Kalshi_Fee", "Edge_Pct", "Units", "Rating", "Link"]
             game_cols = [c for c in game_cols if c in table_game.columns]
             table_game = table_game[game_cols].rename(columns={
                 "Date/Time": "Time",
                 "Kalshi_Price": "Price",
+                "Kalshi_Fee": "Fee",
                 "Edge_Pct": "Edge",
             })
             st.dataframe(
