@@ -17,6 +17,8 @@ from league_config import get_league_artifact_paths, get_league_settings, normal
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 
+LEAGUES = ["mens", "womens"]
+
 st.set_page_config(page_title="CBB Quant Edge", layout="wide")
 
 # --- CUSTOM STYLING ---
@@ -31,6 +33,10 @@ st.markdown("""
     --green-600: #2a6b42;
     --green-500: #3d8a5a;
     --green-100: #e6f0ea;
+    --purple-800: #2d1b4e;
+    --purple-700: #4a2d7a;
+    --purple-600: #6b42a6;
+    --purple-100: #ede6f5;
     --gold-700: #7a5c10;
     --gold-600: #8a6d1b;
     --gold-100: #faf3e0;
@@ -85,14 +91,6 @@ section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 {
     color: #ffffff !important;
     font-family: var(--font-body) !important;
-}
-
-section[data-testid="stSidebar"] .stSelectbox label {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.4) !important;
 }
 
 section[data-testid="stSidebar"] .stButton > button {
@@ -150,18 +148,36 @@ p, span, div, .stMarkdown {
     font-family: var(--font-body);
 }
 
+/* League column headers */
+.league-header {
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 3px solid;
+}
+
+.league-header.mens {
+    color: var(--green-800);
+    border-color: var(--green-700);
+}
+
+.league-header.womens {
+    color: var(--purple-800);
+    border-color: var(--purple-700);
+}
+
 /* Section headers */
 .section-title {
     font-family: var(--font-body);
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-weight: 700;
-    color: var(--green-800);
+    color: var(--neutral-500);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin: 0.5rem 0 0.75rem 0;
-    padding-bottom: 0.4rem;
-    border-bottom: 2px solid var(--green-700);
-    display: inline-block;
+    margin: 1rem 0 0.5rem 0;
 }
 
 /* Value bet cards */
@@ -184,6 +200,10 @@ p, span, div, .stMarkdown {
     border-left: 4px solid var(--green-700);
 }
 
+.bet-card.strong.womens-card {
+    border-left-color: var(--purple-700);
+}
+
 .bet-badge {
     font-family: var(--font-mono);
     font-size: 0.58rem;
@@ -199,6 +219,10 @@ p, span, div, .stMarkdown {
 .bet-badge.strong {
     background: var(--green-700);
     color: #ffffff;
+}
+
+.womens-card .bet-badge.strong {
+    background: var(--purple-700);
 }
 
 .bet-card.good {
@@ -274,6 +298,7 @@ p, span, div, .stMarkdown {
 }
 
 .strong .stat-value.positive { color: var(--green-600); }
+.womens-card.strong .stat-value.positive { color: var(--purple-600); }
 .good .stat-value.positive { color: var(--gold-700); }
 .marginal .stat-value.positive { color: #7a5c2e; }
 .pass .stat-value.positive { color: var(--neutral-500); }
@@ -427,188 +452,14 @@ hr {
     border-radius: 10px;
     overflow: hidden;
 }
-
-/* Missing spreads */
-.missing-spreads-banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--gold-100);
-    border: 1px solid #ebe0c0;
-    border-radius: 10px;
-    padding: 8px 14px;
-    margin: 0.5rem 0;
-}
-
-.missing-spreads-banner .ms-count {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    font-weight: 600;
-    background: var(--gold-600);
-    color: #ffffff;
-    padding: 2px 8px;
-    border-radius: 4px;
-    letter-spacing: 0.03em;
-}
-
-.missing-spreads-banner .ms-text {
-    font-family: var(--font-body);
-    font-size: 0.78rem;
-    color: var(--gold-700);
-}
-
-.spread-game-row {
-    background: var(--surface);
-    border: 1px solid var(--neutral-200);
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 6px;
-}
-
-.spread-game-teams {
-    font-family: var(--font-body);
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--green-900);
-}
-
-.spread-game-time {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--neutral-400);
-    margin-top: 2px;
-}
-
-/* Record panel */
-.record-stat {
-    background: var(--surface);
-    border: 1px solid var(--neutral-200);
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-    text-align: center;
-}
-
-.record-stat .rs-value {
-    font-family: var(--font-mono);
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: var(--green-800);
-}
-
-.record-stat .rs-label {
-    font-family: var(--font-mono);
-    font-size: 0.55rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--neutral-400);
-    margin-top: 2px;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# --- LEAGUE STATE ---
-if 'active_league' not in st.session_state:
-    st.session_state.active_league = "mens"
-
-active_league = normalize_league(st.session_state.active_league)
 
 # ==========================================
-# SIDEBAR
+# HELPERS
 # ==========================================
-with st.sidebar:
-    st.markdown('<div class="sidebar-brand">CBB Quant Edge</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-sub">Spread + Kalshi Markets</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-    selected_league = st.selectbox(
-        "League",
-        ["mens", "womens"],
-        format_func=lambda x: "Men's CBB" if x == "mens" else "Women's CBB",
-        index=0 if active_league == "mens" else 1,
-    )
-    if selected_league != active_league:
-        st.session_state.active_league = selected_league
-        st.rerun()
-
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-
-    if st.button("Refresh Predictions"):
-        with st.spinner("Running model..."):
-            predict.main(
-                spread_overrides=st.session_state.get(f"spread_overrides_{active_league}", {}),
-                league=active_league,
-            )
-            st.session_state[f"predictions_loaded_{active_league}"] = True
-        st.rerun()
-
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-
-    if st.button("Settle Bets"):
-        with st.spinner("Settling..."):
-            summary = settle_bets.settle_pending_bets(league=active_league)
-        st.success(f"{summary['settled']} settled, {summary['still_pending']} pending")
-        if summary["details"]:
-            for d in summary["details"]:
-                st.caption(d)
-        st.rerun()
-
-# --- LEAGUE PATHS ---
-league_settings = get_league_settings(active_league)
-league_paths = get_league_artifact_paths(BASE_DIR, active_league)
-PRED_FILE = league_paths["predictions_file"]
-PERF_FILE = league_paths["performance_file"]
-DATA_FILE = league_paths["data_file"]
-MODEL_FILE = league_paths["model_file"]
-spread_overrides_key = f"spread_overrides_{active_league}"
-predictions_loaded_key = f"predictions_loaded_{active_league}"
-
-
-# --- AUTO-REFRESH PREDICTIONS ON STARTUP ---
-if not st.session_state.get(predictions_loaded_key, False):
-    with st.spinner("Loading predictions..."):
-        predict.main(
-            spread_overrides=st.session_state.get(spread_overrides_key, {}),
-            league=active_league,
-        )
-    st.session_state[predictions_loaded_key] = True
-
-predictions_with_line_shopping = predict.get_latest_predictions(active_league)
-games_needing_spreads = predict.get_games_needing_spreads(active_league)
-
-# --- SIDEBAR: MISSING SPREADS ---
-if games_needing_spreads:
-    with st.sidebar:
-        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-        n_missing = len(games_needing_spreads)
-        st.caption(f"{n_missing} game{'s' if n_missing != 1 else ''} missing spread")
-        with st.expander("Enter spreads", expanded=False):
-            with st.form("spread_overrides_form"):
-                override_inputs = {}
-                for game in games_needing_spreads:
-                    matchup = game['matchup']
-                    st.markdown(f"**{matchup}**")
-                    override_inputs[matchup] = st.text_input(
-                        matchup,
-                        placeholder="-7.5 or +3",
-                        key=f"spread_{active_league}_{game['id']}",
-                        label_visibility="collapsed",
-                    )
-                submitted = st.form_submit_button("Apply & Re-run")
-                if submitted:
-                    overrides = st.session_state.get(spread_overrides_key, {})
-                    for matchup, val in override_inputs.items():
-                        val = val.strip()
-                        if val:
-                            try:
-                                overrides[matchup] = float(val)
-                            except ValueError:
-                                st.error(f"Invalid: {val}")
-                    st.session_state[spread_overrides_key] = overrides
-                    st.session_state[predictions_loaded_key] = False
-                    st.rerun()
-
-
-# --- KALSHI URL HELPER ---
 _KALSHI_SERIES_SLUGS = {
     "KXNCAAMBSPREAD": "mens-college-basketball-spread",
     "KXNCAAMBGAME": "mens-college-basketball-mens-game",
@@ -636,89 +487,200 @@ def _parse_edge(series):
 
 
 # ==========================================
-# MAIN CONTENT
+# LOAD BOTH LEAGUES
 # ==========================================
-if os.path.exists(PRED_FILE):
-    df = pd.read_csv(PRED_FILE)
+league_data = {}
+
+for lg in LEAGUES:
+    settings = get_league_settings(lg)
+    paths = get_league_artifact_paths(BASE_DIR, lg)
+    overrides_key = f"spread_overrides_{lg}"
+    loaded_key = f"predictions_loaded_{lg}"
+
+    if not st.session_state.get(loaded_key, False):
+        with st.spinner(f"Loading {settings['label']}..."):
+            predict.main(
+                spread_overrides=st.session_state.get(overrides_key, {}),
+                league=lg,
+            )
+        st.session_state[loaded_key] = True
+
+    pred_file = paths["predictions_file"]
+    df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
         game_df = df[df["Bet_Type"] == "game"].copy()
-    else:
+    elif not df.empty:
         spread_df = df.copy()
         game_df = pd.DataFrame(columns=df.columns)
+    else:
+        spread_df = pd.DataFrame()
+        game_df = pd.DataFrame()
 
-    # --- KPI SUMMARY ROW ---
-    if 'Std_Rating' in df.columns:
-        rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
-        value_bets = df[
-            (df['Std_Rating'].isin(VALUE_RATINGS)) |
-            (rating_col.isin(VALUE_RATINGS))
-        ].copy()
+    league_data[lg] = {
+        "settings": settings,
+        "paths": paths,
+        "df": df,
+        "spread_df": spread_df,
+        "game_df": game_df,
+        "predictions_ls": predict.get_latest_predictions(lg),
+        "games_needing_spreads": predict.get_games_needing_spreads(lg),
+    }
 
-        num_value = len(value_bets)
-        if num_value > 0:
-            total_units = np.maximum(
-                value_bets['Std_Units'].fillna(0),
-                value_bets['Units'].fillna(0),
-            ).sum()
-        else:
-            total_units = 0
 
-        # Compute record stats for KPI bar
-        record_str = "--"
-        profit_str = "--"
-        roi_str = "--"
-        if os.path.exists(BET_HIST_FILE):
-            _bh = pd.read_csv(BET_HIST_FILE)
-            _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
-            if len(_settled) > 0:
-                _wins = len(_settled[_settled["result"] == "win"])
-                _losses = len(_settled[_settled["result"] == "loss"])
-                _profit = _settled["profit"].astype(float).sum()
-                _wagered = _settled["wager"].astype(float).sum()
-                _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
-                record_str = f"{_wins}W-{_losses}L"
-                profit_str = f"{_profit:+.1f}U"
-                roi_str = f"{_roi:+.1f}%"
+# ==========================================
+# SIDEBAR
+# ==========================================
+with st.sidebar:
+    st.markdown('<div class="sidebar-brand">CBB Quant Edge</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-sub">Spread + Kalshi Markets</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-        st.markdown(f'''
-        <div class="kpi-row">
-            <div class="kpi-card">
-                <div class="kpi-value">{num_value}</div>
-                <div class="kpi-label">Value Bets</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value">{total_units:.1f}U</div>
-                <div class="kpi-label">To Deploy</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value">{len(game_df)}</div>
-                <div class="kpi-label">Kalshi Games</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value">{record_str}</div>
-                <div class="kpi-label">Record</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value">{profit_str}</div>
-                <div class="kpi-label">Profit</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value">{roi_str}</div>
-                <div class="kpi-label">ROI</div>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
+    if st.button("Refresh All"):
+        for lg in LEAGUES:
+            with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
+                predict.main(
+                    spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
+                    league=lg,
+                )
+                st.session_state[f"predictions_loaded_{lg}"] = True
+        st.rerun()
 
-    # ==========================================
-    # TWO-COLUMN LAYOUT: Value Bets | Slate Table
-    # ==========================================
-    col_bets, col_slate = st.columns([3, 4])
+    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-    # --- LEFT: VALUE BETS ---
-    with col_bets:
+    if st.button("Settle Bets"):
+        for lg in LEAGUES:
+            with st.spinner(f"Settling {get_league_settings(lg)['label']}..."):
+                summary = settle_bets.settle_pending_bets(league=lg)
+            if summary["settled"] > 0 or summary["still_pending"] > 0:
+                st.caption(f"{get_league_settings(lg)['label']}: {summary['settled']} settled, {summary['still_pending']} pending")
+        st.rerun()
+
+    # Missing spreads per league
+    for lg in LEAGUES:
+        games = league_data[lg]["games_needing_spreads"]
+        if games:
+            st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+            n = len(games)
+            label = league_data[lg]["settings"]["label"]
+            st.caption(f"{label}: {n} missing spread{'s' if n != 1 else ''}")
+            with st.expander(f"Enter spreads ({label})", expanded=False):
+                with st.form(f"spread_overrides_form_{lg}"):
+                    override_inputs = {}
+                    for game in games:
+                        matchup = game['matchup']
+                        st.markdown(f"**{matchup}**")
+                        override_inputs[matchup] = st.text_input(
+                            matchup,
+                            placeholder="-7.5 or +3",
+                            key=f"spread_{lg}_{game['id']}",
+                            label_visibility="collapsed",
+                        )
+                    submitted = st.form_submit_button("Apply & Re-run")
+                    if submitted:
+                        overrides_key = f"spread_overrides_{lg}"
+                        overrides = st.session_state.get(overrides_key, {})
+                        for matchup, val in override_inputs.items():
+                            val = val.strip()
+                            if val:
+                                try:
+                                    overrides[matchup] = float(val)
+                                except ValueError:
+                                    st.error(f"Invalid: {val}")
+                        st.session_state[overrides_key] = overrides
+                        st.session_state[f"predictions_loaded_{lg}"] = False
+                        st.rerun()
+
+
+# ==========================================
+# KPI ROW
+# ==========================================
+total_value = 0
+total_units = 0.0
+total_kalshi = 0
+record_str = "--"
+profit_str = "--"
+roi_str = "--"
+
+for lg in LEAGUES:
+    d = league_data[lg]
+    df = d["df"]
+    if df.empty or 'Std_Rating' not in df.columns:
+        continue
+    rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
+    vb = df[(df['Std_Rating'].isin(VALUE_RATINGS)) | (rating_col.isin(VALUE_RATINGS))]
+    total_value += len(vb)
+    if len(vb) > 0:
+        total_units += np.maximum(vb['Std_Units'].fillna(0), vb['Units'].fillna(0)).sum()
+    total_kalshi += len(d["game_df"])
+
+if os.path.exists(BET_HIST_FILE):
+    _bh = pd.read_csv(BET_HIST_FILE)
+    _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
+    if len(_settled) > 0:
+        _wins = len(_settled[_settled["result"] == "win"])
+        _losses = len(_settled[_settled["result"] == "loss"])
+        _profit = _settled["profit"].astype(float).sum()
+        _wagered = _settled["wager"].astype(float).sum()
+        _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
+        record_str = f"{_wins}W-{_losses}L"
+        profit_str = f"{_profit:+.1f}U"
+        roi_str = f"{_roi:+.1f}%"
+
+st.markdown(f'''
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="kpi-value">{total_value}</div>
+        <div class="kpi-label">Value Bets</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{total_units:.1f}U</div>
+        <div class="kpi-label">To Deploy</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{total_kalshi}</div>
+        <div class="kpi-label">Kalshi Games</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{record_str}</div>
+        <div class="kpi-label">Record</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{profit_str}</div>
+        <div class="kpi-label">Profit</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{roi_str}</div>
+        <div class="kpi-label">ROI</div>
+    </div>
+</div>
+''', unsafe_allow_html=True)
+
+
+# ==========================================
+# VALUE BETS: Men's | Women's side by side
+# ==========================================
+col_mens, col_womens = st.columns(2)
+
+
+def _render_value_bets(col, lg):
+    """Render spread value bets and Kalshi game value bets for one league."""
+    d = league_data[lg]
+    spread_df = d["spread_df"]
+    game_df = d["game_df"]
+    predictions_ls = d["predictions_ls"]
+    label = d["settings"]["label"]
+    card_extra = "womens-card" if lg == "womens" else ""
+
+    with col:
+        st.markdown(
+            f'<div class="league-header {lg}">{label}</div>',
+            unsafe_allow_html=True,
+        )
+
         # -- Spread Value Bets --
-        spread_value_bets = pd.DataFrame(columns=spread_df.columns)
+        spread_value_bets = pd.DataFrame(columns=spread_df.columns) if not spread_df.empty else pd.DataFrame()
         if not spread_df.empty and 'Std_Rating' in spread_df.columns:
             spread_rating = spread_df['Rating'] if 'Rating' in spread_df.columns else pd.Series('PASS', index=spread_df.index)
             spread_value_bets = spread_df[
@@ -742,7 +704,7 @@ if os.path.exists(PRED_FILE):
                 .drop(columns=['_best_rank', '_best_edge'])
             )
 
-            for idx, row in spread_value_bets.iterrows():
+            for _, row in spread_value_bets.iterrows():
                 std_rating = row.get('Std_Rating', 'PASS')
                 kalshi_rating = row.get('Rating', 'PASS') if pd.notna(row.get('Rating')) else 'PASS'
                 conf = row['Conf']
@@ -781,7 +743,7 @@ if os.path.exists(PRED_FILE):
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">{kalshi_text}</span></div>'
 
                 st.markdown(f'''
-                <div class="bet-card {badge_css}">
+                <div class="bet-card {badge_css} {card_extra}">
                     <div class="bet-header">
                         <div class="bet-badge {badge_css}">{best_rating.title()}</div>
                         <div class="bet-time">{game_time}</div>
@@ -811,9 +773,9 @@ if os.path.exists(PRED_FILE):
                 ''', unsafe_allow_html=True)
 
                 line_shopping_data = None
-                if predictions_with_line_shopping is not None:
-                    match = predictions_with_line_shopping[
-                        predictions_with_line_shopping['Matchup'] == row['Matchup']
+                if predictions_ls is not None:
+                    match = predictions_ls[
+                        predictions_ls['Matchup'] == row['Matchup']
                     ]
                     if len(match) > 0 and 'Line_Shopping_Data' in match.columns:
                         line_shopping_data = match.iloc[0].get('Line_Shopping_Data')
@@ -822,17 +784,13 @@ if os.path.exists(PRED_FILE):
                     with st.expander("Line Shopping", expanded=False):
                         st.code(format_line_shopping_text(line_shopping_data), language=None)
         else:
-            st.markdown('<div class="section-title">Spread Value Bets</div>', unsafe_allow_html=True)
             st.caption("No spread value bets on this slate.")
 
         # -- Kalshi Game Value Bets --
-        st.markdown('<div class="section-title">Kalshi Game Markets</div>', unsafe_allow_html=True)
-
-        if game_df.empty:
-            st.caption("No Kalshi game markets on this slate.")
-        else:
+        if not game_df.empty:
             game_value = game_df[game_df['Rating'].isin(VALUE_RATINGS)].copy() if 'Rating' in game_df.columns else pd.DataFrame()
             if not game_value.empty:
+                st.markdown('<div class="section-title">Kalshi Game Markets</div>', unsafe_allow_html=True)
                 for _, row in game_value.sort_values(by='Conf', ascending=False).iterrows():
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
@@ -844,7 +802,7 @@ if os.path.exists(PRED_FILE):
                     else:
                         game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
                     st.markdown(f'''
-                    <div class="bet-card {badge_css}">
+                    <div class="bet-card {badge_css} {card_extra}">
                         <div class="bet-header">
                             <div class="bet-badge {badge_css}">{str(rating).title()}</div>
                             <div class="bet-time">{row.get('Date/Time', '')}</div>
@@ -868,18 +826,182 @@ if os.path.exists(PRED_FILE):
                         <div class="kalshi-row">{game_kalshi_html}</div>
                     </div>
                     ''', unsafe_allow_html=True)
-            else:
-                st.caption("No Kalshi value plays today.")
 
-    # --- RIGHT: FULL SLATE TABLES ---
-    with col_slate:
-        # -- Spread Slate --
-        st.markdown('<div class="section-title">Spread Slate</div>', unsafe_allow_html=True)
+
+_render_value_bets(col_mens, "mens")
+_render_value_bets(col_womens, "womens")
+
+
+# ==========================================
+# BOTTOM: Record + Performance
+# ==========================================
+st.markdown("<hr>", unsafe_allow_html=True)
+
+col_record, col_perf = st.columns(2)
+
+with col_record:
+    st.markdown('<div class="league-header mens">Betting Record</div>', unsafe_allow_html=True)
+
+    if os.path.exists(BET_HIST_FILE):
+        bet_hist = pd.read_csv(BET_HIST_FILE)
+        pending_bets = bet_hist[bet_hist["result"] == "pending"]
+        pending_count = len(pending_bets)
+
+        if pending_count > 0:
+            st.caption(f"{pending_count} pending bet{'s' if pending_count != 1 else ''}")
+            pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
+            pending_display["wager"] = pending_display["wager"].apply(lambda x: f"${x:.2f}")
+            st.dataframe(pending_display, use_container_width=True, hide_index=True, height=180)
+
+        settled = bet_hist[bet_hist["result"].isin(["win", "loss", "void"])]
+        if len(settled) > 0:
+            wins = len(settled[settled["result"] == "win"])
+            losses = len(settled[settled["result"] == "loss"])
+            total_profit = settled["profit"].astype(float).sum()
+            total_wagered = settled["wager"].astype(float).sum()
+            roi = (total_profit / total_wagered * 100) if total_wagered > 0 else 0
+
+            rc1, rc2, rc3 = st.columns(3)
+            rc1.metric("Record", f"{wins}W-{losses}L")
+            rc2.metric("Profit", f"{total_profit:+.2f}U")
+            rc3.metric("ROI", f"{roi:+.1f}%")
+
+            recent = settled.tail(10).iloc[::-1].copy()
+            recent["Result"] = recent["result"].apply(
+                lambda x: {"win": "W", "loss": "L", "void": "P"}.get(x, x)
+            )
+            recent["P/L"] = recent["profit"].apply(lambda x: f"{float(x):+.2f}")
+            display_cols = ["date", "platform", "line", "Result", "P/L"]
+            st.dataframe(recent[display_cols], use_container_width=True, hide_index=True, height=280)
+        elif pending_count == 0:
+            st.caption("No betting history yet.")
+    else:
+        st.caption("No betting history file found.")
+
+with col_perf:
+    # Use men's performance file as primary (backtest runs per league)
+    mens_perf = league_data["mens"]["paths"]["performance_file"]
+    mens_model = league_data["mens"]["paths"]["model_file"]
+
+    st.markdown('<div class="league-header mens">Model Performance</div>', unsafe_allow_html=True)
+
+    if os.path.exists(mens_perf):
+        hist = pd.read_csv(mens_perf)
+        hist['date'] = pd.to_datetime(hist['date'])
+
+        def get_metrics(df_subset):
+            if len(df_subset) == 0:
+                return 0, 0.0, 0.0
+            df_subset = df_subset.copy()
+            df_subset['units'] = df_subset['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
+            cnt = len(df_subset)
+            wins = df_subset['pick_correct'].sum()
+            rate = wins / cnt
+            profit = df_subset['units'].sum()
+            return cnt, rate, profit
+
+        try:
+            today = pd.Timestamp.now(tz='US/Eastern').normalize()
+        except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+            today = pd.Timestamp.now().normalize() - timedelta(hours=5)
+
+        yesterday = today - timedelta(days=1)
+        start_7 = today - timedelta(days=7)
+
+        df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
+        df_7 = hist[hist['date'].dt.date >= start_7.date()]
+        df_30 = hist
+
+        pc1, pc2, pc3 = st.columns(3)
+        cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
+        pc1.metric("Yesterday", f"{prof_y:+.1f}U", f"{cnt_y} bets | {rate_y:.0%}")
+
+        cnt_7, rate_7, prof_7 = get_metrics(df_7)
+        pc2.metric("7 Days", f"{prof_7:+.1f}U", f"{cnt_7} bets | {rate_7:.0%}")
+
+        cnt_30, rate_30, prof_30 = get_metrics(df_30)
+        pc3.metric("All Time", f"{prof_30:+.1f}U", f"{cnt_30} bets | {rate_30:.0%}")
+
+        hist['units'] = hist['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
+        hist['cumulative_units'] = hist['units'].cumsum()
+
+        chart = alt.Chart(hist).mark_area(
+            line={'color': '#1a4d2e'},
+            color=alt.Gradient(
+                gradient='linear',
+                stops=[
+                    alt.GradientStop(color='rgba(26, 77, 46, 0.1)', offset=0),
+                    alt.GradientStop(color='rgba(26, 77, 46, 0.3)', offset=1)
+                ],
+                x1=1, x2=1, y1=1, y2=0
+            )
+        ).encode(
+            x=alt.X('date:T', title=None, axis=alt.Axis(format='%b %d', labelAngle=0)),
+            y=alt.Y('cumulative_units:Q', title='Units'),
+            tooltip=[
+                alt.Tooltip('date:T', title='Date', format='%b %d'),
+                alt.Tooltip('cumulative_units:Q', title='Total Units', format='.1f')
+            ]
+        ).properties(height=220).configure_axis(
+            grid=True,
+            gridColor='#e5e5e0',
+            domainColor='#e5e5e0'
+        ).configure_view(
+            strokeWidth=0
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+        with st.expander("View Bet History"):
+            hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
+            hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
+            hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
+            hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
+
+            df_display = hist.sort_values('date', ascending=False)
+            df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(
+                columns={'Date_Str': 'Date', 'conf': 'Conf'}
+            )
+            df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
+
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+    else:
+        st.caption("No performance data yet.")
+        if st.button("Run Backtest"):
+            with st.spinner("Training models..."):
+                f = io.StringIO()
+                try:
+                    with redirect_stdout(f):
+                        backtest.run_backtest(league="mens")
+                    if os.path.exists(mens_perf):
+                        st.success("Done!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+
+# ==========================================
+# BOTTOM: Spread Slates (full width, tabs)
+# ==========================================
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
+
+slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
+
+for i, lg in enumerate(LEAGUES):
+    with slate_tabs[i]:
+        spread_df = league_data[lg]["spread_df"]
+        game_df = league_data[lg]["game_df"]
+
+        if spread_df.empty:
+            st.caption("No spread picks on this slate.")
+            continue
 
         show_filter = st.selectbox(
             "Show",
             ["All Games", "Value Bets Only"],
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key=f"slate_filter_{lg}",
         )
 
         if 'Std_Rating' in spread_df.columns:
@@ -896,31 +1018,24 @@ if os.path.exists(PRED_FILE):
             display_df = spread_df.copy()
 
         if display_df.empty:
-            st.caption("No spread picks on this slate.")
+            st.caption("No matching picks.")
         else:
             if 'Conf' in display_df.columns:
                 display_df['Confidence'] = display_df['Conf'].apply(lambda x: f"{x:.1%}")
 
             std_edge = _parse_edge(display_df['Std_Edge_Pct']) if 'Std_Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
-            kalshi_edge = _parse_edge(display_df['Edge_Pct']) if 'Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
+            k_edge = _parse_edge(display_df['Edge_Pct']) if 'Edge_Pct' in display_df.columns else pd.Series(0.0, index=display_df.index)
             std_units = display_df['Std_Units'].fillna(0) if 'Std_Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
-            kalshi_units = display_df['Units'].fillna(0) if 'Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
+            k_units = display_df['Units'].fillna(0) if 'Units' in display_df.columns else pd.Series(0.0, index=display_df.index)
 
-            kalshi_is_better = kalshi_edge > std_edge
-            best_edge = kalshi_edge.where(kalshi_is_better, std_edge)
-            best_units = kalshi_units.where(kalshi_is_better, std_units)
-
-            display_df['Best_Edge'] = best_edge.apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
-            display_df['Best_Units'] = best_units
+            kalshi_better = k_edge > std_edge
+            display_df['Best_Edge'] = k_edge.where(kalshi_better, std_edge).apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
+            display_df['Best_Units'] = k_units.where(kalshi_better, std_units)
 
             table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
             valid_cols = [c for c in table_cols if c in display_df.columns]
-
-            table_df = display_df[valid_cols].copy()
-            table_df = table_df.rename(columns={
-                'Date/Time': 'Time',
-                'Best_Edge': 'Edge',
-                'Best_Units': 'Units'
+            table_df = display_df[valid_cols].rename(columns={
+                'Date/Time': 'Time', 'Best_Edge': 'Edge', 'Best_Units': 'Units'
             })
 
             st.dataframe(
@@ -937,10 +1052,9 @@ if os.path.exists(PRED_FILE):
                 }
             )
 
-        # -- Kalshi Game Table --
+        # Kalshi game table
         if not game_df.empty:
-            st.markdown('<div class="section-title">Kalshi Games Table</div>', unsafe_allow_html=True)
-
+            st.markdown('<div class="section-title">Kalshi Games</div>', unsafe_allow_html=True)
             table_game = game_df.copy()
             table_game["Confidence"] = table_game["Conf"].apply(lambda x: f"{x:.1%}") if "Conf" in table_game.columns else ""
             if "Kalshi_Ticker" in table_game.columns:
@@ -950,9 +1064,7 @@ if os.path.exists(PRED_FILE):
             game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Edge_Pct", "Units", "Rating", "Link"]
             game_cols = [c for c in game_cols if c in table_game.columns]
             table_game = table_game[game_cols].rename(columns={
-                "Date/Time": "Time",
-                "Kalshi_Price": "Price",
-                "Edge_Pct": "Edge",
+                "Date/Time": "Time", "Kalshi_Price": "Price", "Edge_Pct": "Edge",
             })
             st.dataframe(
                 table_game,
@@ -971,160 +1083,4 @@ if os.path.exists(PRED_FILE):
                 }
             )
 
-    # ==========================================
-    # BOTTOM ROW: Record + Performance side by side
-    # ==========================================
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    col_record, col_perf = st.columns(2)
-
-    # --- RECORD ---
-    with col_record:
-        st.markdown('<div class="section-title">Betting Record</div>', unsafe_allow_html=True)
-
-        if os.path.exists(BET_HIST_FILE):
-            bet_hist = pd.read_csv(BET_HIST_FILE)
-            pending_bets = bet_hist[bet_hist["result"] == "pending"]
-            pending_count = len(pending_bets)
-
-            if pending_count > 0:
-                st.caption(f"{pending_count} pending bet{'s' if pending_count != 1 else ''}")
-                pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
-                pending_display["wager"] = pending_display["wager"].apply(lambda x: f"${x:.2f}")
-                st.dataframe(pending_display, use_container_width=True, hide_index=True, height=180)
-
-            settled = bet_hist[bet_hist["result"].isin(["win", "loss", "void"])]
-            if len(settled) > 0:
-                wins = len(settled[settled["result"] == "win"])
-                losses = len(settled[settled["result"] == "loss"])
-                total_profit = settled["profit"].astype(float).sum()
-                total_wagered = settled["wager"].astype(float).sum()
-                roi = (total_profit / total_wagered * 100) if total_wagered > 0 else 0
-
-                rc1, rc2, rc3 = st.columns(3)
-                rc1.metric("Record", f"{wins}W-{losses}L")
-                rc2.metric("Profit", f"{total_profit:+.2f}U")
-                rc3.metric("ROI", f"{roi:+.1f}%")
-
-                recent = settled.tail(10).iloc[::-1].copy()
-                recent["Result"] = recent["result"].apply(
-                    lambda x: {"win": "W", "loss": "L", "void": "P"}.get(x, x)
-                )
-                recent["P/L"] = recent["profit"].apply(lambda x: f"{float(x):+.2f}")
-                display_cols = ["date", "platform", "line", "Result", "P/L"]
-                st.dataframe(recent[display_cols], use_container_width=True, hide_index=True, height=280)
-            elif pending_count == 0:
-                st.caption("No betting history yet.")
-        else:
-            st.caption("No betting history file found.")
-
-    # --- PERFORMANCE ---
-    with col_perf:
-        st.markdown('<div class="section-title">Model Performance</div>', unsafe_allow_html=True)
-
-        if os.path.exists(PERF_FILE):
-            hist = pd.read_csv(PERF_FILE)
-            hist['date'] = pd.to_datetime(hist['date'])
-
-            def get_metrics(df_subset):
-                if len(df_subset) == 0:
-                    return 0, 0.0, 0.0
-                df_subset = df_subset.copy()
-                df_subset['units'] = df_subset['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
-                cnt = len(df_subset)
-                wins = df_subset['pick_correct'].sum()
-                rate = wins / cnt
-                profit = df_subset['units'].sum()
-                return cnt, rate, profit
-
-            try:
-                today = pd.Timestamp.now(tz='US/Eastern').normalize()
-            except (pytz.exceptions.UnknownTimeZoneError, TypeError):
-                today = pd.Timestamp.now().normalize() - timedelta(hours=5)
-
-            yesterday = today - timedelta(days=1)
-            start_7 = today - timedelta(days=7)
-
-            df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
-            df_7 = hist[hist['date'].dt.date >= start_7.date()]
-            df_30 = hist
-
-            pc1, pc2, pc3 = st.columns(3)
-            cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
-            pc1.metric("Yesterday", f"{prof_y:+.1f}U", f"{cnt_y} bets | {rate_y:.0%}")
-
-            cnt_7, rate_7, prof_7 = get_metrics(df_7)
-            pc2.metric("7 Days", f"{prof_7:+.1f}U", f"{cnt_7} bets | {rate_7:.0%}")
-
-            cnt_30, rate_30, prof_30 = get_metrics(df_30)
-            pc3.metric("All Time", f"{prof_30:+.1f}U", f"{cnt_30} bets | {rate_30:.0%}")
-
-            hist['units'] = hist['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
-            hist['cumulative_units'] = hist['units'].cumsum()
-
-            chart = alt.Chart(hist).mark_area(
-                line={'color': '#1a4d2e'},
-                color=alt.Gradient(
-                    gradient='linear',
-                    stops=[
-                        alt.GradientStop(color='rgba(26, 77, 46, 0.1)', offset=0),
-                        alt.GradientStop(color='rgba(26, 77, 46, 0.3)', offset=1)
-                    ],
-                    x1=1, x2=1, y1=1, y2=0
-                )
-            ).encode(
-                x=alt.X('date:T', title=None, axis=alt.Axis(format='%b %d', labelAngle=0)),
-                y=alt.Y('cumulative_units:Q', title='Units'),
-                tooltip=[
-                    alt.Tooltip('date:T', title='Date', format='%b %d'),
-                    alt.Tooltip('cumulative_units:Q', title='Total Units', format='.1f')
-                ]
-            ).properties(height=220).configure_axis(
-                grid=True,
-                gridColor='#e5e5e0',
-                domainColor='#e5e5e0'
-            ).configure_view(
-                strokeWidth=0
-            )
-            st.altair_chart(chart, use_container_width=True)
-
-            with st.expander("View Bet History"):
-                hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
-                hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
-                hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
-                hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
-
-                df_display = hist.sort_values('date', ascending=False)
-                df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(
-                    columns={'Date_Str': 'Date', 'conf': 'Conf'}
-                )
-                df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
-
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-        else:
-            st.caption("No performance data yet.")
-            if st.button("Run Backtest"):
-                with st.spinner("Training models..."):
-                    f = io.StringIO()
-                    try:
-                        with redirect_stdout(f):
-                            backtest.run_backtest(league=active_league)
-                        if os.path.exists(PERF_FILE):
-                            st.success("Done!")
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-    st.caption(f"{league_settings['label']} | {os.path.basename(MODEL_FILE)} | {os.path.basename(DATA_FILE)}")
-
-else:
-    st.warning("No predictions found.")
-    if st.button("Run Prediction Engine"):
-        with st.spinner("Calculating..."):
-            predict.main(
-                spread_overrides=st.session_state.get(spread_overrides_key, {}),
-                league=active_league,
-            )
-            st.session_state[predictions_loaded_key] = True
-        st.rerun()
+st.caption(f"Men's: {os.path.basename(league_data['mens']['paths']['model_file'])} | Women's: {os.path.basename(league_data['womens']['paths']['model_file'])}")
