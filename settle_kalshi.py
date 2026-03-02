@@ -66,13 +66,14 @@ def _existing_bet_ids(rows: list[dict]) -> set[str]:
 
 def _find_pending_kalshi_match(
     rows: list[dict], ticker: str, wager: float, title: str = "",
+    side: str = "",
 ) -> int | None:
     """Find a pending Kalshi row that matches this settlement.
 
     Kalshi bets logged via share URLs don't set bet_id, so we match on
     platform=Kalshi + result=pending + approximate wager, plus discriminators
-    extracted from the ticker abbreviation and market title spread value.
-    Returns the row index, or None if no unique match.
+    extracted from the ticker abbreviation, market title spread value, and
+    the YES/NO side.  Returns the row index, or None if no unique match.
     """
     # Extract team abbreviation from ticker tail (e.g. "SMC8" -> "SMC")
     tail = ticker.rsplit("-", 1)[-1] if "-" in ticker else ""
@@ -82,6 +83,8 @@ def _find_pending_kalshi_match(
     # Extract spread number from market title (e.g. "... wins by over 8.5 Points")
     spread_match = re.search(r"(\d+\.?\d*)\s+Points", title, re.IGNORECASE)
     title_spread = float(spread_match.group(1)) if spread_match else None
+
+    side_upper = side.upper()
 
     # First pass: find pending Kalshi rows matching wager
     wager_matches: list[int] = []
@@ -103,19 +106,29 @@ def _find_pending_kalshi_match(
     if len(wager_matches) == 1:
         return wager_matches[0]
 
-    # Multiple wager matches -- narrow by ticker abbreviation
-    if ticker_abbr:
+    # Multiple wager matches -- narrow by YES/NO side
+    if side_upper:
+        side_matches = [
+            i for i in wager_matches
+            if side_upper in rows[i].get("line", "").upper()
+        ]
+        if len(side_matches) == 1:
+            return side_matches[0]
+        if side_matches:
+            wager_matches = side_matches
+
+    # Narrow by ticker abbreviation
+    if ticker_abbr and len(wager_matches) > 1:
         abbr_matches = [
             i for i in wager_matches
-            if ticker_abbr in row.get("line", "").upper()
-            for row in [rows[i]]
+            if ticker_abbr in rows[i].get("line", "").upper()
         ]
         if len(abbr_matches) == 1:
             return abbr_matches[0]
         if abbr_matches:
             wager_matches = abbr_matches
 
-    # Still ambiguous -- narrow by spread number from title
+    # Narrow by spread number from title
     if title_spread is not None and len(wager_matches) > 1:
         spread_matches = []
         for i in wager_matches:
@@ -203,21 +216,22 @@ def _result_from_profit(profit: float) -> str:
         return "win"
     if profit < 0:
         return "loss"
-    return "push"
+    return "void"
 
 
 def _parse_settlement(s: dict) -> list[dict]:
     """Parse a single Kalshi settlement into one or more row-ready dicts.
 
-    When only one side was traded, returns a single entry. When both YES
-    and NO were filled, returns two entries (one per side) with revenue
-    split proportionally by cost so each row's P&L is accurate.
+    When only one side was traded, returns a single entry.  When both YES
+    and NO were filled, returns two entries with revenue assigned by market
+    outcome: the winning side receives $1/contract and the losing side $0.
     """
     yes_count = s.get("yes_count", 0) or 0
     no_count = s.get("no_count", 0) or 0
     yes_cost = s.get("yes_total_cost", 0) or 0
     no_cost = s.get("no_total_cost", 0) or 0
     revenue = s.get("revenue", 0) or 0
+    market_result = s.get("market_result", "")  # "yes", "no", or "all_no" / "all_yes"
     date_str = _parse_date(s.get("settled_time", ""))
 
     if yes_count == 0 and no_count == 0:
@@ -238,13 +252,15 @@ def _parse_settlement(s: dict) -> list[dict]:
         return [{"side": "NO", "wager": wager, "payout": payout,
                  "profit": profit, "result": _result_from_profit(profit), "date": date_str}]
 
-    # Both sides filled -- split revenue proportionally by cost
-    total_cost = yes_cost + no_cost
-    yes_revenue = round(revenue * yes_cost / total_cost) if total_cost else 0
-    no_revenue = revenue - yes_revenue
+    # Both sides filled -- assign revenue by market outcome.
+    # In a binary Kalshi market, the winning side pays $1/contract and
+    # the losing side pays $0.
+    yes_won = market_result.lower() in ("yes", "all_yes")
+    yes_rev_cents = yes_count * 100 if yes_won else 0
+    no_rev_cents = no_count * 100 if not yes_won else 0
 
     entries = []
-    for side, cost, rev in [("YES", yes_cost, yes_revenue), ("NO", no_cost, no_revenue)]:
+    for side, cost, rev in [("YES", yes_cost, yes_rev_cents), ("NO", no_cost, no_rev_cents)]:
         wager = cost / 100
         payout = rev / 100
         profit = round(payout - wager, 2)
@@ -333,7 +349,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
 
             # Check for a pending Kalshi bet that matches this settlement
             pending_idx = _find_pending_kalshi_match(
-                existing_rows, ticker, parsed["wager"], title,
+                existing_rows, ticker, parsed["wager"], title, parsed["side"],
             )
             if pending_idx is not None:
                 existing_rows[pending_idx]["result"] = parsed["result"]
