@@ -1892,9 +1892,9 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_parts.append("")
         msg_parts.extend(summary["details"][:20])
 
-    # 2) Import settled Kalshi positions (30-day window to catch missed runs)
+    # 2) Import settled Kalshi positions (uses persisted sync cursor)
     try:
-        kalshi_result = settle_to_csv(days=30)
+        kalshi_result = settle_to_csv()
         logged = kalshi_result["logged"]
         kalshi_settled = kalshi_result["settled"]
         skipped = kalshi_result["skipped"]
