@@ -8,8 +8,9 @@ from datetime import datetime
 
 def normalize_team_name(name: str) -> str:
     """Normalize team name for matching - extract just the school name."""
-    # Strip gendered prefix+mascot first (NCAAW: "Lady Rebels", "Lady Braves", etc.)
-    name = re.sub(r"\s+Lady\s+\w+$", "", name, flags=re.IGNORECASE)
+    # Strip gendered prefix+mascot first so suffix removal doesn't leave orphan "Lady"
+    # (NCAAW: "Lady Rebels", "Lady Golden Eagles", etc.)
+    name = re.sub(r"\s+Lady\s+[\w\s]+$", "", name, flags=re.IGNORECASE)
 
     # Remove common suffixes/mascots
     suffixes = [
@@ -118,10 +119,10 @@ class MarketMapper:
         return None
 
     def _teams_in_rules(self, rules: str, team_keyword: str) -> bool:
-        """Check if team appears in rules_primary or title fields.
+        """Check if team appears in a text field (e.g. rules_primary).
 
         Handles abbreviation mismatches (e.g. 'State' vs 'St.') by trying
-        both expanded and abbreviated variants.
+        expanded and abbreviated variants.
         """
         keyword = team_keyword.lower()
         text = rules.lower()
@@ -129,11 +130,13 @@ class MarketMapper:
         if keyword in text:
             return True
 
-        # Try abbreviation variants: "state" <-> "st.", "saint" <-> "st."
+        # Try abbreviation variants: "state" -> "st.", "saint" -> "st.",
+        # "st." -> "state", "st." -> "saint"
         variants = [
             (r"\bstate\b", "st."),
-            (r"\bst\.\b", "state"),
+            (r"\bst\.", "state"),
             (r"\bsaint\b", "st."),
+            (r"\bst\.", "saint"),
         ]
         for pattern, replacement in variants:
             alt = re.sub(pattern, replacement, keyword)

@@ -1,6 +1,5 @@
 """Edge calculation and bet rating logic."""
 
-import math
 from enum import Enum
 
 
@@ -32,8 +31,11 @@ KALSHI_TAKER_FEE_COEFF = 0.07
 def kalshi_fee_cents(price_cents: float) -> float:
     """Kalshi taker fee in cents for a single contract.
 
-    Fee = ceil(0.07 * P * (1-P) * 100) / 100, but for a single contract
-    the rounding is per-trade so we return the raw per-contract amount.
+    Fee = 0.07 * P * (1-P) * 100, where P = price_cents / 100.
+
+    Kalshi rounds up per-trade (ceil to nearest cent), but we return
+    the raw per-contract amount since rounding applies to the total
+    trade, not individual contracts.
     """
     p = price_cents / 100.0
     return KALSHI_TAKER_FEE_COEFF * p * (1.0 - p) * 100.0
@@ -126,7 +128,7 @@ def analyze_bet(model_prob: float, kalshi_yes_price: float) -> dict:
         kalshi_yes_price: Kalshi Yes price (0-100 scale)
 
     Returns:
-        Dict with edge, rating, implied_prob, ev
+        Dict with edge, edge_pct, rating, implied_prob, model_prob, ev
     """
     implied_prob = kalshi_implied_prob(kalshi_yes_price)
     edge = calculate_edge(model_prob, implied_prob)
