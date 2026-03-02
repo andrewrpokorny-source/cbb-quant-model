@@ -68,7 +68,10 @@ class KalshiClient:
 
             signature = self.private_key.sign(
                 message,
-                padding.PKCS1v15(),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.DIGEST_LENGTH,
+                ),
                 hashes.SHA256(),
             )
             return base64.b64encode(signature).decode()
@@ -85,7 +88,9 @@ class KalshiClient:
 
         if self.private_key:
             timestamp = str(int(time.time() * 1000))
-            signature = self._sign_request(method, path, timestamp)
+            # Signing path must be the full URL path including the API prefix
+            sign_path = f"/trade-api/v2{path}"
+            signature = self._sign_request(method, sign_path, timestamp)
             if signature:
                 headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp
                 headers["KALSHI-ACCESS-SIGNATURE"] = signature
@@ -248,3 +253,45 @@ class KalshiClient:
             "ticker": ticker,
             "title": market.get("title", ""),
         }
+
+    def get_settlements(
+        self,
+        limit: int = 200,
+        ticker: Optional[str] = None,
+        min_ts: Optional[int] = None,
+        max_ts: Optional[int] = None,
+    ) -> list[dict]:
+        """Fetch settled positions from the user's portfolio.
+
+        Args:
+            limit: Max results per page (API max 200).
+            ticker: Filter to a specific market ticker.
+            min_ts: Minimum settlement timestamp (epoch seconds).
+            max_ts: Maximum settlement timestamp (epoch seconds).
+
+        Returns:
+            List of settlement dicts from the API.
+        """
+        all_settlements: list[dict] = []
+        cursor: Optional[str] = None
+
+        while True:
+            params: dict = {"limit": min(limit, 200)}
+            if ticker:
+                params["ticker"] = ticker
+            if min_ts is not None:
+                params["min_ts"] = min_ts
+            if max_ts is not None:
+                params["max_ts"] = max_ts
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/portfolio/settlements", params)
+            settlements = result.get("settlements", [])
+            all_settlements.extend(settlements)
+
+            cursor = result.get("cursor")
+            if not cursor or len(settlements) < min(limit, 200):
+                break
+
+        return all_settlements

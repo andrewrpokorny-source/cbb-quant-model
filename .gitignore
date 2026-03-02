@@ -18,6 +18,7 @@ wbb_training_data_processed.csv
 wbb_model_v2.pkl
 telegram_bot.log
 .telegram_bot.lock
+.kalshi_sync_state.json
 
 IMPROVEMENT_PLAN.md
 betting_history.csv
