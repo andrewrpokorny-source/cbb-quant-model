@@ -575,6 +575,38 @@ if not st.session_state.get(predictions_loaded_key, False):
 predictions_with_line_shopping = predict.get_latest_predictions(active_league)
 games_needing_spreads = predict.get_games_needing_spreads(active_league)
 
+# --- SIDEBAR: MISSING SPREADS ---
+if games_needing_spreads:
+    with st.sidebar:
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        n_missing = len(games_needing_spreads)
+        st.caption(f"{n_missing} game{'s' if n_missing != 1 else ''} missing spread")
+        with st.expander("Enter spreads", expanded=False):
+            with st.form("spread_overrides_form"):
+                override_inputs = {}
+                for game in games_needing_spreads:
+                    matchup = game['matchup']
+                    st.markdown(f"**{matchup}**")
+                    override_inputs[matchup] = st.text_input(
+                        matchup,
+                        placeholder="-7.5 or +3",
+                        key=f"spread_{active_league}_{game['id']}",
+                        label_visibility="collapsed",
+                    )
+                submitted = st.form_submit_button("Apply & Re-run")
+                if submitted:
+                    overrides = st.session_state.get(spread_overrides_key, {})
+                    for matchup, val in override_inputs.items():
+                        val = val.strip()
+                        if val:
+                            try:
+                                overrides[matchup] = float(val)
+                            except ValueError:
+                                st.error(f"Invalid: {val}")
+                    st.session_state[spread_overrides_key] = overrides
+                    st.session_state[predictions_loaded_key] = False
+                    st.rerun()
+
 
 # --- KALSHI URL HELPER ---
 _KALSHI_SERIES_SLUGS = {
@@ -677,49 +709,6 @@ if os.path.exists(PRED_FILE):
             </div>
         </div>
         ''', unsafe_allow_html=True)
-
-    # --- MISSING SPREADS (compact banner) ---
-    if games_needing_spreads:
-        n_missing = len(games_needing_spreads)
-        st.markdown(f'''
-        <div class="missing-spreads-banner">
-            <span class="ms-count">{n_missing}</span>
-            <span class="ms-text">game{"s" if n_missing != 1 else ""} missing ESPN spread</span>
-        </div>
-        ''', unsafe_allow_html=True)
-
-        with st.expander("Enter missing spreads", expanded=False):
-            with st.form("spread_overrides_form"):
-                override_inputs = {}
-                form_cols = st.columns(3)
-                for i, game in enumerate(games_needing_spreads):
-                    matchup = game['matchup']
-                    with form_cols[i % 3]:
-                        st.markdown(f'''
-                        <div class="spread-game-row">
-                            <div class="spread-game-teams">{matchup}</div>
-                            <div class="spread-game-time">{game.get("time_str", "")}</div>
-                        </div>
-                        ''', unsafe_allow_html=True)
-                        override_inputs[matchup] = st.text_input(
-                            matchup,
-                            placeholder="-7.5 or +3",
-                            key=f"spread_{active_league}_{game['id']}",
-                            label_visibility="collapsed",
-                        )
-                submitted = st.form_submit_button("Apply & Re-run")
-                if submitted:
-                    overrides = st.session_state.get(spread_overrides_key, {})
-                    for matchup, val in override_inputs.items():
-                        val = val.strip()
-                        if val:
-                            try:
-                                overrides[matchup] = float(val)
-                            except ValueError:
-                                st.error(f"Invalid spread for {matchup}: {val}")
-                    st.session_state[spread_overrides_key] = overrides
-                    st.session_state[predictions_loaded_key] = False
-                    st.rerun()
 
     # ==========================================
     # TWO-COLUMN LAYOUT: Value Bets | Slate Table
