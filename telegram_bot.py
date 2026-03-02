@@ -234,7 +234,7 @@ def ensure_csv_exists():
 
     logger.info("Migrating betting_history.csv: adding %s column(s) (%d rows)", missing, len(rows))
     tmp_path = BETTING_HISTORY + ".migrate_tmp"
-    defaults = {"bet_id": "", "league": "mens"}
+    defaults = {"bet_id": "", "league": ""}
     try:
         with open(tmp_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
@@ -1892,18 +1892,24 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_parts.append("")
         msg_parts.extend(summary["details"][:20])
 
-    # 2) Import settled Kalshi positions
+    # 2) Import settled Kalshi positions (30-day window to catch missed runs)
     try:
-        kalshi_result = settle_to_csv(days=7)
+        kalshi_result = settle_to_csv(days=30)
         logged = kalshi_result["logged"]
+        kalshi_settled = kalshi_result["settled"]
         skipped = kalshi_result["skipped"]
         if kalshi_result["error"]:
             msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
-        elif logged:
-            profit = sum(float(r["profit"]) for r in logged)
-            wins = sum(1 for r in logged if r["result"] == "win")
-            losses = sum(1 for r in logged if r["result"] == "loss")
-            msg_parts.append(f"\nKalshi: +{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+        elif logged or kalshi_settled:
+            parts = []
+            if logged:
+                profit = sum(float(r["profit"]) for r in logged)
+                wins = sum(1 for r in logged if r["result"] == "win")
+                losses = sum(1 for r in logged if r["result"] == "loss")
+                parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+            if kalshi_settled:
+                parts.append(f"{kalshi_settled} pending settled")
+            msg_parts.append(f"\nKalshi: {', '.join(parts)}")
         elif skipped:
             msg_parts.append(f"\nKalshi: all {skipped} already logged")
         else:

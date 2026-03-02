@@ -49,18 +49,54 @@ def _clean_game_title(title: str) -> str:
     return parts[0].strip()
 
 
-def _existing_bet_ids(csv_path: str) -> set[str]:
-    """Read existing bet_id values from the CSV for dedup."""
-    ids: set[str] = set()
+def _read_existing_rows(csv_path: str) -> list[dict]:
+    """Read all rows from the CSV."""
     if not os.path.exists(csv_path):
-        return ids
+        return []
     with open(csv_path, "r", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            bid = row.get("bet_id", "").strip()
-            if bid:
-                ids.add(bid)
-    return ids
+        return list(csv.DictReader(f))
+
+
+def _existing_bet_ids(rows: list[dict]) -> set[str]:
+    """Extract non-empty bet_id values from rows."""
+    return {r.get("bet_id", "").strip() for r in rows if r.get("bet_id", "").strip()}
+
+
+def _find_pending_kalshi_match(rows: list[dict], ticker: str, wager: float) -> int | None:
+    """Find a pending Kalshi row that matches this settlement.
+
+    Kalshi bets logged via share URLs don't set bet_id, so we match on
+    platform=Kalshi + result=pending + approximate wager. The ticker's
+    embedded team abbreviation is also checked against the line field.
+    Returns the row index, or None.
+    """
+    # Extract team abbreviation from ticker tail (e.g. "SMC8" -> "SMC")
+    tail = ticker.rsplit("-", 1)[-1] if "-" in ticker else ""
+    ticker_team = re.match(r"([A-Z]+)", tail)
+    ticker_abbr = ticker_team.group(1).upper() if ticker_team else ""
+
+    candidates: list[int] = []
+    for i, row in enumerate(rows):
+        if row.get("result", "").strip().lower() != "pending":
+            continue
+        if row.get("platform", "").strip().upper() != "KALSHI":
+            continue
+        try:
+            row_wager = round(float(row.get("wager", 0)), 2)
+        except (TypeError, ValueError):
+            continue
+        if abs(row_wager - wager) > 0.02:
+            continue
+        # If we have a ticker abbreviation, check it appears in the line
+        if ticker_abbr:
+            row_line = row.get("line", "").upper()
+            if ticker_abbr in row_line:
+                candidates.append(i)
+                continue
+        # No ticker abbr or no line match -- still a wager-only candidate
+        candidates.append(i)
+
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _ensure_csv_headers(csv_path: str):
@@ -88,7 +124,7 @@ def _ensure_csv_headers(csv_path: str):
     with open(csv_path, "r", newline="") as f:
         rows = list(csv.DictReader(f))
 
-    defaults = {"bet_id": "", "league": "mens"}
+    defaults = {"bet_id": "", "league": ""}
     tmp_path = csv_path + ".migrate_tmp"
     with open(tmp_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
@@ -122,97 +158,151 @@ def _reconstruct_line(title: str, side: str) -> str:
     return f"{side} side"
 
 
-def settle_to_csv(days: int = 7, dry_run: bool = False) -> dict:
+def _parse_settlement(s: dict) -> dict | None:
+    """Parse a single Kalshi settlement into a row-ready dict.
+
+    Uses combined cost/revenue across both YES and NO sides so that
+    positions with fills on both sides are handled correctly.
+    """
+    yes_count = s.get("yes_count", 0) or 0
+    no_count = s.get("no_count", 0) or 0
+    yes_cost = s.get("yes_total_cost", 0) or 0
+    no_cost = s.get("no_total_cost", 0) or 0
+    revenue = s.get("revenue", 0) or 0
+
+    if yes_count == 0 and no_count == 0:
+        return None
+
+    # Combine both sides for net cost and determine primary side for line display
+    wager_cents = yes_cost + no_cost
+    if yes_count > 0 and no_count > 0:
+        side = "YES" if yes_count >= no_count else "NO"
+    elif yes_count > 0:
+        side = "YES"
+    else:
+        side = "NO"
+
+    wager = wager_cents / 100
+    payout = revenue / 100
+    profit = round(payout - wager, 2)
+
+    if profit > 0:
+        result = "win"
+    elif profit < 0:
+        result = "loss"
+    else:
+        result = "void"
+
+    settled_time = s.get("settled_time", "")
+    if settled_time:
+        try:
+            dt = datetime.fromisoformat(settled_time.replace("Z", "+00:00"))
+            date_str = dt.strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            date_str = settled_time[:10] if len(settled_time) >= 10 else ""
+    else:
+        date_str = ""
+
+    return {
+        "side": side,
+        "wager": wager,
+        "payout": payout,
+        "profit": profit,
+        "result": result,
+        "date": date_str,
+    }
+
+
+def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     """Fetch Kalshi CBB settlements and log new ones to betting_history.csv.
 
-    Returns dict with keys: logged (list[dict]), skipped (int), error (str|None).
+    Returns dict with keys: logged (list[dict]), settled (int), skipped (int),
+    error (str|None).  ``settled`` counts pending rows that were updated in
+    place rather than appended.
     """
     client = KalshiClient()
 
     if not client.private_key or not client.api_key:
-        return {"logged": [], "skipped": 0, "error": "Kalshi credentials not configured"}
+        return {"logged": [], "settled": 0, "skipped": 0, "error": "Kalshi credentials not configured"}
 
     min_ts = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
     settlements = client.get_settlements(min_ts=min_ts)
 
     cbb = [s for s in settlements if any(s.get("ticker", "").startswith(p) for p in CBB_PREFIXES)]
     if not cbb:
-        return {"logged": [], "skipped": 0, "error": None}
+        return {"logged": [], "settled": 0, "skipped": 0, "error": None}
 
     _ensure_csv_headers(BETTING_HISTORY)
-    existing_ids = _existing_bet_ids(BETTING_HISTORY)
+    existing_rows = _read_existing_rows(BETTING_HISTORY)
+    existing_ids = _existing_bet_ids(existing_rows)
 
     new_rows = []
+    settled_count = 0
     skipped = 0
+    rows_modified = False
+
     for s in cbb:
         ticker = s.get("ticker", "")
         if ticker in existing_ids:
             skipped += 1
             continue
 
-        yes_count = s.get("yes_count", 0) or 0
-        no_count = s.get("no_count", 0) or 0
-        yes_cost = s.get("yes_total_cost", 0) or 0
-        no_cost = s.get("no_total_cost", 0) or 0
-        revenue = s.get("revenue", 0) or 0
-
-        if yes_count > 0:
-            side = "YES"
-            wager_cents = yes_cost
-        elif no_count > 0:
-            side = "NO"
-            wager_cents = no_cost
-        else:
+        parsed = _parse_settlement(s)
+        if parsed is None:
             skipped += 1
             continue
-
-        wager = wager_cents / 100
-        payout = revenue / 100
-
-        profit = round(payout - wager, 2)
-        if profit > 0:
-            result = "win"
-        elif profit < 0:
-            result = "loss"
-        else:
-            result = "void"
-
-        settled_time = s.get("settled_time", "")
-        if settled_time:
-            try:
-                dt = datetime.fromisoformat(settled_time.replace("Z", "+00:00"))
-                date_str = dt.strftime("%Y-%m-%d")
-            except (ValueError, TypeError):
-                date_str = settled_time[:10] if len(settled_time) >= 10 else ""
-        else:
-            date_str = ""
 
         market = client.get_market(ticker)
         title = market.get("title", ticker)
 
+        # Check for a pending Kalshi bet that matches this settlement
+        pending_idx = _find_pending_kalshi_match(existing_rows, ticker, parsed["wager"])
+        if pending_idx is not None:
+            # Update the existing pending row in place
+            existing_rows[pending_idx]["result"] = parsed["result"]
+            existing_rows[pending_idx]["payout"] = f"{parsed['payout']:.2f}"
+            existing_rows[pending_idx]["profit"] = f"{parsed['profit']:.2f}"
+            existing_rows[pending_idx]["bet_id"] = ticker
+            if not existing_rows[pending_idx].get("league", "").strip():
+                existing_rows[pending_idx]["league"] = _league_from_ticker(ticker)
+            settled_count += 1
+            rows_modified = True
+            continue
+
         row = {
-            "date": date_str,
+            "date": parsed["date"],
             "platform": "Kalshi",
             "game": _clean_game_title(title),
             "bet_type": _bet_type_from_ticker(ticker),
-            "line": _reconstruct_line(title, side),
+            "line": _reconstruct_line(title, parsed["side"]),
             "odds": "",
-            "wager": f"{wager:.2f}",
-            "result": result,
-            "payout": f"{payout:.2f}",
-            "profit": f"{profit:.2f}",
+            "wager": f"{parsed['wager']:.2f}",
+            "result": parsed["result"],
+            "payout": f"{parsed['payout']:.2f}",
+            "profit": f"{parsed['profit']:.2f}",
             "bet_id": ticker,
             "league": _league_from_ticker(ticker),
         }
         new_rows.append(row)
 
-    if not dry_run and new_rows:
-        with open(BETTING_HISTORY, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-            for row in new_rows:
-                writer.writerow(row)
+    if not dry_run:
+        if rows_modified:
+            # Rewrite CSV with updated pending rows
+            tmp_path = BETTING_HISTORY + ".settle_tmp"
+            with open(tmp_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+                writer.writeheader()
+                for r in existing_rows:
+                    writer.writerow({h: r.get(h, "") for h in CSV_HEADERS})
+            os.replace(tmp_path, BETTING_HISTORY)
 
-    return {"logged": new_rows, "skipped": skipped, "error": None}
+        if new_rows:
+            with open(BETTING_HISTORY, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+                for row in new_rows:
+                    writer.writerow(row)
+
+    return {"logged": new_rows, "settled": settled_count, "skipped": skipped, "error": None}
 
 
 def settle(days: int, dry_run: bool):
@@ -224,8 +314,9 @@ def settle(days: int, dry_run: bool):
         sys.exit(1)
 
     logged = result["logged"]
+    settled = result["settled"]
     skipped = result["skipped"]
-    total = len(logged) + skipped
+    total = len(logged) + settled + skipped
 
     if total == 0:
         print("No CBB settlements found.")
@@ -236,13 +327,15 @@ def settle(days: int, dry_run: bool):
         print(f"  {prefix}ADD: {row['bet_id']} | {row['game']} | {row['result']} | "
               f"wager=${float(row['wager']):.2f} profit=${float(row['profit']):+.2f}")
 
+    if settled:
+        print(f"  Updated {settled} pending bet(s) with settlement results")
     if skipped:
         print(f"  Skipped {skipped} already-logged settlement(s)")
 
     if dry_run:
-        print(f"\nDry run complete. {len(logged)} new row(s) would be appended.")
-    elif logged:
-        print(f"\nAppended {len(logged)} new row(s) to {BETTING_HISTORY}")
+        print(f"\nDry run complete. {len(logged)} new, {settled} updated.")
+    elif logged or settled:
+        print(f"\nDone. {len(logged)} appended, {settled} pending updated.")
 
 
 def main():
