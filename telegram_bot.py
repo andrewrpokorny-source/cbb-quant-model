@@ -42,6 +42,7 @@ from ocrmac import ocrmac
 
 from betting import VALUE_RATINGS
 from settle_bets import settle_pending_bets
+from settle_kalshi import settle_to_csv
 
 load_dotenv()
 
@@ -112,7 +113,7 @@ for handler in logging.root.handlers:
 logger = logging.getLogger(__name__)
 
 # CSV headers for betting_history.csv
-CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit", "bet_id"]
+CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit", "bet_id", "league"]
 
 # Short team abbreviations that are valid (not junk OCR text)
 VALID_SHORT_TEAMS = {
@@ -216,28 +217,34 @@ def ensure_csv_exists():
             writer.writerow(CSV_HEADERS)
         return
 
-    # Migrate: add bet_id column if missing
+    # Migrate: add missing columns (bet_id, league)
     with open(BETTING_HISTORY, "r", newline="") as f:
         reader = csv.reader(f)
         header = next(reader, None)
 
-    if header is None or "bet_id" in header:
+    if header is None:
+        return
+
+    missing = [col for col in CSV_HEADERS if col not in header]
+    if not missing:
         return
 
     with open(BETTING_HISTORY, "r", newline="") as f:
         rows = list(csv.DictReader(f))
 
-    logger.info("Migrating betting_history.csv: adding bet_id column (%d rows)", len(rows))
+    logger.info("Migrating betting_history.csv: adding %s column(s) (%d rows)", missing, len(rows))
     tmp_path = BETTING_HISTORY + ".migrate_tmp"
+    defaults = {"bet_id": "", "league": "mens"}
     try:
         with open(tmp_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
             writer.writeheader()
             for row in rows:
-                row.setdefault("bet_id", "")
+                for col in missing:
+                    row.setdefault(col, defaults.get(col, ""))
                 writer.writerow({h: row.get(h, "") for h in CSV_HEADERS})
         os.replace(tmp_path, BETTING_HISTORY)
-        logger.info("Migration complete: bet_id column added")
+        logger.info("Migration complete: %s column(s) added", missing)
     except Exception:
         logger.exception("CSV migration failed -- original file preserved")
         if os.path.exists(tmp_path):
@@ -627,6 +634,7 @@ def append_bet(bet: dict):
         "payout": bet.get("payout", ""),
         "profit": bet.get("profit", ""),
         "bet_id": bet.get("bet_id", ""),
+        "league": bet.get("league", ""),
     }
     parse_audit_id = bet.get("_parse_audit_id")
 
@@ -1870,18 +1878,39 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized_only
 async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Settle all pending bets."""
-    await update.message.reply_text("Settling pending bets...")
+    """Settle all pending bets and import Kalshi settlements."""
+    await update.message.reply_text("Settling bets...")
 
+    # 1) Settle pending (FanDuel etc.) bets via score lookup
     summary = settle_pending_bets()
 
     msg_parts = [
-        f"Settled: {summary['settled']}",
+        f"Pending settled: {summary['settled']}",
         f"Still pending: {summary['still_pending']}",
     ]
     if summary["details"]:
         msg_parts.append("")
-        msg_parts.extend(summary["details"][:20])  # Cap at 20 lines
+        msg_parts.extend(summary["details"][:20])
+
+    # 2) Import settled Kalshi positions
+    try:
+        kalshi_result = settle_to_csv(days=7)
+        logged = kalshi_result["logged"]
+        skipped = kalshi_result["skipped"]
+        if kalshi_result["error"]:
+            msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+        elif logged:
+            profit = sum(float(r["profit"]) for r in logged)
+            wins = sum(1 for r in logged if r["result"] == "win")
+            losses = sum(1 for r in logged if r["result"] == "loss")
+            msg_parts.append(f"\nKalshi: +{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+        elif skipped:
+            msg_parts.append(f"\nKalshi: all {skipped} already logged")
+        else:
+            msg_parts.append("\nKalshi: no recent settlements")
+    except Exception:
+        logger.exception("Kalshi settlement fetch failed")
+        msg_parts.append("\nKalshi: fetch failed")
 
     await update.message.reply_text("\n".join(msg_parts))
 
