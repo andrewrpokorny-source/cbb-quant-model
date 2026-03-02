@@ -300,6 +300,24 @@ class TestFindPendingKalshiMatch:
         )
         assert idx is None
 
+    def test_side_not_substring_of_team_name(self):
+        """NO should not match NORTHWESTERN -- word boundary required."""
+        rows = [
+            _make_pending_row("Northwestern -8.5 YES", 0.50),
+            _make_pending_row("Northwestern -8.5 NO", 0.50),
+        ]
+        no_idx = _find_pending_kalshi_match(
+            rows, "KXNCAAMBSPREAD-26JAN11NWRUTG-NW4", 0.50,
+            "Northwestern wins by over 8.5 Points?", "NO",
+        )
+        assert no_idx == 1
+
+        yes_idx = _find_pending_kalshi_match(
+            rows, "KXNCAAMBSPREAD-26JAN11NWRUTG-NW4", 0.50,
+            "Northwestern wins by over 8.5 Points?", "YES",
+        )
+        assert yes_idx == 0
+
     def test_disambiguate_by_spread(self):
         """Two pending bets at same wager, different spreads."""
         rows = [

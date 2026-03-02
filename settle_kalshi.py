@@ -106,11 +106,13 @@ def _find_pending_kalshi_match(
     if len(wager_matches) == 1:
         return wager_matches[0]
 
-    # Multiple wager matches -- narrow by YES/NO side
+    # Multiple wager matches -- narrow by YES/NO side (word boundary match
+    # to avoid "NO" matching inside team names like "NORTHWESTERN")
     if side_upper:
+        side_re = re.compile(r"\b" + re.escape(side_upper) + r"\b")
         side_matches = [
             i for i in wager_matches
-            if side_upper in rows[i].get("line", "").upper()
+            if side_re.search(rows[i].get("line", "").upper())
         ]
         if len(side_matches) == 1:
             return side_matches[0]
