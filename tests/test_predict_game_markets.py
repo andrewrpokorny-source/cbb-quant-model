@@ -88,6 +88,7 @@ def test_get_kalshi_game_edge_selects_best_side():
     # YES maps to home team; with P(home)=0.4, NO has probability 0.6 and is better at 30c.
     assert result["Kalshi_Side"] == "NO"
     assert result["Picked_Team"] == "Providence Friars"
-    assert result["Edge"] == pytest.approx(calculate_edge(0.6, 0.30))
+    from betting import kalshi_implied_prob
+    assert result["Edge"] == pytest.approx(calculate_edge(0.6, kalshi_implied_prob(30)))
     assert result["Kalshi_Yes_Team"] == "UConn Huskies"
 

@@ -8,6 +8,9 @@ from datetime import datetime
 
 def normalize_team_name(name: str) -> str:
     """Normalize team name for matching - extract just the school name."""
+    # Strip gendered prefix+mascot first (NCAAW: "Lady Rebels", "Lady Braves", etc.)
+    name = re.sub(r"\s+Lady\s+\w+$", "", name, flags=re.IGNORECASE)
+
     # Remove common suffixes/mascots
     suffixes = [
         "Wildcats", "Bulldogs", "Tigers", "Bears", "Jayhawks", "Blue Devils",
@@ -19,10 +22,16 @@ def normalize_team_name(name: str) -> str:
         "Spartans", "Buckeyes", "Huskies", "Bruins", "Lobos", "Catamounts",
         "Paladins", "Toreros", "Lancers", "Trailblazers", "Mavericks",
         "Coyotes", "Owls", "Aggies", "Longhorns", "Red Raiders", "Sooners",
-        "Cowboys", "Mountaineers", "Cyclones", "Horned Frogs", "Dons",
-        "Gaels", "Broncos", "Pilots", "Waves", "Lions", "Waves", "Panthers",
-        "Zags", "Demon Deacons", "Yellow Jackets", "Seminoles", "Hurricanes",
-        "Hokies", "Wolfpack", "Commodores", "Rebels", "Gamecocks",
+        "Cowboys", "Cowgirls", "Mountaineers", "Cyclones", "Horned Frogs",
+        "Dons", "Gaels", "Broncos", "Pilots", "Waves", "Lions", "Waves",
+        "Panthers", "Zags", "Demon Deacons", "Yellow Jackets", "Seminoles",
+        "Hurricanes", "Hokies", "Wolfpack", "Commodores", "Rebels",
+        "Gamecocks", "Ladyjacks", "Devilettes", "Lopes", "Mean Green",
+        "Green Wave", "Roadrunners", "Bulls", "Shockers", "Thunderbirds",
+        "Runnin' Bulldogs", "Mustangs", "Bobcats", "Penguins", "Flyers",
+        "Billikens", "Rams", "Bison", "Terriers", "Retrievers", "Peacocks",
+        "Anteaters", "49ers", "Highlanders", "Matadors", "Titans",
+        "Vaqueros", "Islanders", "Salukis",
     ]
 
     for suffix in suffixes:
@@ -109,8 +118,29 @@ class MarketMapper:
         return None
 
     def _teams_in_rules(self, rules: str, team_keyword: str) -> bool:
-        """Check if team appears in rules_primary field."""
-        return team_keyword.lower() in rules.lower()
+        """Check if team appears in rules_primary or title fields.
+
+        Handles abbreviation mismatches (e.g. 'State' vs 'St.') by trying
+        both expanded and abbreviated variants.
+        """
+        keyword = team_keyword.lower()
+        text = rules.lower()
+
+        if keyword in text:
+            return True
+
+        # Try abbreviation variants: "state" <-> "st.", "saint" <-> "st."
+        variants = [
+            (r"\bstate\b", "st."),
+            (r"\bst\.\b", "state"),
+            (r"\bsaint\b", "st."),
+        ]
+        for pattern, replacement in variants:
+            alt = re.sub(pattern, replacement, keyword)
+            if alt != keyword and alt in text:
+                return True
+
+        return False
 
     def _similarity(self, a: str, b: str) -> float:
         """Calculate string similarity ratio."""

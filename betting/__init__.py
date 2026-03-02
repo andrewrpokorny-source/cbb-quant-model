@@ -5,6 +5,7 @@ from .ev_calculator import (
     get_rating,
     EdgeRating,
     analyze_bet,
+    kalshi_implied_prob,
     VALUE_RATINGS,
     RATING_RANK,
 )
@@ -32,5 +33,6 @@ __all__ = [
     "calculate_line_shopping",
     "find_breakeven_spread",
     "format_line_shopping_text",
+    "kalshi_implied_prob",
     "STANDARD_IMPLIED_PROB",
 ]

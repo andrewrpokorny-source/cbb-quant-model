@@ -473,8 +473,8 @@ def should_refresh_predictions():
     except (OSError, ValueError, TypeError):
         return True
 
-# Run predictions once on startup (always run to get line shopping data)
-if not st.session_state.get(predictions_loaded_key, False):
+# Run predictions on startup or when stale
+if not st.session_state.get(predictions_loaded_key, False) or should_refresh_predictions():
     with st.spinner("Loading predictions..."):
         predict.main(
             spread_overrides=st.session_state.get(spread_overrides_key, {}),

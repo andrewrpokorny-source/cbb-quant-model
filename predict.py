@@ -19,7 +19,7 @@ except ImportError:
     print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
@@ -381,9 +381,8 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                 print(f"      No Kalshi ask price available for {ticker} -- market may be illiquid")
                 return result
 
-            implied_prob = bet_price / 100.0
+            implied_prob = kalshi_implied_prob(bet_price)
 
-            # Calculate edge using the correct implied probability
             edge = calculate_edge(model_prob, implied_prob)
             rating = get_rating(edge)
             units = recommended_units(edge, implied_prob)
@@ -508,7 +507,7 @@ def get_kalshi_game_edge(
             side_candidates = []
 
             if yes_price is not None:
-                implied_yes = yes_price / 100.0
+                implied_yes = kalshi_implied_prob(yes_price)
                 edge_yes = calculate_edge(yes_prob, implied_yes)
                 side_candidates.append(
                     {
@@ -522,7 +521,7 @@ def get_kalshi_game_edge(
 
             if no_price is not None:
                 no_prob = 1.0 - yes_prob
-                implied_no = no_price / 100.0
+                implied_no = kalshi_implied_prob(no_price)
                 edge_no = calculate_edge(no_prob, implied_no)
                 picked_team = away_team if yes_team == home_team else home_team
                 side_candidates.append(
@@ -556,7 +555,7 @@ def get_kalshi_game_edge(
             return result
 
         rating = get_rating(best_choice["edge"])
-        units = recommended_units(best_choice["edge"], best_choice["price"] / 100.0)
+        units = recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
         return {
             "Kalshi_Yes": best_choice["yes_price"],
             "Kalshi_No": best_choice["no_price"],
@@ -986,8 +985,13 @@ def main(spread_overrides=None, league="mens"):
     if combined_csv_frames:
         csv_df = pd.concat(combined_csv_frames, ignore_index=True)
         csv_df = csv_df.sort_values(by="Conf", ascending=False)
-        csv_df.to_csv(OUTPUT_FILE, index=False)
+    else:
+        csv_df = pd.DataFrame()
 
+    # Always write the CSV so stale data from previous runs is cleared.
+    csv_df.to_csv(OUTPUT_FILE, index=False)
+
+    if not csv_df.empty:
         archive_file = os.path.join(
             BASE_DIR,
             f"{PREDICTIONS_ARCHIVE_PREFIX}_{now_eastern.strftime('%Y%m%d')}.csv",
@@ -1144,7 +1148,7 @@ def check_live_prices(league="mens"):
             results.append(_placeholder(f"{side} N/A"))
             continue
 
-        implied_prob = live_price / 100.0
+        implied_prob = kalshi_implied_prob(live_price)
         edge = calculate_edge(model_prob, implied_prob)
         rating = get_rating(edge)
         units = recommended_units(edge, implied_prob)
