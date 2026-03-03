@@ -128,6 +128,12 @@ class TestReconstructLine:
     def test_game_market_colon_no(self):
         assert _reconstruct_line("Duke vs UNC: Winner", "NO") == "UNC ML"
 
+    def test_game_market_colon_at_yes(self):
+        assert _reconstruct_line("Oklahoma at Missouri: Winner", "YES") == "Oklahoma ML"
+
+    def test_game_market_colon_at_no(self):
+        assert _reconstruct_line("Oklahoma at Missouri: Winner", "NO") == "Missouri ML"
+
 
 # ---------------------------------------------------------------------------
 # _parse_settlement -- single side

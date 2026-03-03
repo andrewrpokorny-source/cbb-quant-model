@@ -192,7 +192,7 @@ def _reconstruct_line(title: str, side: str) -> str:
 
         # Game/winner market -- extract teams from the base title
         if qualifier.lower() == "winner":
-            team_parts = re.split(r"\s+vs\.?\s+", parts[0].strip(), flags=re.IGNORECASE)
+            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
             if len(team_parts) == 2:
                 if side == "YES":
                     return f"{team_parts[0].strip()} ML"
