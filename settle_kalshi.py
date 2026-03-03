@@ -195,8 +195,8 @@ def _reconstruct_line(title: str, side: str) -> str:
             team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
             if len(team_parts) == 2:
                 if side == "YES":
-                    return f"{team_parts[0].strip()} ML"
-                return f"{team_parts[1].strip()} ML"
+                    return f"{team_parts[1].strip()} ML"
+                return f"{team_parts[0].strip()} ML"
 
         # Spread markets: qualifier is like "Team -5.5"
         if side == "YES":
@@ -212,8 +212,8 @@ def _reconstruct_line(title: str, side: str) -> str:
     m = re.match(r"(.+?)\s+(?:at|vs\.?)\s+(.+?)(?:\s+Winner\??)?$", title, re.IGNORECASE)
     if m:
         if side == "YES":
-            return f"{m.group(1).strip()} ML"
-        return f"{m.group(2).strip()} ML"
+            return f"{m.group(2).strip()} ML"
+        return f"{m.group(1).strip()} ML"
     return f"{side} side"
 
 
