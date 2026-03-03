@@ -23,6 +23,40 @@ VALUE_RATINGS = ("STRONG", "GOOD")
 # Rank ordering for sorting/display (higher = better)
 RATING_RANK = {"STRONG": 3, "GOOD": 2, "MARGINAL": 1, "PASS": 0}
 
+# Kalshi taker fee: 0.07 * P * (1-P) per contract, max ~1.75c at P=50c.
+# https://kalshi.com/docs/kalshi-fee-schedule.pdf
+KALSHI_TAKER_FEE_COEFF = 0.07
+
+
+def kalshi_fee_cents(price_cents: float) -> float:
+    """Kalshi taker fee in cents for a single contract.
+
+    Fee = 0.07 * P * (1-P) * 100, where P = price_cents / 100.
+
+    Kalshi rounds up per-trade (ceil to nearest cent), but we return
+    the raw per-contract amount since rounding applies to the total
+    trade, not individual contracts.
+    """
+    p = price_cents / 100.0
+    return KALSHI_TAKER_FEE_COEFF * p * (1.0 - p) * 100.0
+
+
+def kalshi_implied_prob(price_cents: float) -> float:
+    """Convert Kalshi ask price to fee-adjusted implied probability.
+
+    The true cost of a contract is ask + taker fee, so the breakeven
+    probability is (ask + fee) / 100.
+
+    Args:
+        price_cents: Kalshi ask price on 0-100 scale (e.g., 40 = 40 cents)
+
+    Returns:
+        Fee-adjusted implied probability (0-1 scale)
+    """
+    p = price_cents / 100.0
+    fee = KALSHI_TAKER_FEE_COEFF * p * (1.0 - p)
+    return p + fee
+
 
 def calculate_edge(model_prob: float, market_implied_prob: float) -> float:
     """
@@ -30,12 +64,13 @@ def calculate_edge(model_prob: float, market_implied_prob: float) -> float:
 
     Edge = Model probability - Market implied probability
 
-    Kalshi fees are already captured in the bid-ask spread,
-    so no separate fee adjustment is needed.
+    For Kalshi markets, pass fee-adjusted implied probability from
+    kalshi_implied_prob() so fees are properly deducted from edge.
 
     Args:
         model_prob: Model's predicted probability (0-1)
-        market_implied_prob: Market's implied probability (0-1)
+        market_implied_prob: Market's implied probability (0-1),
+            fee-adjusted for Kalshi via kalshi_implied_prob()
 
     Returns:
         Edge as decimal (e.g., 0.06 = 6% edge)
@@ -86,24 +121,22 @@ def calculate_ev(
 
 def analyze_bet(model_prob: float, kalshi_yes_price: float) -> dict:
     """
-    Complete bet analysis.
-
-    Kalshi fees are already captured in the bid-ask spread,
-    so no separate fee adjustment is needed.
+    Complete bet analysis with Kalshi taker fees included.
 
     Args:
         model_prob: Model's predicted probability (0-1)
         kalshi_yes_price: Kalshi Yes price (0-100 scale)
 
     Returns:
-        Dict with edge, rating, implied_prob, ev
+        Dict with edge, edge_pct, rating, implied_prob, model_prob, ev
     """
-    implied_prob = kalshi_yes_price / 100.0
+    implied_prob = kalshi_implied_prob(kalshi_yes_price)
     edge = calculate_edge(model_prob, implied_prob)
     rating = get_rating(edge)
 
-    # Kalshi pays 100 cents for a winning contract that cost X cents
-    payout = (100 - kalshi_yes_price) / kalshi_yes_price if kalshi_yes_price > 0 else 0
+    # Effective cost includes taker fee
+    effective_cost = kalshi_yes_price + kalshi_fee_cents(kalshi_yes_price)
+    payout = (100 - effective_cost) / effective_cost if effective_cost > 0 else 0
     ev = calculate_ev(model_prob, payout_if_win=payout, cost_if_loss=1.0)
 
     return {

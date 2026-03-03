@@ -287,6 +287,8 @@ class KalshiClient:
                 params["cursor"] = cursor
 
             result = self._get("/portfolio/settlements", params)
+            if not result:
+                raise RuntimeError("Kalshi API request failed fetching settlements")
             settlements = result.get("settlements", [])
             all_settlements.extend(settlements)
 

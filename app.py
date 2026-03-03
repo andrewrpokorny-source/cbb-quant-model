@@ -743,8 +743,8 @@ def _render_value_bets(col, lg):
                     kalshi_edge = row.get('Edge_Pct', 'N/A')
                     kalshi_ticker = row.get('Kalshi_Ticker', '')
                     kalshi_fee = row.get('Kalshi_Fee')
-                    fee_str = f" + {kalshi_fee}c fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
-                    kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}c{fee_str} . {kalshi_edge}"
+                    fee_str = f" + {kalshi_fee}¢ fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
+                    kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}¢{fee_str} · {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_event_url(kalshi_ticker)}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
                     else:
@@ -804,8 +804,8 @@ def _render_value_bets(col, lg):
                     badge_css = str(rating).lower()
                     game_kalshi_ticker = row.get('Kalshi_Ticker', '')
                     game_fee = row.get('Kalshi_Fee')
-                    game_fee_str = f" + {game_fee}c fee" if pd.notna(game_fee) and game_fee else ""
-                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}c{game_fee_str}"
+                    game_fee_str = f" + {game_fee}¢ fee" if pd.notna(game_fee) and game_fee else ""
+                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢{game_fee_str}"
                     game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
                     if game_kalshi_url:
                         game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
