@@ -389,6 +389,14 @@ def settle_pending_bets(csv_path=None, league="mens"):
     for idx in pending.index:
         try:
             row = df.loc[idx]
+
+            # Skip Kalshi bets -- they are settled via the Kalshi API
+            # (settle_to_csv) to avoid duplicating rows when both ESPN
+            # and the API resolve the same bet.
+            if str(row.get("platform", "")).strip().upper() == "KALSHI":
+                still_pending += 1
+                continue
+
             date_str = row["date"]
             game_str = row["game"]
             line_str = row["line"]
