@@ -189,6 +189,15 @@ def _reconstruct_line(title: str, side: str) -> str:
     parts = title.split(":")
     if len(parts) >= 2:
         qualifier = parts[-1].strip()
+
+        # Game/winner market -- extract teams from the base title
+        if qualifier.lower() == "winner":
+            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
+            if len(team_parts) == 2:
+                if side == "YES":
+                    return f"{team_parts[0].strip()} ML"
+                return f"{team_parts[1].strip()} ML"
+
         # Spread markets: qualifier is like "Team -5.5"
         if side == "YES":
             return qualifier
@@ -199,7 +208,12 @@ def _reconstruct_line(title: str, side: str) -> str:
             team, spread_val = m.group(1), float(m.group(2))
             return f"{team} {-spread_val:+.1f}" if spread_val != 0 else qualifier
         return f"{qualifier} (NO)"
-    # Game market -- no spread in title
+    # Game market -- no colon; try "Team A at/vs Team B Winner?"
+    m = re.match(r"(.+?)\s+(?:at|vs\.?)\s+(.+?)(?:\s+Winner\??)?$", title, re.IGNORECASE)
+    if m:
+        if side == "YES":
+            return f"{m.group(1).strip()} ML"
+        return f"{m.group(2).strip()} ML"
     return f"{side} side"
 
 
@@ -311,7 +325,10 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     else:
         min_ts = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
 
-    settlements = client.get_settlements(min_ts=min_ts)
+    try:
+        settlements = client.get_settlements(min_ts=min_ts)
+    except RuntimeError as e:
+        return {"logged": [], "settled": 0, "skipped": 0, "error": str(e)}
 
     cbb = [s for s in settlements if any(s.get("ticker", "").startswith(p) for p in CBB_PREFIXES)]
     if not cbb:
@@ -436,7 +453,7 @@ def settle(days: int, dry_run: bool):
 
 def main():
     parser = argparse.ArgumentParser(description="Settle Kalshi CBB bets to betting_history.csv")
-    parser.add_argument("--days", type=int, default=7, help="Look back N days (default: 7)")
+    parser.add_argument("--days", type=int, default=30, help="Look back N days (default: 30)")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be logged without writing")
     args = parser.parse_args()
     settle(args.days, args.dry_run)

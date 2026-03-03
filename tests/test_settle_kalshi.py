@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import tempfile
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -18,7 +19,11 @@ from settle_kalshi import (
     _read_existing_rows,
     _reconstruct_line,
     _result_from_profit,
+    _read_sync_ts,
+    _write_sync_ts,
+    settle_to_csv,
     CSV_HEADERS,
+    SYNC_STATE_FILE,
 )
 
 
@@ -112,10 +117,22 @@ class TestReconstructLine:
         assert "+5.5" in result
 
     def test_game_market_yes(self):
-        assert _reconstruct_line("Oklahoma at Missouri Winner?", "YES") == "YES side"
+        assert _reconstruct_line("Oklahoma at Missouri Winner?", "YES") == "Oklahoma ML"
 
     def test_game_market_no(self):
-        assert _reconstruct_line("Oklahoma at Missouri Winner?", "NO") == "NO side"
+        assert _reconstruct_line("Oklahoma at Missouri Winner?", "NO") == "Missouri ML"
+
+    def test_game_market_colon_yes(self):
+        assert _reconstruct_line("Duke vs UNC: Winner", "YES") == "Duke ML"
+
+    def test_game_market_colon_no(self):
+        assert _reconstruct_line("Duke vs UNC: Winner", "NO") == "UNC ML"
+
+    def test_game_market_colon_at_yes(self):
+        assert _reconstruct_line("Oklahoma at Missouri: Winner", "YES") == "Oklahoma ML"
+
+    def test_game_market_colon_at_no(self):
+        assert _reconstruct_line("Oklahoma at Missouri: Winner", "NO") == "Missouri ML"
 
 
 # ---------------------------------------------------------------------------
@@ -357,3 +374,31 @@ class TestExistingBetIds:
 
     def test_empty(self):
         assert _existing_bet_ids([]) == set()
+
+
+# ---------------------------------------------------------------------------
+# settle_to_csv -- sync cursor must not advance on API errors
+# ---------------------------------------------------------------------------
+
+class TestSettleToCsvErrorHandling:
+    def test_sync_cursor_not_advanced_on_fetch_error(self, tmp_path, monkeypatch):
+        """When get_settlements raises, last_sync_ts must not advance."""
+        sync_file = tmp_path / ".kalshi_sync_state.json"
+        old_ts = 1700000000
+        sync_file.write_text(json.dumps({"last_sync_ts": old_ts}))
+
+        monkeypatch.setattr("settle_kalshi.SYNC_STATE_FILE", str(sync_file))
+        monkeypatch.setattr("settle_kalshi.BETTING_HISTORY", str(tmp_path / "bets.csv"))
+
+        mock_client = MagicMock()
+        mock_client.private_key = "key"
+        mock_client.api_key = "key"
+        mock_client.get_settlements.side_effect = RuntimeError("API error")
+
+        with patch("settle_kalshi.KalshiClient", return_value=mock_client):
+            result = settle_to_csv()
+
+        assert result["error"] == "API error"
+        # Sync cursor must still be at the old value
+        with open(sync_file) as f:
+            assert json.load(f)["last_sync_ts"] == old_ts

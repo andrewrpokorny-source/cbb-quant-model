@@ -4,11 +4,16 @@ Unit tests for settle_bets.py
 Tests the critical bet parsing, result determination, and payout calculation logic.
 """
 
+import csv
+import os
+import tempfile
+
 import pytest
 from settle_bets import (
     parse_bet_line,
     determine_bet_result,
     calculate_payout,
+    settle_pending_bets,
     _format_settlement_detail,
 )
 
@@ -406,3 +411,29 @@ class TestSettleDetailFormatting:
             platform="DraftKings",
         )
         assert "payout unknown -- manual review needed" not in msg
+
+
+class TestSettlePendingBetsSkipsKalshi:
+    """Kalshi platform bets should be skipped (settled via Kalshi API instead)."""
+
+    def test_kalshi_bet_stays_pending(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "date", "platform", "game", "bet_type", "line", "odds",
+                "wager", "result", "payout", "profit", "bet_id", "league",
+            ])
+            writer.writeheader()
+            writer.writerow({
+                "date": "2026-01-15", "platform": "Kalshi", "game": "Duke vs UNC",
+                "bet_type": "spread", "line": "Duke -5.5 YES", "odds": "0.45",
+                "wager": "1.00", "result": "pending", "payout": "", "profit": "",
+                "bet_id": "", "league": "mens",
+            })
+            csv_path = f.name
+
+        try:
+            result = settle_pending_bets(csv_path=csv_path)
+            assert result["settled"] == 0
+            assert result["still_pending"] == 1
+        finally:
+            os.unlink(csv_path)

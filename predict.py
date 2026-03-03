@@ -19,7 +19,8 @@ except ImportError:
     print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob
+from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
@@ -381,9 +382,8 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                 print(f"      No Kalshi ask price available for {ticker} -- market may be illiquid")
                 return result
 
-            implied_prob = bet_price / 100.0
+            implied_prob = kalshi_implied_prob(bet_price)
 
-            # Calculate edge using the correct implied probability
             edge = calculate_edge(model_prob, implied_prob)
             rating = get_rating(edge)
             units = recommended_units(edge, implied_prob)
@@ -392,6 +392,7 @@ def get_kalshi_edge(client, mapper, home_team, away_team, game_date, spread, mod
                 "Kalshi_Yes": yes_price,
                 "Kalshi_No": no_price,
                 "Kalshi_Price": bet_price,
+                "Kalshi_Fee": round(kalshi_fee_cents(bet_price), 1),
                 "Edge": edge,
                 "Edge_Pct": f"{edge * 100:+.1f}%",
                 "Rating": rating.value,
@@ -471,6 +472,7 @@ def get_kalshi_game_edge(
         "Kalshi_Yes": None,
         "Kalshi_No": None,
         "Kalshi_Price": None,
+        "Kalshi_Fee": None,
         "Edge": None,
         "Edge_Pct": None,
         "Rating": None,
@@ -508,7 +510,7 @@ def get_kalshi_game_edge(
             side_candidates = []
 
             if yes_price is not None:
-                implied_yes = yes_price / 100.0
+                implied_yes = kalshi_implied_prob(yes_price)
                 edge_yes = calculate_edge(yes_prob, implied_yes)
                 side_candidates.append(
                     {
@@ -522,7 +524,7 @@ def get_kalshi_game_edge(
 
             if no_price is not None:
                 no_prob = 1.0 - yes_prob
-                implied_no = no_price / 100.0
+                implied_no = kalshi_implied_prob(no_price)
                 edge_no = calculate_edge(no_prob, implied_no)
                 picked_team = away_team if yes_team == home_team else home_team
                 side_candidates.append(
@@ -556,11 +558,12 @@ def get_kalshi_game_edge(
             return result
 
         rating = get_rating(best_choice["edge"])
-        units = recommended_units(best_choice["edge"], best_choice["price"] / 100.0)
+        units = recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
         return {
             "Kalshi_Yes": best_choice["yes_price"],
             "Kalshi_No": best_choice["no_price"],
             "Kalshi_Price": best_choice["price"],
+            "Kalshi_Fee": round(kalshi_fee_cents(best_choice["price"]), 1),
             "Edge": best_choice["edge"],
             "Edge_Pct": f"{best_choice['edge'] * 100:+.1f}%",
             "Rating": rating.value,
@@ -843,6 +846,7 @@ def main(spread_overrides=None, league="mens"):
                         "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
                         "Kalshi_Side": side,
                         "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
+                        "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
                         "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
                         "Edge": game_kalshi.get("Edge"),
                         "Edge_Pct": game_kalshi.get("Edge_Pct"),
@@ -943,6 +947,7 @@ def main(spread_overrides=None, league="mens"):
             "Rest": picked_team_rest,
             "Kalshi_Side": kalshi_data.get("Kalshi_Side"),
             "Kalshi_Price": kalshi_data.get("Kalshi_Price"),
+            "Kalshi_Fee": kalshi_data.get("Kalshi_Fee"),
             "Kalshi_Title": kalshi_data.get("Kalshi_Title"),
             "Edge": kalshi_data.get("Edge"),
             "Edge_Pct": kalshi_data.get("Edge_Pct"),
@@ -986,8 +991,13 @@ def main(spread_overrides=None, league="mens"):
     if combined_csv_frames:
         csv_df = pd.concat(combined_csv_frames, ignore_index=True)
         csv_df = csv_df.sort_values(by="Conf", ascending=False)
-        csv_df.to_csv(OUTPUT_FILE, index=False)
+    else:
+        csv_df = pd.DataFrame()
 
+    # Always write the CSV so stale data from previous runs is cleared.
+    csv_df.to_csv(OUTPUT_FILE, index=False)
+
+    if not csv_df.empty:
         archive_file = os.path.join(
             BASE_DIR,
             f"{PREDICTIONS_ARCHIVE_PREFIX}_{now_eastern.strftime('%Y%m%d')}.csv",
@@ -1024,7 +1034,8 @@ def main(spread_overrides=None, league="mens"):
                 print(f"   [{row.get('Bet_Type', 'spread')}:{best_rating}] {row['Pick']}")
                 if kalshi_rating in VALUE_RATINGS:
                     side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
-                    print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
+                    fee = row.get('Kalshi_Fee', 0) or 0
+                    print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c + {fee:.1f}c fee | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
                 if std_rating in VALUE_RATINGS:
                     print(f"      Std Book: Edge {row['Std_Edge_Pct']} | {row['Std_Units']:.1f}U")
     else:
@@ -1144,15 +1155,16 @@ def check_live_prices(league="mens"):
             results.append(_placeholder(f"{side} N/A"))
             continue
 
-        implied_prob = live_price / 100.0
+        implied_prob = kalshi_implied_prob(live_price)
         edge = calculate_edge(model_prob, implied_prob)
         rating = get_rating(edge)
         units = recommended_units(edge, implied_prob)
 
+        fee = kalshi_fee_cents(live_price)
         results.append({
             "Pick": pick,
             "Model%": f"{model_prob:.1%}",
-            "Live Price": f"{side} @ {live_price}c",
+            "Live Price": f"{side} @ {live_price}c + {fee:.1f}c fee",
             "Edge": f"{edge * 100:+.1f}%",
             "Rating": rating.value,
             "Units": f"{units:.1f}U" if units > 0 else "PASS",
