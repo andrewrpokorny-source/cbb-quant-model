@@ -549,12 +549,18 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
+    settle_league = st.selectbox(
+        "Settle league",
+        LEAGUES,
+        format_func=lambda x: get_league_settings(x)["label"],
+    )
     if st.button("Settle Bets"):
-        for lg in LEAGUES:
-            with st.spinner(f"Settling {get_league_settings(lg)['label']}..."):
-                summary = settle_bets.settle_pending_bets(league=lg)
-            if summary["settled"] > 0 or summary["still_pending"] > 0:
-                st.caption(f"{get_league_settings(lg)['label']}: {summary['settled']} settled, {summary['still_pending']} pending")
+        with st.spinner(f"Settling {get_league_settings(settle_league)['label']}..."):
+            summary = settle_bets.settle_pending_bets(league=settle_league)
+        st.caption(f"{summary['settled']} settled, {summary['still_pending']} pending")
+        if summary["details"]:
+            for d in summary["details"]:
+                st.caption(d)
         st.rerun()
 
     # Missing spreads per league
@@ -736,7 +742,9 @@ def _render_value_bets(col, lg):
                 if has_kalshi:
                     kalshi_edge = row.get('Edge_Pct', 'N/A')
                     kalshi_ticker = row.get('Kalshi_Ticker', '')
-                    kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}c . {kalshi_edge}"
+                    kalshi_fee = row.get('Kalshi_Fee')
+                    fee_str = f" + {kalshi_fee}c fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
+                    kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}c{fee_str} . {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_event_url(kalshi_ticker)}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
                     else:
@@ -795,7 +803,9 @@ def _render_value_bets(col, lg):
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
                     game_kalshi_ticker = row.get('Kalshi_Ticker', '')
-                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}c"
+                    game_fee = row.get('Kalshi_Fee')
+                    game_fee_str = f" + {game_fee}c fee" if pd.notna(game_fee) and game_fee else ""
+                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}c{game_fee_str}"
                     game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
                     if game_kalshi_url:
                         game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
@@ -879,105 +889,107 @@ with col_record:
         st.caption("No betting history file found.")
 
 with col_perf:
-    # Use men's performance file as primary (backtest runs per league)
-    mens_perf = league_data["mens"]["paths"]["performance_file"]
-    mens_model = league_data["mens"]["paths"]["model_file"]
-
     st.markdown('<div class="league-header mens">Model Performance</div>', unsafe_allow_html=True)
 
-    if os.path.exists(mens_perf):
-        hist = pd.read_csv(mens_perf)
-        hist['date'] = pd.to_datetime(hist['date'])
+    def get_metrics(df_subset):
+        if len(df_subset) == 0:
+            return 0, 0.0, 0.0
+        df_subset = df_subset.copy()
+        df_subset['units'] = df_subset['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
+        cnt = len(df_subset)
+        wins = df_subset['pick_correct'].sum()
+        rate = wins / cnt
+        profit = df_subset['units'].sum()
+        return cnt, rate, profit
 
-        def get_metrics(df_subset):
-            if len(df_subset) == 0:
-                return 0, 0.0, 0.0
-            df_subset = df_subset.copy()
-            df_subset['units'] = df_subset['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
-            cnt = len(df_subset)
-            wins = df_subset['pick_correct'].sum()
-            rate = wins / cnt
-            profit = df_subset['units'].sum()
-            return cnt, rate, profit
+    perf_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
-        try:
-            today = pd.Timestamp.now(tz='US/Eastern').normalize()
-        except (pytz.exceptions.UnknownTimeZoneError, TypeError):
-            today = pd.Timestamp.now().normalize() - timedelta(hours=5)
+    for pi, lg in enumerate(LEAGUES):
+        with perf_tabs[pi]:
+            perf_file = league_data[lg]["paths"]["performance_file"]
+            if os.path.exists(perf_file):
+                hist = pd.read_csv(perf_file)
+                hist['date'] = pd.to_datetime(hist['date'])
 
-        yesterday = today - timedelta(days=1)
-        start_7 = today - timedelta(days=7)
-
-        df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
-        df_7 = hist[hist['date'].dt.date >= start_7.date()]
-        df_30 = hist
-
-        pc1, pc2, pc3 = st.columns(3)
-        cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
-        pc1.metric("Yesterday", f"{prof_y:+.1f}U", f"{cnt_y} bets | {rate_y:.0%}")
-
-        cnt_7, rate_7, prof_7 = get_metrics(df_7)
-        pc2.metric("7 Days", f"{prof_7:+.1f}U", f"{cnt_7} bets | {rate_7:.0%}")
-
-        cnt_30, rate_30, prof_30 = get_metrics(df_30)
-        pc3.metric("All Time", f"{prof_30:+.1f}U", f"{cnt_30} bets | {rate_30:.0%}")
-
-        hist['units'] = hist['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
-        hist['cumulative_units'] = hist['units'].cumsum()
-
-        chart = alt.Chart(hist).mark_area(
-            line={'color': '#1a4d2e'},
-            color=alt.Gradient(
-                gradient='linear',
-                stops=[
-                    alt.GradientStop(color='rgba(26, 77, 46, 0.1)', offset=0),
-                    alt.GradientStop(color='rgba(26, 77, 46, 0.3)', offset=1)
-                ],
-                x1=1, x2=1, y1=1, y2=0
-            )
-        ).encode(
-            x=alt.X('date:T', title=None, axis=alt.Axis(format='%b %d', labelAngle=0)),
-            y=alt.Y('cumulative_units:Q', title='Units'),
-            tooltip=[
-                alt.Tooltip('date:T', title='Date', format='%b %d'),
-                alt.Tooltip('cumulative_units:Q', title='Total Units', format='.1f')
-            ]
-        ).properties(height=220).configure_axis(
-            grid=True,
-            gridColor='#e5e5e0',
-            domainColor='#e5e5e0'
-        ).configure_view(
-            strokeWidth=0
-        )
-        st.altair_chart(chart, use_container_width=True)
-
-        with st.expander("View Bet History"):
-            hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
-            hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
-            hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
-            hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
-
-            df_display = hist.sort_values('date', ascending=False)
-            df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(
-                columns={'Date_Str': 'Date', 'conf': 'Conf'}
-            )
-            df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
-
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-    else:
-        st.caption("No performance data yet.")
-        if st.button("Run Backtest"):
-            with st.spinner("Training models..."):
-                f = io.StringIO()
                 try:
-                    with redirect_stdout(f):
-                        backtest.run_backtest(league="mens")
-                    if os.path.exists(mens_perf):
-                        st.success("Done!")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                    today = pd.Timestamp.now(tz='US/Eastern').normalize()
+                except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+                    today = pd.Timestamp.now().normalize() - timedelta(hours=5)
+
+                yesterday = today - timedelta(days=1)
+                start_7 = today - timedelta(days=7)
+
+                df_yesterday = hist[hist['date'].dt.date == yesterday.date()]
+                df_7 = hist[hist['date'].dt.date >= start_7.date()]
+                df_30 = hist
+
+                pc1, pc2, pc3 = st.columns(3)
+                cnt_y, rate_y, prof_y = get_metrics(df_yesterday)
+                pc1.metric("Yesterday", f"{prof_y:+.1f}U", f"{cnt_y} bets | {rate_y:.0%}")
+
+                cnt_7, rate_7, prof_7 = get_metrics(df_7)
+                pc2.metric("7 Days", f"{prof_7:+.1f}U", f"{cnt_7} bets | {rate_7:.0%}")
+
+                cnt_30, rate_30, prof_30 = get_metrics(df_30)
+                pc3.metric("All Time", f"{prof_30:+.1f}U", f"{cnt_30} bets | {rate_30:.0%}")
+
+                hist['units'] = hist['pick_correct'].apply(lambda x: 1.0 if x else -1.1)
+                hist['cumulative_units'] = hist['units'].cumsum()
+
+                line_color = '#1a4d2e' if lg == 'mens' else '#4a2d7a'
+                chart = alt.Chart(hist).mark_area(
+                    line={'color': line_color},
+                    color=alt.Gradient(
+                        gradient='linear',
+                        stops=[
+                            alt.GradientStop(color=f'{line_color}1a', offset=0),
+                            alt.GradientStop(color=f'{line_color}4d', offset=1)
+                        ],
+                        x1=1, x2=1, y1=1, y2=0
+                    )
+                ).encode(
+                    x=alt.X('date:T', title=None, axis=alt.Axis(format='%b %d', labelAngle=0)),
+                    y=alt.Y('cumulative_units:Q', title='Units'),
+                    tooltip=[
+                        alt.Tooltip('date:T', title='Date', format='%b %d'),
+                        alt.Tooltip('cumulative_units:Q', title='Total Units', format='.1f')
+                    ]
+                ).properties(height=220).configure_axis(
+                    grid=True,
+                    gridColor='#e5e5e0',
+                    domainColor='#e5e5e0'
+                ).configure_view(
+                    strokeWidth=0
+                )
+                st.altair_chart(chart, use_container_width=True)
+
+                with st.expander("View Bet History"):
+                    hist['Result'] = hist['pick_correct'].apply(lambda x: "W" if x else "L")
+                    hist['Date_Str'] = hist['date'].dt.strftime("%b %d")
+                    hist['Spread'] = hist['picked_spread'].apply(lambda x: round(x * 2) / 2)
+                    hist['Pick'] = hist['picked_team'] + " " + hist['Spread'].astype(str)
+
+                    df_display = hist.sort_values('date', ascending=False)
+                    df_display = df_display[['Date_Str', 'Pick', 'Result', 'conf']].rename(
+                        columns={'Date_Str': 'Date', 'conf': 'Conf'}
+                    )
+                    df_display['Conf'] = df_display['Conf'].apply(lambda x: f"{x:.0%}")
+
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+            else:
+                st.caption("No performance data yet.")
+                if st.button("Run Backtest", key=f"backtest_{lg}"):
+                    with st.spinner("Training models..."):
+                        f = io.StringIO()
+                        try:
+                            with redirect_stdout(f):
+                                backtest.run_backtest(league=lg)
+                            if os.path.exists(perf_file):
+                                st.success("Done!")
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
 
 # ==========================================
@@ -1061,10 +1073,10 @@ for i, lg in enumerate(LEAGUES):
                 table_game["Link"] = table_game["Kalshi_Ticker"].apply(
                     lambda t: kalshi_event_url(t) if pd.notna(t) and t else None
                 )
-            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Edge_Pct", "Units", "Rating", "Link"]
+            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Kalshi_Fee", "Edge_Pct", "Units", "Rating", "Link"]
             game_cols = [c for c in game_cols if c in table_game.columns]
             table_game = table_game[game_cols].rename(columns={
-                "Date/Time": "Time", "Kalshi_Price": "Price", "Edge_Pct": "Edge",
+                "Date/Time": "Time", "Kalshi_Price": "Price", "Kalshi_Fee": "Fee", "Edge_Pct": "Edge",
             })
             st.dataframe(
                 table_game,
@@ -1076,6 +1088,7 @@ for i, lg in enumerate(LEAGUES):
                     "Pick": st.column_config.TextColumn("Pick", width="large"),
                     "Confidence": st.column_config.TextColumn("Conf", width="small"),
                     "Price": st.column_config.NumberColumn("Price", width="small"),
+                    "Fee": st.column_config.NumberColumn("Fee", width="small"),
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                     "Rating": st.column_config.TextColumn("Rating", width="small"),
