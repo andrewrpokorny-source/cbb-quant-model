@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import altair as alt
+import html as html_mod
 import predict
 import backtest
 import settle_bets
@@ -480,6 +481,11 @@ def kalshi_event_url(ticker) -> str:
     return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event_ticker.lower()}"
 
 
+def _esc(val) -> str:
+    """HTML-escape a value for safe embedding in st.markdown."""
+    return html_mod.escape(str(val)) if val is not None else ""
+
+
 def _parse_edge(series):
     """Parse edge percentage strings like '+5.2%' into floats."""
     cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
@@ -497,16 +503,35 @@ for lg in LEAGUES:
     overrides_key = f"spread_overrides_{lg}"
     loaded_key = f"predictions_loaded_{lg}"
 
+    # Reset loaded flag if predictions file is stale (from a previous day)
+    pred_file = paths["predictions_file"]
+    if os.path.exists(pred_file):
+        eastern = pytz.timezone('US/Eastern')
+        file_date = datetime.fromtimestamp(os.path.getmtime(pred_file)).date()
+        today_date = datetime.now(eastern).date()
+        if file_date < today_date:
+            st.session_state[loaded_key] = False
+
     if not st.session_state.get(loaded_key, False):
         with st.spinner(f"Loading {settings['label']}..."):
-            predict.main(
-                spread_overrides=st.session_state.get(overrides_key, {}),
-                league=lg,
-            )
-        st.session_state[loaded_key] = True
+            try:
+                predict.main(
+                    spread_overrides=st.session_state.get(overrides_key, {}),
+                    league=lg,
+                )
+            except Exception as e:
+                st.error(f"Failed to load {settings['label']} predictions: {e}")
+        # Only mark loaded if predictions file exists and has content
+        if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
+            st.session_state[loaded_key] = True
+        else:
+            st.warning(f"{settings['label']}: No prediction data available.")
 
-    pred_file = paths["predictions_file"]
-    df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+    try:
+        df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+        st.warning(f"Could not read {settings['label']} predictions: {e}")
+        df = pd.DataFrame()
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
@@ -538,14 +563,20 @@ with st.sidebar:
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
     if st.button("Refresh All"):
+        refresh_ok = True
         for lg in LEAGUES:
             with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
-                predict.main(
-                    spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
-                    league=lg,
-                )
-                st.session_state[f"predictions_loaded_{lg}"] = True
-        st.rerun()
+                try:
+                    predict.main(
+                        spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
+                        league=lg,
+                    )
+                    st.session_state[f"predictions_loaded_{lg}"] = True
+                except Exception as e:
+                    st.error(f"Failed to refresh {get_league_settings(lg)['label']}: {e}")
+                    refresh_ok = False
+        if refresh_ok:
+            st.rerun()
 
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
@@ -557,11 +588,15 @@ with st.sidebar:
     if st.button("Settle Bets"):
         with st.spinner(f"Settling {get_league_settings(settle_league)['label']}..."):
             summary = settle_bets.settle_pending_bets(league=settle_league)
-        st.caption(f"{summary['settled']} settled, {summary['still_pending']} pending")
+        st.session_state["settle_result"] = f"{summary['settled']} settled, {summary['still_pending']} pending"
         if summary["details"]:
-            for d in summary["details"]:
-                st.caption(d)
+            st.session_state["settle_details"] = summary["details"]
         st.rerun()
+
+    if st.session_state.get("settle_result"):
+        st.caption(st.session_state.pop("settle_result"))
+        for d in st.session_state.pop("settle_details", []):
+            st.caption(d)
 
     # Missing spreads per league
     for lg in LEAGUES:
@@ -622,17 +657,20 @@ for lg in LEAGUES:
     total_kalshi += len(d["game_df"])
 
 if os.path.exists(BET_HIST_FILE):
-    _bh = pd.read_csv(BET_HIST_FILE)
-    _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
-    if len(_settled) > 0:
-        _wins = len(_settled[_settled["result"] == "win"])
-        _losses = len(_settled[_settled["result"] == "loss"])
-        _profit = _settled["profit"].astype(float).sum()
-        _wagered = _settled["wager"].astype(float).sum()
-        _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
-        record_str = f"{_wins}W-{_losses}L"
-        profit_str = f"{_profit:+.1f}U"
-        roi_str = f"{_roi:+.1f}%"
+    try:
+        _bh = pd.read_csv(BET_HIST_FILE)
+        _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
+        if len(_settled) > 0:
+            _wins = len(_settled[_settled["result"] == "win"])
+            _losses = len(_settled[_settled["result"] == "loss"])
+            _profit = pd.to_numeric(_settled["profit"], errors="coerce").fillna(0).sum()
+            _wagered = pd.to_numeric(_settled["wager"], errors="coerce").fillna(0).sum()
+            _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
+            record_str = f"{_wins}W-{_losses}L"
+            profit_str = f"{_profit:+.1f}U"
+            roi_str = f"{_roi:+.1f}%"
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+        st.warning(f"Could not read betting history: {e}")
 
 st.markdown(f'''
 <div class="kpi-row">
@@ -740,32 +778,33 @@ def _render_value_bets(col, lg):
 
                 kalshi_html = ""
                 if has_kalshi:
-                    kalshi_edge = row.get('Edge_Pct', 'N/A')
+                    kalshi_edge = _esc(row.get('Edge_Pct', 'N/A'))
                     kalshi_ticker = row.get('Kalshi_Ticker', '')
                     kalshi_fee = row.get('Kalshi_Fee')
-                    fee_str = f" + {kalshi_fee}¢ fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
-                    kalshi_text = f"Kalshi {kalshi_side} @ {kalshi_price}¢{fee_str} · {kalshi_edge}"
+                    fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
+                    kalshi_text = f"Kalshi {_esc(kalshi_side)} @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
                     if kalshi_ticker:
-                        kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_event_url(kalshi_ticker)}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
+                        kalshi_url = _esc(kalshi_event_url(kalshi_ticker))
+                        kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_url}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
                     else:
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">{kalshi_text}</span></div>'
 
                 st.markdown(f'''
                 <div class="bet-card {badge_css} {card_extra}">
                     <div class="bet-header">
-                        <div class="bet-badge {badge_css}">{best_rating.title()}</div>
-                        <div class="bet-time">{game_time}</div>
+                        <div class="bet-badge {badge_css}">{_esc(best_rating.title())}</div>
+                        <div class="bet-time">{_esc(game_time)}</div>
                     </div>
-                    <div class="bet-pick">{row['Pick']}</div>
-                    <div class="bet-matchup">{row['Matchup']}</div>
+                    <div class="bet-pick">{_esc(row['Pick'])}</div>
+                    <div class="bet-matchup">{_esc(row['Matchup'])}</div>
                     <div class="bet-stats">
                         <div class="stat-item">
                             <span class="stat-label">Model</span>
                             <span class="stat-value">{conf:.1%}</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-label">{edge_source}</span>
-                            <span class="stat-value positive">{display_edge}</span>
+                            <span class="stat-label">{_esc(edge_source)}</span>
+                            <span class="stat-value positive">{_esc(display_edge)}</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Units</span>
@@ -773,7 +812,7 @@ def _render_value_bets(col, lg):
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Breakeven</span>
-                            <span class="stat-value">{breakeven_str}</span>
+                            <span class="stat-value">{_esc(breakeven_str)}</span>
                         </div>
                     </div>
                     {kalshi_html}
@@ -804,9 +843,9 @@ def _render_value_bets(col, lg):
                     badge_css = str(rating).lower()
                     game_kalshi_ticker = row.get('Kalshi_Ticker', '')
                     game_fee = row.get('Kalshi_Fee')
-                    game_fee_str = f" + {game_fee}¢ fee" if pd.notna(game_fee) and game_fee else ""
-                    game_kalshi_text = f"Kalshi {row.get('Kalshi_Side', '')} @ {row.get('Kalshi_Price', '')}¢{game_fee_str}"
-                    game_kalshi_url = kalshi_event_url(game_kalshi_ticker)
+                    game_fee_str = f" + {_esc(game_fee)}&#162; fee" if pd.notna(game_fee) and game_fee else ""
+                    game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
+                    game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
                     if game_kalshi_url:
                         game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
                     else:
@@ -814,11 +853,11 @@ def _render_value_bets(col, lg):
                     st.markdown(f'''
                     <div class="bet-card {badge_css} {card_extra}">
                         <div class="bet-header">
-                            <div class="bet-badge {badge_css}">{str(rating).title()}</div>
-                            <div class="bet-time">{row.get('Date/Time', '')}</div>
+                            <div class="bet-badge {badge_css}">{_esc(str(rating).title())}</div>
+                            <div class="bet-time">{_esc(row.get('Date/Time', ''))}</div>
                         </div>
-                        <div class="bet-pick">{row.get('Pick', '')}</div>
-                        <div class="bet-matchup">{row.get('Matchup', '')}</div>
+                        <div class="bet-pick">{_esc(row.get('Pick', ''))}</div>
+                        <div class="bet-matchup">{_esc(row.get('Matchup', ''))}</div>
                         <div class="bet-stats">
                             <div class="stat-item">
                                 <span class="stat-label">Model</span>
@@ -826,7 +865,7 @@ def _render_value_bets(col, lg):
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Kalshi Edge</span>
-                                <span class="stat-value positive">{row.get('Edge_Pct', '')}</span>
+                                <span class="stat-value positive">{_esc(row.get('Edge_Pct', ''))}</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Units</span>
@@ -853,38 +892,44 @@ with col_record:
     st.markdown('<div class="league-header mens">Betting Record</div>', unsafe_allow_html=True)
 
     if os.path.exists(BET_HIST_FILE):
-        bet_hist = pd.read_csv(BET_HIST_FILE)
-        pending_bets = bet_hist[bet_hist["result"] == "pending"]
-        pending_count = len(pending_bets)
+        try:
+            bet_hist = pd.read_csv(BET_HIST_FILE)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+            st.warning(f"Could not read betting history: {e}")
+            bet_hist = None
 
-        if pending_count > 0:
-            st.caption(f"{pending_count} pending bet{'s' if pending_count != 1 else ''}")
-            pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
-            pending_display["wager"] = pending_display["wager"].apply(lambda x: f"${x:.2f}")
-            st.dataframe(pending_display, use_container_width=True, hide_index=True, height=180)
+        if bet_hist is not None:
+            pending_bets = bet_hist[bet_hist["result"] == "pending"]
+            pending_count = len(pending_bets)
 
-        settled = bet_hist[bet_hist["result"].isin(["win", "loss", "void"])]
-        if len(settled) > 0:
-            wins = len(settled[settled["result"] == "win"])
-            losses = len(settled[settled["result"] == "loss"])
-            total_profit = settled["profit"].astype(float).sum()
-            total_wagered = settled["wager"].astype(float).sum()
-            roi = (total_profit / total_wagered * 100) if total_wagered > 0 else 0
+            if pending_count > 0:
+                st.caption(f"{pending_count} pending bet{'s' if pending_count != 1 else ''}")
+                pending_display = pending_bets[["date", "platform", "line", "odds", "wager"]].copy()
+                pending_display["wager"] = pd.to_numeric(pending_display["wager"], errors="coerce").apply(lambda x: f"${x:.2f}" if pd.notna(x) else "--")
+                st.dataframe(pending_display, use_container_width=True, hide_index=True, height=180)
 
-            rc1, rc2, rc3 = st.columns(3)
-            rc1.metric("Record", f"{wins}W-{losses}L")
-            rc2.metric("Profit", f"{total_profit:+.2f}U")
-            rc3.metric("ROI", f"{roi:+.1f}%")
+            settled = bet_hist[bet_hist["result"].isin(["win", "loss", "void"])]
+            if len(settled) > 0:
+                wins = len(settled[settled["result"] == "win"])
+                losses = len(settled[settled["result"] == "loss"])
+                total_profit = pd.to_numeric(settled["profit"], errors="coerce").fillna(0).sum()
+                total_wagered = pd.to_numeric(settled["wager"], errors="coerce").fillna(0).sum()
+                roi = (total_profit / total_wagered * 100) if total_wagered > 0 else 0
 
-            recent = settled.tail(10).iloc[::-1].copy()
-            recent["Result"] = recent["result"].apply(
-                lambda x: {"win": "W", "loss": "L", "void": "P"}.get(x, x)
-            )
-            recent["P/L"] = recent["profit"].apply(lambda x: f"{float(x):+.2f}")
-            display_cols = ["date", "platform", "line", "Result", "P/L"]
-            st.dataframe(recent[display_cols], use_container_width=True, hide_index=True, height=280)
-        elif pending_count == 0:
-            st.caption("No betting history yet.")
+                rc1, rc2, rc3 = st.columns(3)
+                rc1.metric("Record", f"{wins}W-{losses}L")
+                rc2.metric("Profit", f"{total_profit:+.2f}U")
+                rc3.metric("ROI", f"{roi:+.1f}%")
+
+                recent = settled.tail(10).iloc[::-1].copy()
+                recent["Result"] = recent["result"].apply(
+                    lambda x: {"win": "W", "loss": "L", "void": "P"}.get(x, x)
+                )
+                recent["P/L"] = pd.to_numeric(recent["profit"], errors="coerce").apply(lambda x: f"{x:+.2f}" if pd.notna(x) else "--")
+                display_cols = ["date", "platform", "line", "odds", "wager", "Result", "P/L"]
+                st.dataframe(recent[display_cols], use_container_width=True, hide_index=True, height=280)
+            elif pending_count == 0:
+                st.caption("No betting history yet.")
     else:
         st.caption("No betting history file found.")
 
@@ -908,7 +953,13 @@ with col_perf:
         with perf_tabs[pi]:
             perf_file = league_data[lg]["paths"]["performance_file"]
             if os.path.exists(perf_file):
-                hist = pd.read_csv(perf_file)
+                try:
+                    hist = pd.read_csv(perf_file)
+                except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+                    st.warning(f"Could not read performance data: {e}")
+                    hist = None
+                if hist is None:
+                    continue
                 hist['date'] = pd.to_datetime(hist['date'])
 
                 try:
