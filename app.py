@@ -502,30 +502,32 @@ for lg in LEAGUES:
     paths = get_league_artifact_paths(BASE_DIR, lg)
     overrides_key = f"spread_overrides_{lg}"
     loaded_key = f"predictions_loaded_{lg}"
-
-    # Reset loaded flag if predictions file is stale (from a previous day)
     pred_file = paths["predictions_file"]
-    if os.path.exists(pred_file):
-        eastern = pytz.timezone('US/Eastern')
-        file_date = datetime.fromtimestamp(os.path.getmtime(pred_file)).date()
-        today_date = datetime.now(eastern).date()
-        if file_date < today_date:
-            st.session_state[loaded_key] = False
 
-    if not st.session_state.get(loaded_key, False):
-        with st.spinner(f"Loading {settings['label']}..."):
-            try:
-                predict.main(
-                    spread_overrides=st.session_state.get(overrides_key, {}),
-                    league=lg,
-                )
-            except Exception as e:
-                st.error(f"Failed to load {settings['label']} predictions: {e}")
-        # Only mark loaded if predictions file exists and has content
-        if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
-            st.session_state[loaded_key] = True
-        else:
-            st.warning(f"{settings['label']}: No prediction data available.")
+    # Skip leagues whose model/data artifacts don't exist locally
+    has_artifacts = os.path.exists(paths["model_file"]) or os.path.exists(paths["data_file"])
+
+    if has_artifacts:
+        # Reset loaded flag if predictions file is stale (from a previous day)
+        if os.path.exists(pred_file):
+            eastern = pytz.timezone('US/Eastern')
+            file_date = datetime.fromtimestamp(os.path.getmtime(pred_file)).date()
+            today_date = datetime.now(eastern).date()
+            if file_date < today_date:
+                st.session_state[loaded_key] = False
+
+        if not st.session_state.get(loaded_key, False):
+            with st.spinner(f"Loading {settings['label']}..."):
+                try:
+                    predict.main(
+                        spread_overrides=st.session_state.get(overrides_key, {}),
+                        league=lg,
+                    )
+                except Exception as e:
+                    st.error(f"Failed to load {settings['label']} predictions: {e}")
+            # Only mark loaded if predictions file exists and has content
+            if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
+                st.session_state[loaded_key] = True
 
     try:
         df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
@@ -565,15 +567,24 @@ with st.sidebar:
     if st.button("Refresh All"):
         refresh_ok = True
         for lg in LEAGUES:
+            lg_paths = get_league_artifact_paths(BASE_DIR, lg)
+            if not (os.path.exists(lg_paths["model_file"]) or os.path.exists(lg_paths["data_file"])):
+                continue
             with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
                 try:
                     predict.main(
                         spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
                         league=lg,
                     )
-                    st.session_state[f"predictions_loaded_{lg}"] = True
                 except Exception as e:
                     st.error(f"Failed to refresh {get_league_settings(lg)['label']}: {e}")
+                    refresh_ok = False
+                    continue
+                # Only mark loaded if predictions file was actually produced
+                pf = lg_paths["predictions_file"]
+                if os.path.exists(pf) and os.path.getsize(pf) > 0:
+                    st.session_state[f"predictions_loaded_{lg}"] = True
+                else:
                     refresh_ok = False
         if refresh_ok:
             st.rerun()
