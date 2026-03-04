@@ -505,7 +505,7 @@ for lg in LEAGUES:
     pred_file = paths["predictions_file"]
 
     # Skip leagues whose model/data artifacts don't exist locally
-    has_artifacts = os.path.exists(paths["model_file"]) or os.path.exists(paths["data_file"])
+    has_artifacts = os.path.exists(paths["model_file"]) and os.path.exists(paths["data_file"])
 
     if has_artifacts:
         # Reset loaded flag if predictions file is stale (from a previous day)
@@ -568,7 +568,7 @@ with st.sidebar:
         refresh_ok = True
         for lg in LEAGUES:
             lg_paths = get_league_artifact_paths(BASE_DIR, lg)
-            if not (os.path.exists(lg_paths["model_file"]) or os.path.exists(lg_paths["data_file"])):
+            if not (os.path.exists(lg_paths["model_file"]) and os.path.exists(lg_paths["data_file"])):
                 continue
             with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
                 try:
