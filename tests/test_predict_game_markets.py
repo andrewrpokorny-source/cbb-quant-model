@@ -58,6 +58,34 @@ def test_infer_yes_team_from_title_fallback():
     assert yes_team == "Providence Friars"
 
 
+def test_infer_yes_team_disambiguates_substring_teams():
+    """Virginia Tech should not be confused with Virginia."""
+    market = {
+        "title": "Virginia Tech vs Virginia",
+        "rules_primary": "This market resolves to YES if Virginia Tech wins the game.",
+    }
+    yes_team = _infer_yes_team_from_game_market(
+        market,
+        home_team="Virginia Cavaliers",
+        away_team="Virginia Tech Hokies",
+    )
+    assert yes_team == "Virginia Tech Hokies"
+
+
+def test_infer_yes_team_exact_match_not_confused_by_longer():
+    """Virginia should match correctly even when Virginia Tech is the other team."""
+    market = {
+        "title": "Virginia Tech vs Virginia",
+        "rules_primary": "This market resolves to YES if Virginia wins the game.",
+    }
+    yes_team = _infer_yes_team_from_game_market(
+        market,
+        home_team="Virginia Cavaliers",
+        away_team="Virginia Tech Hokies",
+    )
+    assert yes_team == "Virginia Cavaliers"
+
+
 def test_get_kalshi_game_edge_selects_best_side():
     market = {
         "ticker": "KXNCAAWBGAME-EXAMPLE",

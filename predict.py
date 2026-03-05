@@ -436,15 +436,29 @@ def _infer_yes_team_from_game_market(market, home_team, away_team):
         r"will\s+(.+?)\s+beat",
         r"does\s+(.+?)\s+win",
     ]
+    def _clean(text: str) -> str:
+        c = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+        return re.sub(r"\s+", " ", c).strip()
+
     for pattern in patterns:
         for source in (rules, title):
             match = re.search(pattern, source, flags=re.IGNORECASE)
             if not match:
                 continue
             candidate = match.group(1).strip()
-            if _is_match(candidate, home_keyword):
+            home_match = _is_match(candidate, home_keyword)
+            away_match = _is_match(candidate, away_keyword)
+            if home_match and away_match:
+                # Both keywords match (e.g. "virginia" is substring of
+                # "virginia tech"). Prefer the keyword closer in length
+                # to the candidate text.
+                cleaned = _clean(candidate)
+                home_dist = abs(len(cleaned) - len(home_keyword))
+                away_dist = abs(len(cleaned) - len(away_keyword))
+                return away_team if away_dist < home_dist else home_team
+            if home_match:
                 return home_team
-            if _is_match(candidate, away_keyword):
+            if away_match:
                 return away_team
 
     home_in_title = home_keyword in title
