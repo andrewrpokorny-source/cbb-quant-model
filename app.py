@@ -80,7 +80,7 @@ section[data-testid="stSidebar"] .block-container {
 }
 
 section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] span:not([data-testid="stIconMaterial"]),
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] .stMarkdown {
     font-family: var(--font-body);
