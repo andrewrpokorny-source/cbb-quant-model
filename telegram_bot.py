@@ -1158,32 +1158,42 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             result, bet_id, ret_in_range,
         )
     else:
-        # No keyword markers found -- infer result from payout vs wager.
-        # Covers "Finished" format (scores visible) and cases where OCR
-        # misses colored "WON/LOST ON FANDUEL" text on dark backgrounds.
-        # Assumes first dollar amount in [0.25, 500] is wager and second is payout.
-        all_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
-        amts_in_range = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
-        if len(amts_in_range) >= 2:
-            w, p = amts_in_range[0], amts_in_range[1]
-            if p > w:
-                result = "win"
-            elif p < w:
-                result = "loss"
-            else:
-                result = "void"
+        # No keyword markers found.  If there's no BET ID either, this is
+        # almost certainly a trailing open/unsettled card (or betslip bar
+        # remnant) rather than a settled card whose keywords OCR missed.
+        if not bet_id:
+            result = "pending"
             logger.info(
-                "FD settled card: no WON/LOST keyword, inferred result=%s "
-                "from wager=$%.2f payout=$%.2f (bet_id=%s)",
-                result, w, p, bet_id,
+                "FD settled card: no result keywords and no BET ID, "
+                "treating as unsettled/pending"
             )
         else:
-            result = "pending"
-            logger.warning(
-                "FD settled card: no result keywords and < 2 dollar amounts, "
-                "defaulting to pending (bet_id=%s, amounts=%s)",
-                bet_id, amts_in_range,
-            )
+            # Has a BET ID but no keywords -- infer result from payout vs wager.
+            # Covers "Finished" format (scores visible) and cases where OCR
+            # misses colored "WON/LOST ON FANDUEL" text on dark backgrounds.
+            # Assumes first dollar amount in [0.25, 500] is wager and second is payout.
+            all_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+            amts_in_range = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
+            if len(amts_in_range) >= 2:
+                w, p = amts_in_range[0], amts_in_range[1]
+                if p > w:
+                    result = "win"
+                elif p < w:
+                    result = "loss"
+                else:
+                    result = "void"
+                logger.info(
+                    "FD settled card: no WON/LOST keyword, inferred result=%s "
+                    "from wager=$%.2f payout=$%.2f (bet_id=%s)",
+                    result, w, p, bet_id,
+                )
+            else:
+                result = "pending"
+                logger.warning(
+                    "FD settled card: no result keywords and < 2 dollar amounts, "
+                    "defaulting to pending (bet_id=%s, amounts=%s)",
+                    bet_id, amts_in_range,
+                )
 
     # 5. Clean and parse structured fields
     lines = card_text.split("\n")
@@ -1301,6 +1311,19 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             "_skipped": True, "_skip_reason": "incomplete", "_settled": True,
             "platform": "FanDuel",
             "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+        }
+
+    if result == "pending":
+        logger.info(
+            "FD settled card: result=pending, skipping settlement flow "
+            "(line=%r wager=%s bet_id=%s)",
+            line, wager, bet_id,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "unsettled", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+            "line": line,
         }
 
     # Mark BET ID as seen only after successful parse
@@ -2129,6 +2152,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         skipped = [b for b in settled_all if b.get("_skipped")]
         skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
         skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
+        skipped_unsettled = [s for s in skipped if s.get("_skip_reason") == "unsettled"]
 
         msgs = []
         for bet in actual_settled:
@@ -2166,7 +2190,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
 
         # Per-card skip feedback
-        if not actual_settled and not skipped_incomplete and skipped_dedup:
+        if not actual_settled and not skipped_incomplete and not skipped_unsettled and skipped_dedup:
             # All cards were deduped, no new bets
             msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
         elif not actual_settled and not skipped:
@@ -2189,6 +2213,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msgs.append(f"Missed: {', '.join(parts)}")
             if skipped_incomplete:
                 msgs.append("Scroll to show full cards and resend for missed bets.")
+            # Show unsettled/open cards that were skipped
+            if skipped_unsettled:
+                n = len(skipped_unsettled)
+                lines = [s.get("line", "?") for s in skipped_unsettled]
+                msgs.append(
+                    f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
+                    "Send again after they settle."
+                )
 
         if msgs:
             await update.message.reply_text("\n".join(msgs))
