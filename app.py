@@ -25,7 +25,7 @@ st.set_page_config(page_title="CBB Quant Edge", layout="wide")
 # --- CUSTOM STYLING ---
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
     --green-900: #0a1f12;
@@ -646,74 +646,6 @@ with st.sidebar:
 
 
 # ==========================================
-# KPI ROW
-# ==========================================
-total_value = 0
-total_units = 0.0
-total_kalshi = 0
-record_str = "--"
-profit_str = "--"
-roi_str = "--"
-
-for lg in LEAGUES:
-    d = league_data[lg]
-    df = d["df"]
-    if df.empty or 'Std_Rating' not in df.columns:
-        continue
-    rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
-    vb = df[(df['Std_Rating'].isin(VALUE_RATINGS)) | (rating_col.isin(VALUE_RATINGS))]
-    total_value += len(vb)
-    if len(vb) > 0:
-        total_units += np.maximum(vb['Std_Units'].fillna(0), vb['Units'].fillna(0)).sum()
-    total_kalshi += len(d["game_df"])
-
-if os.path.exists(BET_HIST_FILE):
-    try:
-        _bh = pd.read_csv(BET_HIST_FILE)
-        _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
-        if len(_settled) > 0:
-            _wins = len(_settled[_settled["result"] == "win"])
-            _losses = len(_settled[_settled["result"] == "loss"])
-            _profit = pd.to_numeric(_settled["profit"], errors="coerce").fillna(0).sum()
-            _wagered = pd.to_numeric(_settled["wager"], errors="coerce").fillna(0).sum()
-            _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
-            record_str = f"{_wins}W-{_losses}L"
-            profit_str = f"{_profit:+.1f}U"
-            roi_str = f"{_roi:+.1f}%"
-    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
-        st.warning(f"Could not read betting history: {e}")
-
-st.markdown(f'''
-<div class="kpi-row">
-    <div class="kpi-card">
-        <div class="kpi-value">{total_value}</div>
-        <div class="kpi-label">Value Bets</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{total_units:.1f}U</div>
-        <div class="kpi-label">To Deploy</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{total_kalshi}</div>
-        <div class="kpi-label">Kalshi Games</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{record_str}</div>
-        <div class="kpi-label">Record</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{profit_str}</div>
-        <div class="kpi-label">Profit</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{roi_str}</div>
-        <div class="kpi-label">ROI</div>
-    </div>
-</div>
-''', unsafe_allow_html=True)
-
-
-# ==========================================
 # VALUE BETS: Men's | Women's side by side
 # ==========================================
 col_mens, col_womens = st.columns(2)
@@ -746,17 +678,14 @@ def _render_value_bets(col, lg):
         if len(spread_value_bets) > 0:
             st.markdown('<div class="section-title">Spread Value Bets</div>', unsafe_allow_html=True)
 
-            std_rank = spread_value_bets['Std_Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
-            kalshi_rank = spread_value_bets['Rating'].fillna('PASS').map(RATING_RANK).fillna(0)
-            spread_value_bets['_best_rank'] = np.maximum(std_rank, kalshi_rank)
             spread_value_bets['_best_edge'] = np.maximum(
                 _parse_edge(spread_value_bets['Std_Edge_Pct']),
                 _parse_edge(spread_value_bets['Edge_Pct']),
             )
             spread_value_bets = (
                 spread_value_bets
-                .sort_values(['_best_rank', '_best_edge'], ascending=[False, False])
-                .drop(columns=['_best_rank', '_best_edge'])
+                .sort_values('_best_edge', ascending=False)
+                .drop(columns=['_best_edge'])
             )
 
             for _, row in spread_value_bets.iterrows():
@@ -849,7 +778,9 @@ def _render_value_bets(col, lg):
             game_value = game_df[game_df['Rating'].isin(VALUE_RATINGS)].copy() if 'Rating' in game_df.columns else pd.DataFrame()
             if not game_value.empty:
                 st.markdown('<div class="section-title">Kalshi Game Markets</div>', unsafe_allow_html=True)
-                for _, row in game_value.sort_values(by='Conf', ascending=False).iterrows():
+                game_value['_edge_sort'] = _parse_edge(game_value['Edge_Pct']) if 'Edge_Pct' in game_value.columns else 0
+                game_value = game_value.sort_values('_edge_sort', ascending=False).drop(columns=['_edge_sort'])
+                for _, row in game_value.iterrows():
                     rating = row.get("Rating", "PASS")
                     badge_css = str(rating).lower()
                     game_kalshi_ticker = row.get('Kalshi_Ticker', '')
@@ -890,6 +821,74 @@ def _render_value_bets(col, lg):
 
 _render_value_bets(col_mens, "mens")
 _render_value_bets(col_womens, "womens")
+
+
+# ==========================================
+# KPI ROW
+# ==========================================
+total_value = 0
+total_units = 0.0
+total_kalshi = 0
+record_str = "--"
+profit_str = "--"
+roi_str = "--"
+
+for lg in LEAGUES:
+    d = league_data[lg]
+    df = d["df"]
+    if df.empty or 'Std_Rating' not in df.columns:
+        continue
+    rating_col = df['Rating'] if 'Rating' in df.columns else pd.Series('PASS', index=df.index)
+    vb = df[(df['Std_Rating'].isin(VALUE_RATINGS)) | (rating_col.isin(VALUE_RATINGS))]
+    total_value += len(vb)
+    if len(vb) > 0:
+        total_units += np.maximum(vb['Std_Units'].fillna(0), vb['Units'].fillna(0)).sum()
+    total_kalshi += len(d["game_df"])
+
+if os.path.exists(BET_HIST_FILE):
+    try:
+        _bh = pd.read_csv(BET_HIST_FILE)
+        _settled = _bh[_bh["result"].isin(["win", "loss", "void"])]
+        if len(_settled) > 0:
+            _wins = len(_settled[_settled["result"] == "win"])
+            _losses = len(_settled[_settled["result"] == "loss"])
+            _profit = pd.to_numeric(_settled["profit"], errors="coerce").fillna(0).sum()
+            _wagered = pd.to_numeric(_settled["wager"], errors="coerce").fillna(0).sum()
+            _roi = (_profit / _wagered * 100) if _wagered > 0 else 0
+            record_str = f"{_wins}W-{_losses}L"
+            profit_str = f"{_profit:+.1f}U"
+            roi_str = f"{_roi:+.1f}%"
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+        st.warning(f"Could not read betting history: {e}")
+
+st.markdown(f'''
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="kpi-value">{total_value}</div>
+        <div class="kpi-label">Value Bets</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{total_units:.1f}U</div>
+        <div class="kpi-label">To Deploy</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{total_kalshi}</div>
+        <div class="kpi-label">Kalshi Games</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{record_str}</div>
+        <div class="kpi-label">Record</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{profit_str}</div>
+        <div class="kpi-label">Profit</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{roi_str}</div>
+        <div class="kpi-label">ROI</div>
+    </div>
+</div>
+''', unsafe_allow_html=True)
 
 
 # ==========================================
