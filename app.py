@@ -303,6 +303,7 @@ p, span, div, .stMarkdown {
 .good .stat-value.positive { color: var(--gold-700); }
 .marginal .stat-value.positive { color: #7a5c2e; }
 .pass .stat-value.positive { color: var(--neutral-500); }
+.stat-value.fee-value { color: var(--neutral-500); }
 
 /* Kalshi badge */
 .kalshi-row {
@@ -646,16 +647,14 @@ with st.sidebar:
 
 
 # ==========================================
-# VALUE BETS: Men's | Women's side by side
+# SPREAD BETS: Men's | Women's side by side
 # ==========================================
-col_mens, col_womens = st.columns(2)
 
 
-def _render_value_bets(col, lg):
-    """Render spread value bets and Kalshi game value bets for one league."""
+def _render_spread_bets(col, lg):
+    """Render spread value bets for one league."""
     d = league_data[lg]
     spread_df = d["spread_df"]
-    game_df = d["game_df"]
     predictions_ls = d["predictions_ls"]
     label = d["settings"]["label"]
     card_extra = "womens-card" if lg == "womens" else ""
@@ -666,7 +665,6 @@ def _render_value_bets(col, lg):
             unsafe_allow_html=True,
         )
 
-        # -- Spread Value Bets --
         spread_value_bets = pd.DataFrame(columns=spread_df.columns) if not spread_df.empty else pd.DataFrame()
         if not spread_df.empty and 'Std_Rating' in spread_df.columns:
             spread_rating = spread_df['Rating'] if 'Rating' in spread_df.columns else pd.Series('PASS', index=spread_df.index)
@@ -676,8 +674,6 @@ def _render_value_bets(col, lg):
             ].copy()
 
         if len(spread_value_bets) > 0:
-            st.markdown('<div class="section-title">Spread Value Bets</div>', unsafe_allow_html=True)
-
             spread_value_bets['_best_edge'] = np.maximum(
                 _parse_edge(spread_value_bets['Std_Edge_Pct']),
                 _parse_edge(spread_value_bets['Edge_Pct']),
@@ -773,54 +769,92 @@ def _render_value_bets(col, lg):
         else:
             st.caption("No spread value bets on this slate.")
 
-        # -- Kalshi Game Value Bets --
-        if not game_df.empty:
-            game_value = game_df[game_df['Rating'].isin(VALUE_RATINGS)].copy() if 'Rating' in game_df.columns else pd.DataFrame()
-            if not game_value.empty:
-                st.markdown('<div class="section-title">Kalshi Game Markets</div>', unsafe_allow_html=True)
-                game_value['_edge_sort'] = _parse_edge(game_value['Edge_Pct']) if 'Edge_Pct' in game_value.columns else 0
-                game_value = game_value.sort_values('_edge_sort', ascending=False).drop(columns=['_edge_sort'])
-                for _, row in game_value.iterrows():
-                    rating = row.get("Rating", "PASS")
-                    badge_css = str(rating).lower()
-                    game_kalshi_ticker = row.get('Kalshi_Ticker', '')
-                    game_fee = row.get('Kalshi_Fee')
-                    game_fee_str = f" + {_esc(game_fee)}&#162; fee" if pd.notna(game_fee) and game_fee else ""
-                    game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
-                    game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
-                    if game_kalshi_url:
-                        game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
-                    else:
-                        game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
-                    st.markdown(f'''
-                    <div class="bet-card {badge_css} {card_extra}">
-                        <div class="bet-header">
-                            <div class="bet-badge {badge_css}">{_esc(str(rating).title())}</div>
-                            <div class="bet-time">{_esc(row.get('Date/Time', ''))}</div>
-                        </div>
-                        <div class="bet-pick">{_esc(row.get('Pick', ''))}</div>
-                        <div class="bet-matchup">{_esc(row.get('Matchup', ''))}</div>
-                        <div class="bet-stats">
-                            <div class="stat-item">
-                                <span class="stat-label">Model</span>
-                                <span class="stat-value">{row.get('Conf', 0):.1%}</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Kalshi Edge</span>
-                                <span class="stat-value positive">{_esc(row.get('Edge_Pct', ''))}</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Units</span>
-                                <span class="stat-value">{float(row.get('Units', 0) or 0):.1f}U</span>
-                            </div>
-                        </div>
-                        <div class="kalshi-row">{game_kalshi_html}</div>
+
+def _render_game_bets(col, lg):
+    """Render Kalshi ML game value bets for one league."""
+    d = league_data[lg]
+    game_df = d["game_df"]
+    label = d["settings"]["label"]
+    card_extra = "womens-card" if lg == "womens" else ""
+
+    with col:
+        st.markdown(
+            f'<div class="league-header {lg}">{label}</div>',
+            unsafe_allow_html=True,
+        )
+
+        if game_df.empty:
+            st.caption("No ML game markets on this slate.")
+            return
+
+        game_value = game_df[game_df['Rating'].isin(VALUE_RATINGS)].copy() if 'Rating' in game_df.columns else pd.DataFrame()
+        if game_value.empty:
+            st.caption("No ML game markets on this slate.")
+            return
+
+        game_value['_edge_sort'] = _parse_edge(game_value['Edge_Pct']) if 'Edge_Pct' in game_value.columns else 0
+        game_value = game_value.sort_values('_edge_sort', ascending=False).drop(columns=['_edge_sort'])
+        for _, row in game_value.iterrows():
+            rating = row.get("Rating", "PASS")
+            badge_css = str(rating).lower()
+            game_kalshi_ticker = row.get('Kalshi_Ticker', '')
+            game_fee = row.get('Kalshi_Fee')
+            game_fee_val = float(game_fee) if pd.notna(game_fee) and game_fee else 0.0
+            game_price_val = float(row.get('Kalshi_Price', 0) or 0)
+            net_cost = game_price_val + game_fee_val
+            game_fee_str = f" + {_esc(game_fee)}&#162; fee" if game_fee_val else ""
+            game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
+            game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
+            if game_kalshi_url:
+                game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
+            else:
+                game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
+            st.markdown(f'''
+            <div class="bet-card {badge_css} {card_extra}">
+                <div class="bet-header">
+                    <div class="bet-badge {badge_css}">{_esc(str(rating).title())}</div>
+                    <div class="bet-time">{_esc(row.get('Date/Time', ''))}</div>
+                </div>
+                <div class="bet-pick">{_esc(row.get('Pick', ''))}</div>
+                <div class="bet-matchup">{_esc(row.get('Matchup', ''))}</div>
+                <div class="bet-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Model</span>
+                        <span class="stat-value">{row.get('Conf', 0):.1%}</span>
                     </div>
-                    ''', unsafe_allow_html=True)
+                    <div class="stat-item">
+                        <span class="stat-label">Kalshi Edge</span>
+                        <span class="stat-value positive">{_esc(row.get('Edge_Pct', ''))}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Units</span>
+                        <span class="stat-value">{float(row.get('Units', 0) or 0):.1f}U</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Fee</span>
+                        <span class="stat-value fee-value">{game_fee_val:.1f}&#162;</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Net Cost</span>
+                        <span class="stat-value fee-value">{net_cost:.1f}&#162;</span>
+                    </div>
+                </div>
+                <div class="kalshi-row">{game_kalshi_html}</div>
+            </div>
+            ''', unsafe_allow_html=True)
 
 
-_render_value_bets(col_mens, "mens")
-_render_value_bets(col_womens, "womens")
+st.markdown('<div class="section-title">Spread Bets</div>', unsafe_allow_html=True)
+col_spread_m, col_spread_w = st.columns(2)
+_render_spread_bets(col_spread_m, "mens")
+_render_spread_bets(col_spread_w, "womens")
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+st.markdown('<div class="section-title">Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
+col_game_m, col_game_w = st.columns(2)
+_render_game_bets(col_game_m, "mens")
+_render_game_bets(col_game_w, "womens")
 
 
 # ==========================================
@@ -873,7 +907,7 @@ st.markdown(f'''
     </div>
     <div class="kpi-card">
         <div class="kpi-value">{total_kalshi}</div>
-        <div class="kpi-label">Kalshi Games</div>
+        <div class="kpi-label">ML Bets</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-value">{record_str}</div>
@@ -1054,10 +1088,10 @@ with col_perf:
 
 
 # ==========================================
-# BOTTOM: Spread Slates (full width, tabs)
+# BOTTOM: Full Slates (full width, tabs)
 # ==========================================
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Full Slates</div>', unsafe_allow_html=True)
 
 slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
