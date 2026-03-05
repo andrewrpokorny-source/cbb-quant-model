@@ -802,7 +802,7 @@ def _render_game_bets(col, lg):
             game_fee_val = float(game_fee) if pd.notna(game_fee) and game_fee else 0.0
             game_price_val = float(row.get('Kalshi_Price', 0) or 0)
             net_cost = game_price_val + game_fee_val
-            game_fee_str = f" + {_esc(game_fee)}&#162; fee" if game_fee_val else ""
+            game_fee_str = f" + {game_fee_val:.1f}&#162; fee" if game_fee_val else ""
             game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
             game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
             if game_kalshi_url:
@@ -877,7 +877,9 @@ for lg in LEAGUES:
     total_value += len(vb)
     if len(vb) > 0:
         total_units += np.maximum(vb['Std_Units'].fillna(0), vb['Units'].fillna(0)).sum()
-    total_kalshi += len(d["game_df"])
+    gdf = d["game_df"]
+    if not gdf.empty and 'Rating' in gdf.columns:
+        total_kalshi += len(gdf[gdf['Rating'].isin(VALUE_RATINGS)])
 
 if os.path.exists(BET_HIST_FILE):
     try:
@@ -1088,10 +1090,10 @@ with col_perf:
 
 
 # ==========================================
-# BOTTOM: Full Slates (full width, tabs)
+# BOTTOM: Spread Slates (full width, tabs)
 # ==========================================
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown('<div class="section-title">Full Slates</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
 
 slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
