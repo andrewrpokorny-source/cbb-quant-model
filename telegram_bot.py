@@ -1313,6 +1313,19 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             "bet_id": bet_id, "wager": wager, "result": result, "game": game,
         }
 
+    if result == "pending":
+        logger.info(
+            "FD settled card: result=pending, skipping settlement flow "
+            "(line=%r wager=%s bet_id=%s)",
+            line, wager, bet_id,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "unsettled", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+            "line": line,
+        }
+
     # Mark BET ID as seen only after successful parse
     if bet_id:
         _SEEN_FD_BET_IDS.add(bet_id)
@@ -2139,6 +2152,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         skipped = [b for b in settled_all if b.get("_skipped")]
         skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
         skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
+        skipped_unsettled = [s for s in skipped if s.get("_skip_reason") == "unsettled"]
 
         msgs = []
         for bet in actual_settled:
@@ -2176,7 +2190,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
 
         # Per-card skip feedback
-        if not actual_settled and not skipped_incomplete and skipped_dedup:
+        if not actual_settled and not skipped_incomplete and not skipped_unsettled and skipped_dedup:
             # All cards were deduped, no new bets
             msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
         elif not actual_settled and not skipped:
@@ -2199,6 +2213,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msgs.append(f"Missed: {', '.join(parts)}")
             if skipped_incomplete:
                 msgs.append("Scroll to show full cards and resend for missed bets.")
+            # Show unsettled/open cards that were skipped
+            if skipped_unsettled:
+                n = len(skipped_unsettled)
+                lines = [s.get("line", "?") for s in skipped_unsettled]
+                msgs.append(
+                    f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
+                    "Send again after they settle."
+                )
 
         if msgs:
             await update.message.reply_text("\n".join(msgs))
