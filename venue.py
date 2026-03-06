@@ -115,8 +115,8 @@ def compute_distance_advantage(team_home_loc, opp_home_loc, venue_city, venue_st
 
     venue_loc = f"{venue_city}, {venue_state}"
     vc = geo_cache.get(venue_loc) or geocode_location(venue_loc, geo_cache)
-    tc = geo_cache.get(team_home_loc) if team_home_loc else None
-    oc = geo_cache.get(opp_home_loc) if opp_home_loc else None
+    tc = (geo_cache.get(team_home_loc) or geocode_location(team_home_loc, geo_cache)) if team_home_loc else None
+    oc = (geo_cache.get(opp_home_loc) or geocode_location(opp_home_loc, geo_cache)) if opp_home_loc else None
 
     if not vc or not tc or not oc:
         return 0.0

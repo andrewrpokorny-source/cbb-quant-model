@@ -54,16 +54,19 @@ def _norm_key(name):
     return " ".join(s.split())
 
 
-def build_team_name_map():
+def build_team_name_map(league="mens"):
     """Fetch ESPN teams, build normalized lookup: any_name -> espn displayName."""
-    cache = os.path.join(CACHE_DIR, "team_names.json")
+    from league_config import get_league_settings
+    sport_path = get_league_settings(league)["sport_path"]
+
+    cache = os.path.join(CACHE_DIR, f"team_names_{league}.json")
     if os.path.exists(cache):
         with open(cache) as f:
             return json.load(f)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     url = ("http://site.api.espn.com/apis/site/v2/sports/basketball/"
-           "mens-college-basketball/teams?limit=500")
+           f"{sport_path}/teams?limit=500")
     res = requests.get(url, timeout=10).json()
     teams = res["sports"][0]["leagues"][0]["teams"]
 
@@ -469,7 +472,7 @@ def main():
 
     # 3. Build team name mapping (short CSV names <-> ESPN displayNames)
     print("\n[3/7] Building team name mapping...")
-    name_map = build_team_name_map()
+    name_map = build_team_name_map(league)
     print(f"   {len(name_map['exact'])} exact + {len(name_map['norm'])} normalized entries")
 
     # 4. Enrich
