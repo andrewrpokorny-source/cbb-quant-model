@@ -1,6 +1,7 @@
 """Kalshi API client for fetching prediction market data."""
 
 import os
+import json
 import base64
 import time
 import requests
@@ -49,14 +50,14 @@ class KalshiClient:
         except Exception as e:
             print(f"      Failed to load private key: {e}")
 
-    def _sign_request(self, method: str, path: str, timestamp: str) -> str:
+    def _sign_request(self, method: str, path: str, timestamp: str) -> Optional[str]:
         """
         Sign request with RSA private key.
 
         Returns base64-encoded signature.
         """
         if not self.private_key:
-            return ""
+            return None
 
         try:
             from cryptography.hazmat.primitives import hashes
@@ -67,13 +68,16 @@ class KalshiClient:
 
             signature = self.private_key.sign(
                 message,
-                padding.PKCS1v15(),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.DIGEST_LENGTH,
+                ),
                 hashes.SHA256(),
             )
             return base64.b64encode(signature).decode()
         except Exception as e:
             print(f"      Signing error: {e}")
-            return ""
+            return None
 
     def _get_auth_headers(self, method: str, path: str) -> dict:
         """Get authentication headers for request."""
@@ -84,9 +88,14 @@ class KalshiClient:
 
         if self.private_key:
             timestamp = str(int(time.time() * 1000))
-            signature = self._sign_request(method, path, timestamp)
-            headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp
-            headers["KALSHI-ACCESS-SIGNATURE"] = signature
+            # Signing path must be the full URL path including the API prefix
+            sign_path = f"/trade-api/v2{path}"
+            signature = self._sign_request(method, sign_path, timestamp)
+            if signature:
+                headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp
+                headers["KALSHI-ACCESS-SIGNATURE"] = signature
+            else:
+                print("      Skipping signed headers due to signature generation failure")
 
         return headers
 
@@ -99,7 +108,7 @@ class KalshiClient:
             response = self.session.get(url, params=params, headers=headers, timeout=10)
             response.raise_for_status()
             return response.json()
-        except requests.RequestException as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             print(f"      Kalshi API error: {e}")
             return {}
 
@@ -166,27 +175,54 @@ class KalshiClient:
         Returns:
             List of NCAAB market dictionaries
         """
+        return self.get_college_basketball_markets(league="mens")
+
+    def get_college_basketball_markets(self, league: str = "mens") -> list:
+        """
+        Get all open college basketball markets for a target league.
+
+        Args:
+            league: 'mens' or 'womens' (aliases: men/women/m/w)
+
+        Returns:
+            List of Kalshi market dictionaries.
+        """
+        key = str(league or "mens").strip().lower()
+        if key in {"women", "womens", "w"}:
+            canonical = "womens"
+        else:
+            canonical = "mens"
+
+        # Known Kalshi series ticker families.
+        # Men's: KXNCAAMB*
+        # Women's: KXNCAAWB* (observed game markets) with potential spread/total variants.
+        series_by_league = {
+            "mens": [
+                "KXNCAAMBSPREAD",
+                "KXNCAAMBGAME",
+                "KXNCAAMBTOTAL",
+            ],
+            "womens": [
+                "KXNCAAWBSPREAD",
+                "KXNCAAWBGAME",
+                "KXNCAAWBTOTAL",
+            ],
+        }
+        prefix_by_league = {
+            "mens": "KXNCAAMB",
+            "womens": "KXNCAAWB",
+        }
+
         markets = []
-
-        # Kalshi NCAAB series tickers
-        series_tickers = [
-            "KXNCAAMBSPREAD",  # Spread markets
-            "KXNCAAMBGAME",    # Game winner (moneyline)
-            "KXNCAAMBTOTAL",   # Totals
-        ]
-
-        for series in series_tickers:
+        for series in series_by_league[canonical]:
             result = self.search_markets(series_ticker=series, status="open", limit=200)
             if result:
                 markets.extend(result)
 
-        # If series search doesn't work, try fetching all and filtering by ticker prefix
         if not markets:
             all_markets = self.search_markets(status="open", limit=1000)
-            markets = [
-                m for m in all_markets
-                if m.get("ticker", "").startswith("KXNCAAMB")
-            ]
+            prefix = prefix_by_league[canonical]
+            markets = [m for m in all_markets if m.get("ticker", "").startswith(prefix)]
 
         return markets
 
@@ -217,3 +253,47 @@ class KalshiClient:
             "ticker": ticker,
             "title": market.get("title", ""),
         }
+
+    def get_settlements(
+        self,
+        limit: int = 200,
+        ticker: Optional[str] = None,
+        min_ts: Optional[int] = None,
+        max_ts: Optional[int] = None,
+    ) -> list[dict]:
+        """Fetch settled positions from the user's portfolio.
+
+        Args:
+            limit: Max results per page (API max 200).
+            ticker: Filter to a specific market ticker.
+            min_ts: Minimum settlement timestamp (epoch seconds).
+            max_ts: Maximum settlement timestamp (epoch seconds).
+
+        Returns:
+            List of settlement dicts from the API.
+        """
+        all_settlements: list[dict] = []
+        cursor: Optional[str] = None
+
+        while True:
+            params: dict = {"limit": min(limit, 200)}
+            if ticker:
+                params["ticker"] = ticker
+            if min_ts is not None:
+                params["min_ts"] = min_ts
+            if max_ts is not None:
+                params["max_ts"] = max_ts
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/portfolio/settlements", params)
+            if not result:
+                raise RuntimeError("Kalshi API request failed fetching settlements")
+            settlements = result.get("settlements", [])
+            all_settlements.extend(settlements)
+
+            cursor = result.get("cursor")
+            if not cursor or len(settlements) < min(limit, 200):
+                break
+
+        return all_settlements

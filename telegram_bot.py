@@ -16,6 +16,7 @@ import json
 import errno
 import fcntl
 import base64
+import shutil
 import tempfile
 import logging
 import logging.handlers
@@ -39,7 +40,9 @@ from telegram.ext import (
 )
 from ocrmac import ocrmac
 
+from betting import VALUE_RATINGS
 from settle_bets import settle_pending_bets
+from settle_kalshi import settle_to_csv
 
 load_dotenv()
 
@@ -47,12 +50,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
 DAILY_PREDICTIONS = os.path.join(BASE_DIR, "daily_predictions.csv")
 PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # User authorization: comma-separated list of allowed Telegram user IDs
 _allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USERS", "")
 ALLOWED_USER_IDS = set(int(uid.strip()) for uid in _allowed_users_str.split(",") if uid.strip())
+
+
+def _parse_edge_pct(s):
+    """Parse an edge string like '+4.2%' into a float (4.2). Returns 0.0 on failure."""
+    try:
+        val = float(str(s).replace("%", "").replace("+", ""))
+        return val if val == val else 0.0  # NaN != NaN
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def authorized_only(func):
@@ -100,7 +113,7 @@ for handler in logging.root.handlers:
 logger = logging.getLogger(__name__)
 
 # CSV headers for betting_history.csv
-CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit"]
+CSV_HEADERS = ["date", "platform", "game", "bet_type", "line", "odds", "wager", "result", "payout", "profit", "bet_id", "league"]
 
 # Short team abbreviations that are valid (not junk OCR text)
 VALID_SHORT_TEAMS = {
@@ -135,6 +148,18 @@ JUNK_PATTERNS = [
     re.compile(r"^\d+\s+Share", re.IGNORECASE),  # "4 Share"
 ]
 
+# FanDuel settled-slip regexes (applied to raw OCR text before cleaning)
+FD_BET_ID_RE = re.compile(r"BET ID:\s*(\S+)", re.IGNORECASE)
+FD_GAME_DATE_RE = re.compile(
+    r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2}),\s*\d{1,2}:\d{2}(?:AM|PM)\s*ET",
+    re.IGNORECASE,
+)
+
+# Cross-screenshot dedup for FanDuel BET IDs within a single bot session.
+# Not persisted across restarts -- CSV-level dedup in append_bet() provides
+# the durable duplicate check.
+_SEEN_FD_BET_IDS: set[str] = set()
+
 # Common OCR misreads to correct
 OCR_CORRECTIONS = {
     "lowa": "Iowa",
@@ -165,12 +190,66 @@ def _clean_ocr_text(lines: list[str]) -> list[str]:
     return cleaned
 
 
+def _detect_fd_settled(raw_text: str) -> bool:
+    """Detect whether raw OCR text is from a FanDuel settled screenshot."""
+    lower = raw_text.lower()
+    if "won on fanduel" in lower or "lost on fanduel" in lower:
+        return True
+    if re.search(r"placed:\s*\d+/\d+/\d{4}", lower):
+        return True
+    # "RETURNED" appears as a standalone line on FanDuel void slips
+    if re.search(r"^\s*returned\s*$", lower, re.MULTILINE) and "sportsbook" in lower:
+        return True
+    # "Finished" format: settled tab with scores instead of WON/LOST banners
+    if re.search(r"^\s*finished\s*$", lower, re.MULTILINE):
+        return True
+    return False
+
+
 def ensure_csv_exists():
-    """Create betting_history.csv with headers if it doesn't exist."""
+    """Create betting_history.csv with headers if it doesn't exist.
+
+    Also migrates existing CSVs that lack the bet_id column.
+    """
     if not os.path.exists(BETTING_HISTORY):
         with open(BETTING_HISTORY, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(CSV_HEADERS)
+        return
+
+    # Migrate: add missing columns (bet_id, league)
+    with open(BETTING_HISTORY, "r", newline="") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+
+    if header is None:
+        return
+
+    missing = [col for col in CSV_HEADERS if col not in header]
+    if not missing:
+        return
+
+    with open(BETTING_HISTORY, "r", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    logger.info("Migrating betting_history.csv: adding %s column(s) (%d rows)", missing, len(rows))
+    tmp_path = BETTING_HISTORY + ".migrate_tmp"
+    defaults = {"bet_id": "", "league": ""}
+    try:
+        with open(tmp_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+            writer.writeheader()
+            for row in rows:
+                for col in missing:
+                    row.setdefault(col, defaults.get(col, ""))
+                writer.writerow({h: row.get(h, "") for h in CSV_HEADERS})
+        os.replace(tmp_path, BETTING_HISTORY)
+        logger.info("Migration complete: %s column(s) added", missing)
+    except Exception:
+        logger.exception("CSV migration failed -- original file preserved")
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 def _normalize_line(line_str: str) -> str:
@@ -248,6 +327,7 @@ def _audit_bet_fields(bet: dict) -> dict:
         "odds": str(bet.get("odds", "")),
         "wager": wager,
         "result": str(bet.get("result", "")),
+        "bet_id": str(bet.get("bet_id", "")),
     }
 
 
@@ -300,6 +380,7 @@ def update_bet_result(bet: dict) -> str | None:
     new_game = _normalize_game(bet.get("game", ""))
     new_odds = _normalize_odds(bet.get("odds", ""))
     new_date = str(bet.get("date", "")).strip()
+    new_bet_id = str(bet.get("bet_id", "")).strip()
 
     with open(BETTING_HISTORY, "r+", newline="") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
@@ -323,6 +404,11 @@ def update_bet_result(bet: dict) -> str | None:
                 row_game = _normalize_game(row.get("game", ""))
                 row_odds = _normalize_odds(row.get("odds", ""))
                 row_date = str(row.get("date", "")).strip()
+
+                # BET ID match is a strong signal
+                row_bet_id = str(row.get("bet_id", "")).strip()
+                if new_bet_id and row_bet_id and new_bet_id == row_bet_id:
+                    score += 10
 
                 if new_game and row_game:
                     if new_game == row_game:
@@ -375,6 +461,12 @@ def update_bet_result(bet: dict) -> str | None:
             reader[matched_idx]["payout"] = bet.get("payout", "")
             reader[matched_idx]["profit"] = bet.get("profit", "")
 
+            # Backfill bet_id and game if the existing row has empty values
+            if bet.get("bet_id") and not str(reader[matched_idx].get("bet_id", "")).strip():
+                reader[matched_idx]["bet_id"] = bet["bet_id"]
+            if bet.get("game") and not str(reader[matched_idx].get("game", "")).strip():
+                reader[matched_idx]["game"] = bet["game"]
+
             # Write back while still holding the lock
             f.seek(0)
             f.truncate()
@@ -398,13 +490,22 @@ def _find_matching_pending_bet(partial_bet: dict) -> dict | None:
     if not os.path.exists(BETTING_HISTORY):
         return None
 
-    df = pd.read_csv(BETTING_HISTORY)
+    try:
+        df = pd.read_csv(BETTING_HISTORY)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        logger.error("Could not read %s for pending bet matching: %s", BETTING_HISTORY, e)
+        return None
+
     pending = df[df["result"] == "pending"]
     if len(pending) == 0:
         return None
 
     platform = partial_bet["platform"].upper()
-    wager = float(partial_bet["wager"])
+    try:
+        wager = float(partial_bet["wager"])
+    except (ValueError, TypeError, KeyError) as e:
+        logger.warning("Invalid wager in partial bet for matching: %s", e)
+        return None
 
     matches = pending[
         (pending["platform"].str.upper() == platform)
@@ -532,6 +633,8 @@ def append_bet(bet: dict):
         "result": bet.get("result", "pending"),
         "payout": bet.get("payout", ""),
         "profit": bet.get("profit", ""),
+        "bet_id": bet.get("bet_id", ""),
+        "league": bet.get("league", ""),
     }
     parse_audit_id = bet.get("_parse_audit_id")
 
@@ -542,8 +645,28 @@ def append_bet(bet: dict):
             # Check for duplicates while holding the lock
             new_key = _bet_identity(row)
             new_is_pending = str(row.get("result", "")).strip().lower() == "pending"
+            new_bet_id = str(row.get("bet_id", "")).strip()
             reader = csv.DictReader(f)
             for existing in reader:
+                # BET ID dedup: same non-empty bet_id is always a duplicate
+                existing_bet_id = str(existing.get("bet_id", "")).strip()
+                if new_bet_id and existing_bet_id and new_bet_id == existing_bet_id:
+                    logger.info(
+                        "Duplicate bet_id skipped: %s %s %s",
+                        row["line"],
+                        row["wager"],
+                        row["platform"],
+                    )
+                    if parse_audit_id:
+                        _append_parse_audit(
+                            {
+                                "event": "ocr_duplicate_skipped",
+                                "parse_id": parse_audit_id,
+                                "bet": _audit_bet_fields(row),
+                            }
+                        )
+                    return None
+
                 if _bet_identity(existing) != new_key:
                     continue
 
@@ -591,12 +714,19 @@ def append_bet(bet: dict):
     return row
 
 
+def _ocr_sort_key(result):
+    """Sort key for OCR results: top-to-bottom, left-to-right reading order."""
+    return (-round(result[2][1] * 200), result[2][0])
+
+
 def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     """
     Use macOS native OCR (ocrmac) to extract text from a bet slip screenshot,
     then parse the text into structured bet data.
     Returns a list of parsed bet dicts.
     """
+    parse_id = uuid.uuid4().hex[:12]
+
     # Write bytes to a temp file for ocrmac
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
         tmp.write(image_bytes)
@@ -604,11 +734,26 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
 
     try:
         results = ocrmac.OCR(tmp_path, recognition_level="accurate").recognize()
+        try:
+            os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+            saved_path = os.path.join(SCREENSHOT_DIR, f"{parse_id}.jpg")
+            shutil.copy2(tmp_path, saved_path)
+            logger.info("Saved screenshot to %s", saved_path)
+        except OSError as save_err:
+            logger.warning("Could not save screenshot for re-testing: %s", save_err)
     finally:
         os.unlink(tmp_path)
 
+    # Sort OCR results by y-coordinate (descending: y=1 is top in macOS coords)
+    # so text flows top-to-bottom in visual reading order.  Without this,
+    # ocrmac returns all left-column text first then right-column text,
+    # which breaks card splitting on multi-card settled screenshots.
+    # Quantize y to ~0.5% bands so items on the same visual line sort
+    # left-to-right by x instead of by sub-pixel y jitter.
+    results = sorted(results, key=_ocr_sort_key)
+
     # Combine OCR text lines (confidence threshold 0.5)
-    lines = [text for text, confidence, bbox in results if confidence > 0.5]
+    lines = [text for text, confidence, bbox in results if confidence >= 0.5]
     logger.info(f"OCR raw lines:\n{chr(10).join(lines)}")
 
     # Detect platform from RAW text (before cleaning removes identifiers)
@@ -616,13 +761,17 @@ def parse_bet_screenshot(image_bytes: bytes) -> list[dict]:
     platform = _detect_platform(raw_text_for_detection)
     logger.info(f"Detected platform: {platform}")
 
+    is_fd_settled = platform == "FanDuel" and _detect_fd_settled(raw_text_for_detection)
+
     # Clean junk lines before parsing
     cleaned = _clean_ocr_text(lines)
     cleaned_text = "\n".join(cleaned)
     logger.info(f"OCR cleaned text:\n{cleaned_text}")
 
-    parse_id = uuid.uuid4().hex[:12]
-    bets = _parse_bet_slip_text(cleaned_text, platform=platform, raw_text=raw_text_for_detection)
+    bets = _parse_bet_slip_text(
+        cleaned_text, platform=platform, raw_text=raw_text_for_detection,
+        is_fd_settled=is_fd_settled,
+    )
     for bet in bets:
         bet["_parse_audit_id"] = parse_id
 
@@ -744,10 +893,16 @@ def _parse_fd_settled_fallback(raw_text: str) -> dict | None:
     odds = odds_match.group(1) if odds_match else "n/a"
 
     # Determine result from payout
+    lower_text = raw_text.lower()
     if payout > wager:
         result = "win"
-    elif payout == 0 or "returned" in raw_text.lower():
-        result = "void" if "returned" in raw_text.lower() else "loss"
+    elif "returned" in lower_text:
+        if abs(payout - wager) < 0.01:
+            result = "void"
+        else:
+            result = "loss"
+    elif payout == 0:
+        result = "loss"
     elif abs(payout - wager) < 0.01:
         result = "void"
     else:
@@ -835,6 +990,374 @@ def _parse_fd_blocks(text: str) -> list[dict]:
     return bets
 
 
+def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
+    """Parse a FanDuel settled screenshot into individual bet dicts.
+
+    Splits on PLACED: lines (real OCR output), falling back to
+    FANDUEL/SPORTSBOOK banners for legacy fixtures.
+    """
+    placed_re = re.compile(r"^\s*PLACED:\s*\d+/\d+/\d{4}", re.IGNORECASE | re.MULTILINE)
+
+    if placed_re.search(raw_text):
+        # Split after each PLACED: line (each card ends with PLACED)
+        lines = raw_text.split("\n")
+        chunks: list[str] = []
+        current: list[str] = []
+        for line in lines:
+            current.append(line)
+            if placed_re.match(line):
+                chunks.append("\n".join(current))
+                current = []
+        # Remaining lines after last PLACED (truncated card at bottom)
+        if current:
+            chunks.append("\n".join(current))
+        cards = chunks
+    else:
+        # Fallback: split at FANDUEL ... SPORTSBOOK banners
+        cards = re.split(r"FANDUEL\s*\n\s*SPORTSBOOK", raw_text, flags=re.IGNORECASE)
+        if cards:
+            cards = cards[1:]
+        if not cards:
+            logger.warning(
+                "FD settled card splitting found no card boundaries "
+                "(no PLACED: lines and no FANDUEL/SPORTSBOOK banners)"
+            )
+
+    bets = []
+    for card_text in cards:
+        bet = _parse_single_fd_settled_card(card_text)
+        if bet is not None:
+            bets.append(bet)
+    return bets
+
+
+def _resolve_game_date(team_name: str) -> str:
+    """Look up the game date for a team from prediction files.
+
+    Searches men's and women's daily and dated prediction files
+    for a matching team in the Pick or Matchup column. Returns YYYY-MM-DD or "".
+    """
+    if not team_name:
+        return ""
+
+    team_upper = team_name.upper()
+    eastern = pytz.timezone("US/Eastern")
+    now = datetime.now(eastern)
+
+    # Build list of prediction files to search (most recent first)
+    # Include both men's and women's prediction files
+    pred_files = []
+    for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "daily_predictions_wbb.csv")]:
+        if os.path.exists(base):
+            pred_files.append(base)
+    for days_back in range(14):
+        dt = now - timedelta(days=days_back)
+        date_str = dt.strftime('%Y%m%d')
+        for pattern in [f"predictions_{date_str}.csv", f"predictions_wbb_{date_str}.csv"]:
+            fname = os.path.join(BASE_DIR, pattern)
+            if os.path.exists(fname) and fname not in pred_files:
+                pred_files.append(fname)
+
+    for fpath in pred_files:
+        try:
+            df = pd.read_csv(fpath)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+            logger.warning("Could not read prediction file %s for date resolution: %s", fpath, e)
+            continue
+        if "Date/Time" not in df.columns or "Matchup" not in df.columns:
+            logger.warning(
+                "Prediction file %s missing expected columns (has: %s); skipping",
+                fpath, list(df.columns),
+            )
+            continue
+
+        for _, row in df.iterrows():
+            matchup = str(row.get("Matchup", "")).upper()
+            pick = str(row.get("Pick", "")).upper()
+            if team_upper in matchup or team_upper in pick:
+                dt_str = str(row["Date/Time"]).strip()
+                # Format: "MM/DD HH:MM AM|PM"
+                m = re.match(r"(\d{1,2})/(\d{1,2})", dt_str)
+                if m:
+                    month, day = int(m.group(1)), int(m.group(2))
+                    year = now.year
+                    if month == 12 and now.month <= 2:
+                        year -= 1
+                    return f"{year}-{month:02d}-{day:02d}"
+                logger.warning(
+                    "Found team %r in %s but Date/Time %r did not match expected MM/DD format",
+                    team_name, fpath, dt_str,
+                )
+    return ""
+
+
+def _parse_single_fd_settled_card(card_text: str) -> dict | None:
+    """Parse a single FanDuel settled card from raw OCR text."""
+    # 1. Extract BET ID (before cleaning)
+    bet_id_match = FD_BET_ID_RE.search(card_text)
+    bet_id = bet_id_match.group(1) if bet_id_match else ""
+
+    # 2. Cross-screenshot dedup check (don't mark as seen yet; incomplete cards shouldn't burn IDs)
+    if bet_id and bet_id in _SEEN_FD_BET_IDS:
+        logger.info("Cross-screenshot dedup: skipping already-seen bet_id %s", bet_id)
+        return {"_skipped": True, "_skip_reason": "dedup", "_settled": True,
+                "platform": "FanDuel", "bet_id": bet_id}
+
+    # 3. Extract game date
+    date_match = FD_GAME_DATE_RE.search(card_text)
+    game_date = ""
+    if date_match:
+        month_str = date_match.group(1).upper()
+        day = int(date_match.group(2))
+        month_map = {
+            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+            "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+        }
+        month = month_map.get(month_str)
+        if month is None:
+            logger.warning(
+                "Unrecognized month abbreviation %r in FD settled card (bet_id=%s), "
+                "falling back to month=1",
+                month_str, bet_id,
+            )
+            month = 1
+        eastern = pytz.timezone("US/Eastern")
+        now = datetime.now(eastern)
+        year = now.year
+        # Handle year boundary: Dec game viewed in Jan
+        if month == 12 and now.month <= 2:
+            year -= 1
+        game_date = f"{year}-{month:02d}-{day:02d}"
+
+    # 3b. Extract PLACED date as a last-resort fallback (used only if prediction
+    # lookup also fails -- see step 6b below).
+    placed_date = ""
+    if not game_date:
+        placed_date_match = re.search(
+            r"PLACED:\s*(\d{1,2})/(\d{1,2})/(\d{4})", card_text, re.IGNORECASE
+        )
+        if placed_date_match:
+            p_month = int(placed_date_match.group(1))
+            p_day = int(placed_date_match.group(2))
+            p_year = int(placed_date_match.group(3))
+            if 1 <= p_month <= 12 and 1 <= p_day <= 31 and 2020 <= p_year <= 2030:
+                placed_date = f"{p_year}-{p_month:02d}-{p_day:02d}"
+            else:
+                logger.warning(
+                    "FD settled card: PLACED date out of range month=%d day=%d "
+                    "year=%d (bet_id=%s)",
+                    p_month, p_day, p_year, bet_id,
+                )
+
+    # 4. Detect result from raw text
+    lower = card_text.lower()
+    if "won on fanduel" in lower:
+        result = "win"
+    elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
+        result = "loss"
+    elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
+        # RETURNED present -- distinguish loss ($0.00 payout) from void (wager refunded).
+        # Extract dollar amounts in betting range; if two found and approximately
+        # equal, wager was refunded (void). Otherwise loss.
+        ret_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+        ret_in_range = [float(m) for m in ret_amts if 0.25 <= float(m) <= 500]
+        if len(ret_in_range) >= 2 and abs(ret_in_range[1] - ret_in_range[0]) < 0.01:
+            result = "void"
+        else:
+            result = "loss"
+        logger.info(
+            "FD settled card: RETURNED -> %s (bet_id=%s, amounts_in_range=%s)",
+            result, bet_id, ret_in_range,
+        )
+    else:
+        # No keyword markers found.  If there's no BET ID either, this is
+        # almost certainly a trailing open/unsettled card (or betslip bar
+        # remnant) rather than a settled card whose keywords OCR missed.
+        if not bet_id:
+            result = "pending"
+            logger.info(
+                "FD settled card: no result keywords and no BET ID, "
+                "treating as unsettled/pending"
+            )
+        else:
+            # Has a BET ID but no keywords -- infer result from payout vs wager.
+            # Covers "Finished" format (scores visible) and cases where OCR
+            # misses colored "WON/LOST ON FANDUEL" text on dark backgrounds.
+            # Assumes first dollar amount in [0.25, 500] is wager and second is payout.
+            all_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+            amts_in_range = [float(m) for m in all_amts if 0.25 <= float(m) <= 500]
+            if len(amts_in_range) >= 2:
+                w, p = amts_in_range[0], amts_in_range[1]
+                if p > w:
+                    result = "win"
+                elif p < w:
+                    result = "loss"
+                else:
+                    result = "void"
+                logger.info(
+                    "FD settled card: no WON/LOST keyword, inferred result=%s "
+                    "from wager=$%.2f payout=$%.2f (bet_id=%s)",
+                    result, w, p, bet_id,
+                )
+            else:
+                result = "pending"
+                logger.warning(
+                    "FD settled card: no result keywords and < 2 dollar amounts, "
+                    "defaulting to pending (bet_id=%s, amounts=%s)",
+                    bet_id, amts_in_range,
+                )
+
+    # 5. Clean and parse structured fields
+    lines = card_text.split("\n")
+    cleaned = _clean_ocr_text(lines)
+
+    spread_re = re.compile(r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$")
+    matchup_re = re.compile(r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)")
+
+    team = ""
+    spread = ""
+    game = ""
+    wager = 0.0
+    odds = "n/a"
+
+    for cl in cleaned:
+        cl = cl.strip()
+        if not team:
+            sm = spread_re.match(cl)
+            if sm:
+                team = sm.group(1).strip()
+                spread = sm.group(2)
+                continue
+        if not game:
+            mm = matchup_re.search(cl)
+            if mm:
+                game = f"{mm.group(1).strip()} vs {mm.group(2).strip()}"
+                continue
+
+    # Fallback game detection: in the FanDuel "Finished" format, team names
+    # appear between "SPREAD BETTING" and the wager ($X.XX / TOTAL WAGER).
+    if not game:
+        raw_lines = card_text.split("\n")
+        game_teams = []
+        in_team_zone = False
+        for raw_line in raw_lines:
+            stripped = raw_line.strip()
+            if "SPREAD BETTING" in stripped.upper():
+                in_team_zone = True
+                continue
+            if in_team_zone:
+                if (
+                    stripped.startswith("$")
+                    or "TOTAL WAGER" in stripped.upper()
+                    or "BET ID" in stripped.upper()
+                ):
+                    break
+                if (
+                    stripped
+                    and re.match(r"^[A-Za-z]", stripped)
+                    and stripped.lower() not in JUNK_LINES
+                    and len(stripped) >= 3
+                ):
+                    game_teams.append(stripped)
+        if len(game_teams) >= 2:
+            game = f"{game_teams[0]} vs {game_teams[1]}"
+
+    # Wager: first dollar amount in range from cleaned text
+    for cl in cleaned:
+        wager_amounts = re.findall(r"\$(\d+\.?\d{0,2})", cl)
+        for amt_str in wager_amounts:
+            amt = float(amt_str)
+            if 0.25 <= amt <= 500:
+                wager = amt
+                break
+        if wager > 0:
+            break
+
+    # Odds: standalone American odds line
+    for cl in cleaned:
+        odds_match = re.match(r"^([+-]\d{3,})\s*$", cl.strip())
+        if odds_match:
+            odds = odds_match.group(1)
+            break
+
+    # 6. Extract payout from raw text (second dollar amount in range)
+    all_amounts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
+    raw_amounts = [float(m) for m in all_amounts if 0.25 <= float(m) <= 500]
+    if len(raw_amounts) < 2:
+        logger.warning(
+            "FD settled card: expected >= 2 dollar amounts, found %d (bet_id=%s)",
+            len(raw_amounts), bet_id,
+        )
+    payout = raw_amounts[1] if len(raw_amounts) >= 2 else 0.0
+
+    # 7. Result-specific payout override
+    if result == "win":
+        profit = round(payout - wager, 2)
+    elif result == "void":
+        payout = wager  # void = wager refunded; override raw $0.00 from OCR
+        profit = 0.0
+    elif result == "loss":
+        payout = 0.0
+        profit = round(-wager, 2)
+    else:
+        profit = 0.0
+
+    line = f"{team} {spread}" if team and spread else ""
+
+    # 6b. Resolve game date: prediction files take precedence over PLACED date
+    if not game_date and team:
+        game_date = _resolve_game_date(team)
+    if not game_date and placed_date:
+        game_date = placed_date
+        logger.info(
+            "FD settled card: using PLACED date fallback %s (bet_id=%s)",
+            game_date, bet_id,
+        )
+
+    if not line or wager <= 0:
+        logger.warning(
+            "FD settled card parse incomplete: line=%r wager=%s bet_id=%s",
+            line, wager, bet_id,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "incomplete", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+        }
+
+    if result == "pending":
+        logger.info(
+            "FD settled card: result=pending, skipping settlement flow "
+            "(line=%r wager=%s bet_id=%s)",
+            line, wager, bet_id,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "unsettled", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+            "line": line,
+        }
+
+    # Mark BET ID as seen only after successful parse
+    if bet_id:
+        _SEEN_FD_BET_IDS.add(bet_id)
+
+    return {
+        "platform": "FanDuel",
+        "game": game,
+        "bet_type": "spread",
+        "line": line,
+        "odds": odds,
+        "wager": wager,
+        "date": game_date,
+        "result": result,
+        "payout": payout,
+        "profit": profit,
+        "bet_id": bet_id,
+        "_settled": True,
+    }
+
+
 def _parse_kalshi_blocks(text: str) -> list[dict]:
     """Parse Kalshi bet slip using structured approach.
 
@@ -907,7 +1430,10 @@ def _detect_platform(text: str) -> str:
         return "Unknown"
 
 
-def _parse_bet_slip_text(text: str, platform: str = None, raw_text: str = None) -> list[dict]:
+def _parse_bet_slip_text(
+    text: str, platform: str = None, raw_text: str = None,
+    is_fd_settled: bool = False,
+) -> list[dict]:
     """Parse raw OCR text from a bet slip into structured bet data."""
     # Use provided platform or try to detect from text
     if platform is None:
@@ -920,6 +1446,12 @@ def _parse_bet_slip_text(text: str, platform: str = None, raw_text: str = None) 
             return bets
 
     if platform == "FanDuel":
+        # Settled path: use dedicated settled parser BEFORE pending parser
+        if is_fd_settled:
+            bets = _parse_fd_settled_cards(raw_text or text)
+            if bets:
+                return bets
+
         bets = _parse_fd_blocks(text)
         if bets:
             return bets
@@ -1324,9 +1856,9 @@ def parse_shorthand(text: str) -> dict:
         remaining = remaining[1:]
     if remaining:
         try:
-            wager = float(remaining[0])
+            wager = float(remaining[0].lstrip("$"))
         except ValueError:
-            pass
+            logger.warning("Could not parse wager '%s' from shorthand input", remaining[0])
 
     return {
         "platform": platform,
@@ -1381,18 +1913,45 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized_only
 async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Settle all pending bets."""
-    await update.message.reply_text("Settling pending bets...")
+    """Settle all pending bets and import Kalshi settlements."""
+    await update.message.reply_text("Settling bets...")
 
+    # 1) Settle pending (FanDuel etc.) bets via score lookup
     summary = settle_pending_bets()
 
     msg_parts = [
-        f"Settled: {summary['settled']}",
+        f"Pending settled: {summary['settled']}",
         f"Still pending: {summary['still_pending']}",
     ]
     if summary["details"]:
         msg_parts.append("")
-        msg_parts.extend(summary["details"][:20])  # Cap at 20 lines
+        msg_parts.extend(summary["details"][:20])
+
+    # 2) Import settled Kalshi positions (uses persisted sync cursor)
+    try:
+        kalshi_result = settle_to_csv()
+        logged = kalshi_result["logged"]
+        kalshi_settled = kalshi_result["settled"]
+        skipped = kalshi_result["skipped"]
+        if kalshi_result["error"]:
+            msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+        elif logged or kalshi_settled:
+            parts = []
+            if logged:
+                profit = sum(float(r["profit"]) for r in logged)
+                wins = sum(1 for r in logged if r["result"] == "win")
+                losses = sum(1 for r in logged if r["result"] == "loss")
+                parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+            if kalshi_settled:
+                parts.append(f"{kalshi_settled} pending settled")
+            msg_parts.append(f"\nKalshi: {', '.join(parts)}")
+        elif skipped:
+            msg_parts.append(f"\nKalshi: all {skipped} already logged")
+        else:
+            msg_parts.append("\nKalshi: no recent settlements")
+    except Exception:
+        logger.exception("Kalshi settlement fetch failed")
+        msg_parts.append("\nKalshi: fetch failed")
 
     await update.message.reply_text("\n".join(msg_parts))
 
@@ -1406,10 +1965,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     df = pd.read_csv(DAILY_PREDICTIONS)
 
-    # Filter to value bets (STRONG only)
+    # Filter to value bets
+    std_col = df["Std_Rating"] if "Std_Rating" in df.columns else pd.Series("PASS", index=df.index)
+    rating_col = df["Rating"] if "Rating" in df.columns else pd.Series("PASS", index=df.index)
     value_bets = df[
-        (df.get("Std_Rating", pd.Series(dtype=str)) == "STRONG")
-        | (df.get("Rating", pd.Series(dtype=str)) == "STRONG")
+        std_col.isin(VALUE_RATINGS)
+        | rating_col.isin(VALUE_RATINGS)
     ]
 
     if len(value_bets) == 0:
@@ -1418,10 +1979,21 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [f"Today's picks ({len(value_bets)} value bets):\n"]
     for _, row in value_bets.iterrows():
-        units = row.get("Std_Units", row.get("Units", 0))
         conf = row.get("Conf", 0)
-        edge = row.get("Std_Edge_Pct", row.get("Edge_Pct", ""))
         pick = row.get("Pick", "")
+
+        # Use whichever source (Kalshi vs standard book) has the better edge
+        std_edge_str = row.get("Std_Edge_Pct", "")
+        kalshi_edge_str = row.get("Edge_Pct", "")
+        std_units = row.get("Std_Units", 0) or 0
+        kalshi_units = row.get("Units", 0) or 0
+
+        if _parse_edge_pct(kalshi_edge_str) > _parse_edge_pct(std_edge_str):
+            edge = kalshi_edge_str
+            units = kalshi_units
+        else:
+            edge = std_edge_str
+            units = std_units
 
         lines.append(f"{pick}  {conf:.0%} | {edge} | {units:.1f}U")
 
@@ -1583,6 +2155,90 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 context.user_data["partial_settled_bet"] = bet
         return
+
+    # Handle settled bets from the new settled card parser
+    settled_all = [b for b in bets if b.get("_settled")]
+    non_settled_bets = [b for b in bets if not b.get("_settled") and not b.get("_partial")]
+    if settled_all:
+        actual_settled = [b for b in settled_all if not b.get("_skipped")]
+        skipped = [b for b in settled_all if b.get("_skipped")]
+        skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
+        skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
+        skipped_unsettled = [s for s in skipped if s.get("_skip_reason") == "unsettled"]
+
+        msgs = []
+        for bet in actual_settled:
+            try:
+                bet_copy = {k: v for k, v in bet.items() if not k.startswith("_")}
+                if not bet_copy.get("line") or not bet_copy.get("wager"):
+                    logger.warning("Settled bet missing line or wager: %s", bet_copy)
+                    msgs.append(
+                        f"Could not parse settled bet fully"
+                        f" (bet_id={bet_copy.get('bet_id', '?')})."
+                        f" Try manual settlement."
+                    )
+                    continue
+                # Try to settle a matching pending bet first
+                update_msg = update_bet_result(bet_copy)
+                if update_msg:
+                    msgs.append(update_msg)
+                else:
+                    # No pending match -- append as settled (dedup catches existing)
+                    row = append_bet(bet_copy)
+                    if row is None:
+                        msgs.append(f"Duplicate: {bet.get('line', '?')} -- already logged.")
+                    else:
+                        profit_val = float(row.get("profit", 0) or 0)
+                        msgs.append(
+                            f"Logged ({row['result'].upper()}): {row['line']}, "
+                            f"${float(row['wager']):.2f} on {row['platform']} "
+                            f"(profit: {profit_val:+.2f}U)"
+                        )
+            except (OSError, csv.Error, ValueError) as e:
+                logger.exception("I/O error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
+                msgs.append(f"Error writing {bet.get('line', '?')} to CSV. Try again.")
+            except Exception as e:
+                logger.exception("Unexpected error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
+                msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
+
+        # Per-card skip feedback
+        if not actual_settled and not skipped_incomplete and not skipped_unsettled and skipped_dedup:
+            # All cards were deduped, no new bets
+            msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
+        elif not actual_settled and not skipped:
+            # Nothing parsed at all
+            msgs.append(
+                "No bets could be parsed. Cards may be partially visible"
+                " -- try scrolling to show complete cards and resend."
+            )
+        else:
+            # Show missed incomplete cards
+            for s in skipped_incomplete:
+                parts = []
+                if s.get("bet_id"):
+                    parts.append(f"BET ID {s['bet_id']}")
+                if s.get("wager") and s["wager"] > 0:
+                    parts.append(f"${s['wager']:.2f}")
+                if s.get("result") and s["result"] != "pending":
+                    parts.append(s["result"].upper())
+                if parts:
+                    msgs.append(f"Missed: {', '.join(parts)}")
+            if skipped_incomplete:
+                msgs.append("Scroll to show full cards and resend for missed bets.")
+            # Show unsettled/open cards that were skipped
+            if skipped_unsettled:
+                n = len(skipped_unsettled)
+                lines = [s.get("line", "?") for s in skipped_unsettled]
+                msgs.append(
+                    f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
+                    "Send again after they settle."
+                )
+
+        if msgs:
+            await update.message.reply_text("\n".join(msgs))
+        if not non_settled_bets:
+            return
+        bets = non_settled_bets
 
     # Filter to valid bets
     valid_bets = []

@@ -1,32 +1,42 @@
-import pandas as pd
-import requests
+import argparse
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
 
+import pandas as pd
+import requests
+
+from league_config import (
+    get_league_artifact_paths,
+    get_league_settings,
+    get_scoreboard_base_url,
+    normalize_league,
+)
+
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv") 
-BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=1000&groups=50"
 
-def get_last_recorded_date():
-    if not os.path.exists(DATA_FILE):
-        return datetime(2025, 11, 4) 
+
+def get_last_recorded_date(data_file):
+    if not os.path.exists(data_file):
+        return datetime(2025, 11, 4)
     try:
-        df = pd.read_csv(DATA_FILE)
+        df = pd.read_csv(data_file)
         df['date'] = pd.to_datetime(df['date'])
         return df['date'].max().to_pydatetime()
-    except:
+    except Exception:
         return datetime(2025, 11, 4)
 
-def fetch_games_for_date(target_date):
+
+def fetch_games_for_date(target_date, base_url):
     date_str_url = target_date.strftime("%Y%m%d")
     print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
     
-    url = f"{BASE_URL}&dates={date_str_url}"
+    url = f"{base_url}&dates={date_str_url}"
     try:
         res = requests.get(url).json()
-    except:
+    except Exception:
         print(f"      ⚠️  Connection failed for {date_str_url}")
         return []
 
@@ -82,15 +92,23 @@ def fetch_games_for_date(target_date):
                 'ats_win': 0
             }
             games.append(g_away)
-        except: continue
+        except Exception:
+            continue
         
     return games
 
-def update_database():
-    print("--- 🔄 AUTO-HEALING UPDATER ---")
+
+def update_database(league="mens"):
+    league = normalize_league(league)
+    settings = get_league_settings(league)
+    paths = get_league_artifact_paths(BASE_DIR, league)
+    data_file = paths["data_file"]
+    base_url = get_scoreboard_base_url(league)
+
+    print(f"--- 🔄 AUTO-HEALING UPDATER ({settings['label']}) ---")
     
     # 1. Determine Range
-    last_date = get_last_recorded_date()
+    last_date = get_last_recorded_date(data_file)
     # Start from the day AFTER the last record
     start_date = last_date + timedelta(days=1)
     
@@ -100,7 +118,7 @@ def update_database():
     # If the database is somehow ahead of reality (timezones), cap it
     if start_date.date() > end_date.date():
         print(f"✅ Data is up to date! (Last: {last_date.date()})")
-        run_pipeline()
+        run_pipeline(league)
         return
 
     print(f"📉 Filling Gap: {start_date.date()} to {end_date.date()}")
@@ -108,15 +126,15 @@ def update_database():
     new_games = []
     current_date = start_date
     while current_date.date() <= end_date.date():
-        daily_games = fetch_games_for_date(current_date)
+        daily_games = fetch_games_for_date(current_date, base_url)
         new_games.extend(daily_games)
         current_date += timedelta(days=1)
         
     if new_games:
         print(f"💾 Saving {len(new_games)} new games...")
         
-        if os.path.exists(DATA_FILE):
-            df_old = pd.read_csv(DATA_FILE)
+        if os.path.exists(data_file):
+            df_old = pd.read_csv(data_file)
             df_new = pd.DataFrame(new_games)
             
             # Combine
@@ -127,20 +145,28 @@ def update_database():
             df_combined = df_combined.drop_duplicates(subset=['date', 'team'], keep='last')
             df_combined = df_combined.sort_values('date')
             
-            df_combined.to_csv(DATA_FILE, index=False)
+            df_combined.to_csv(data_file, index=False)
             print("✅ Database updated.")
         else:
-            pd.DataFrame(new_games).to_csv(DATA_FILE, index=False)
+            pd.DataFrame(new_games).to_csv(data_file, index=False)
 
-    run_pipeline()
+    run_pipeline(league)
 
-def run_pipeline():
+
+def run_pipeline(league):
     print("\n--- 🚀 TRIGGERING PIPELINE ---")
     print("1️⃣  Calculating Efficiency Stats...")
-    os.system("python3 features.py")
+    subprocess.run([sys.executable, "features.py", "--league", league], check=False)
 
     print("2️⃣  Grading History...")
-    os.system("python3 backtest.py")
+    subprocess.run([sys.executable, "backtest.py", "--league", league], check=False)
 
 if __name__ == "__main__":
-    update_database()
+    parser = argparse.ArgumentParser(description="Update CBB data and run feature/backtest pipeline.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to update: mens or womens (aliases: men/women/cbb/wcbb).",
+    )
+    args = parser.parse_args()
+    update_database(args.league)

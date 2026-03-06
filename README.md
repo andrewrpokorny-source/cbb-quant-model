@@ -17,61 +17,194 @@ cp .env.example .env
 
 ## Usage
 
-### Generate Predictions
+### Generate Predictions (Men's default)
 ```bash
 uv run python predict.py
 ```
+Predictions now include both spread picks and Kalshi game-market picks when available.
 
 ### Run Dashboard
 ```bash
 uv run streamlit run app.py
 ```
+Use the in-app league selector to switch between Men's CBB and Women's CBB.
+Use the in-app **Jump to section** control to quickly navigate directly to:
+- Spread Value Bets
+- Kalshi Game Markets
+- Spread Slate
+- Betting Log
+- Performance History
+- System
+
+### Multi-League Commands
+
+All major scripts now support `--league` with `mens` (default) or `womens`.
+
+```bash
+# Update data + run features/backtest for women's CBB
+uv run python main.py --league womens
+
+# Train women's spread model
+uv run python model.py --league womens
+
+# Train women's game-winner P(win) model bundle
+uv run python model_win.py --league womens
+
+# Generate women's predictions
+uv run python predict.py --league womens
+
+# Backtest women's model
+uv run python backtest.py --league womens
+
+# Grade yesterday's women's predictions
+uv run python grade_predictions.py --league womens
+```
+
+### Model Artifacts
+
+- Men's canonical model: `cbb_model_v2.pkl`
+- Women's canonical model: `womens_cbb_spread_model_v2.pkl`
+- Men's game-winner model bundle: `cbb_win_model_v1.pkl`
+- Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
+
+### Kalshi GAME Markets (P(win))
+
+`predict.py` now evaluates Kalshi GAME contracts with the P(win) model bundle:
+- Uses `model_win.py` bundle (`no_line` / `with_line` variants) to estimate `P(home wins)`.
+- Finds matching Kalshi `GAME` markets and chooses the better side (`YES` or `NO`) by edge.
+- Writes combined output to the daily predictions CSV with a `Bet_Type` column:
+  - `spread` for spread picks
+  - `game` for Kalshi game-market picks
 
 ### Telegram Bot
 
-The Telegram bot lets you log bets by sending screenshots or shorthand text, settle bets against ESPN scores, and view your record -- all from Telegram.
+The Telegram bot is a local bet logger and settlement assistant. It can:
+- log bets from screenshots
+- log bets from shorthand text messages
+- parse DraftKings and Kalshi share links
+- settle pending bets against scoreboard data and imported Kalshi settlements
+- show today's model picks, pending bets, and record/ROI
 
-#### Creating the Bot
+#### Prerequisites
 
-1. Open Telegram and search for **@BotFather**.
-2. Send `/newbot` and follow the prompts to choose a name and username.
-3. BotFather will reply with a token (e.g. `123456:ABC-DEF...`). Copy it.
-4. Add the token to your `.env` file:
-   ```
-   TELEGRAM_BOT_TOKEN=your_token_here
-   ```
+- Run `uv sync` first so the Telegram and OCR dependencies are installed.
+- The current bot process should be run on macOS because it imports `ocrmac` at startup.
+- Screenshot parsing uses macOS native OCR via `ocrmac`.
+- Text shorthand entry and share-link logging are supported workflows, but they still use the same bot process.
+- `/today` reads `daily_predictions.csv`, so run `uv run python predict.py` first if you want live model picks in Telegram.
 
-#### Running the Bot
+#### Environment Configuration
+
+Copy the template if you have not already:
+
+```bash
+cp .env.example .env
+```
+
+Required and relevant bot settings:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_ALLOWED_USERS=123456789
+BET_PARSE_AUDIT_FILE=./telegram_parse_audit.jsonl
+```
+
+- `TELEGRAM_BOT_TOKEN` is required. Create the bot with `@BotFather`.
+- `TELEGRAM_ALLOWED_USERS` is strongly recommended. This is a comma-separated list of Telegram user IDs allowed to use the bot. If left empty, anyone who can reach the bot can interact with it.
+- `BET_PARSE_AUDIT_FILE` is optional. If unset, the bot writes parse-audit events to `telegram_parse_audit.jsonl` in the repo root.
+
+If you use Kalshi settlement import through `/settle`, also configure the Kalshi credentials already shown in `.env.example`:
+
+```dotenv
+KALSHI_API_KEY=your_api_key_here
+KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
+```
+
+#### Create the Telegram Bot
+
+1. Open Telegram and search for `@BotFather`.
+2. Send `/newbot` and follow the prompts.
+3. Copy the bot token BotFather returns.
+4. Add that token to `.env` as `TELEGRAM_BOT_TOKEN=...`.
+5. Get your personal Telegram user ID from a helper bot such as `@userinfobot`, then add it to `TELEGRAM_ALLOWED_USERS`.
+
+#### Run the Bot
 
 ```bash
 uv run python telegram_bot.py
 ```
 
-The bot runs in polling mode and will print `Bot started. Send /start in Telegram to begin.` when ready.
+The bot runs in polling mode. A successful startup prints:
 
-**Note:** Screenshot parsing uses macOS native OCR (`ocrmac`), so the bot must run on a Mac for image-based bet logging. Text-based logging works on any platform.
+```text
+Bot started. Send /start in Telegram to begin.
+```
 
-#### Bot Commands
+The process also creates a lock file at `.telegram_bot.lock` so you do not accidentally run multiple bot instances at once.
+
+#### Commands
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Show available commands |
-| `/help` | Same as /start |
-| `/today` | Show today's model picks (STRONG/GOOD rated) |
-| `/pending` | List all unsettled bets |
-| `/settle` | Settle pending bets against ESPN final scores |
-| `/record` | Show W-L record, ROI, and last 7 days |
+| `/start` | Show the quick-start help text |
+| `/help` | Alias for `/start` |
+| `/today` | Show today's value bets from `daily_predictions.csv` |
+| `/pending` | List all unsettled bets in `betting_history.csv` |
+| `/settle` | Settle pending bets and import recent Kalshi settlements |
+| `/record` | Show all-time record, profit, ROI, last 7 days, and pending count |
+| `/delete N` | Delete the `N`th pending bet |
 
-#### Logging Bets
+#### Supported Input Workflows
 
-**Via screenshot:** Send a photo of a bet slip from DraftKings, FanDuel, Kalshi, BetMGM, or Caesars. The bot will OCR-parse and log it automatically.
+**1. Screenshot logging**
 
-**Via text shorthand:** Send a message in the format:
-```
+Send a photo of a bet slip. The bot attempts OCR-based parsing for books such as FanDuel, DraftKings, Kalshi, BetMGM, and Caesars. If a screenshot contains multiple bets, the bot responds with a numbered list and you can reply with `all` or selected numbers like `1 3`.
+
+If OCR cannot fully parse a bet, the bot will either show the raw OCR text or ask for a manual follow-up.
+
+**2. Text shorthand logging**
+
+Send a plain-text message in this format:
+
+```text
 PLATFORM TEAM SPREAD ODDS WAGER
 ```
-For example:
-```
+
+Example:
+
+```text
 FD Providence +15.5 -110 1.25
 ```
-Platform aliases: `FD` (FanDuel), `DK` (DraftKings), `K` or `KAL` (Kalshi).
+
+Common platform aliases include:
+- `FD` for FanDuel
+- `DK` for DraftKings
+- `K` or `KAL` for Kalshi
+
+**3. Share-link logging**
+
+Paste a supported share URL directly into chat:
+- DraftKings social bet-share links
+- Kalshi market links
+
+The bot will parse the URL, extract the bet, and log or settle it when possible.
+
+#### What the Bot Reads and Writes
+
+The bot works out of the repository root and uses these local files:
+
+- `betting_history.csv`: primary ledger of logged bets
+- `daily_predictions.csv`: source for `/today`
+- `performance_log.csv`: performance data used elsewhere in the project
+- `telegram_bot.log`: rotating bot log output
+- `telegram_parse_audit.jsonl`: parse audit trail unless overridden by `BET_PARSE_AUDIT_FILE`
+- `screenshots/`: stored screenshot artifacts when parsing needs them
+
+#### Typical Usage
+
+1. Start the bot with `uv run python telegram_bot.py`.
+2. Open Telegram and send `/start`.
+3. Log bets by sending a screenshot, shorthand text, or a supported share URL.
+4. Check `/pending` to review open bets.
+5. Run `/settle` after games finish to grade pending bets and pull Kalshi settlements.
+6. Run `/record` to review results and ROI.

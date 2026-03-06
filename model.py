@@ -1,17 +1,19 @@
-import pandas as pd
-import numpy as np
-import joblib
+import argparse
 import os
+
+import joblib
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, brier_score_loss
 from scipy.stats import norm
 
+from league_config import get_league_artifact_paths, normalize_league
+
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
-MODEL_FILE = os.path.join(BASE_DIR, "cbb_model_v2.pkl")
 
 FEATURES = [
     'is_home',
@@ -31,15 +33,20 @@ FEATURES = [
     'spread_squared',
 ]
 
-def train_and_evaluate():
-    print("--- TRAINING CBB MODEL (GBM + Sigmoid Calibration, 15 features) ---")
+def train_and_evaluate(league="mens"):
+    league = normalize_league(league)
+    paths = get_league_artifact_paths(BASE_DIR, league)
+    data_file = paths["data_file"]
+    model_file = paths["model_file"]
 
-    if not os.path.exists(DATA_FILE):
+    print(f"--- TRAINING CBB MODEL ({league}, GBM + Sigmoid Calibration, 15 features) ---")
+
+    if not os.path.exists(data_file):
         print("No processed data found. Run features.py first.")
         return
 
     # 1. Load Data
-    df = pd.read_csv(DATA_FILE)
+    df = pd.read_csv(data_file)
     print(f"Loaded {len(df)} rows.")
 
     # Compute derived spread features
@@ -175,17 +182,21 @@ def train_and_evaluate():
         print(f"\nLine shopping sigma: {sigma:.2f} (default, margin column not found)")
 
     # 14. Save calibrated model + sigma
-    joblib.dump({'model': calibrated_clf, 'sigma': sigma}, MODEL_FILE)
-    print(f"Model + sigma saved to {MODEL_FILE}")
+    joblib.dump({'model': calibrated_clf, 'sigma': sigma}, model_file)
+    print(f"Model + sigma saved to {model_file}")
 
 
-def load_model(path=MODEL_FILE):
+def load_model(path=None, league="mens"):
     """
     Load classifier + sigma from pkl file.
 
     Handles both old format (raw model) and new format ({'model': ..., 'sigma': ...}).
     Returns (model, sigma).
     """
+    if path is None:
+        league = normalize_league(league)
+        path = get_league_artifact_paths(BASE_DIR, league)["model_file"]
+
     data = joblib.load(path)
     if isinstance(data, dict) and 'model' in data:
         sigma = data.get('sigma', 11.0)
@@ -224,4 +235,11 @@ def cover_prob_at_spread(classifier_prob, market_spread, alt_spread, sigma):
 
 
 if __name__ == "__main__":
-    train_and_evaluate()
+    parser = argparse.ArgumentParser(description="Train CBB spread model.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League to train: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+    train_and_evaluate(args.league)

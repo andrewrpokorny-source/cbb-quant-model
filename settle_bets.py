@@ -2,12 +2,15 @@
 Auto-settlement engine for betting_history.csv.
 
 Matches pending bets to ESPN completed game scores, determines results,
-and updates the CSV with payout/profit calculations.
+and updates the CSV with payout/profit calculations for:
+- spread bets (standard and Kalshi YES/NO thresholds)
+- game-winner bets (ML / GAME YES/NO)
 
 Usage:
-    python settle_bets.py
+    python settle_bets.py --league mens|womens
 """
 
+import argparse
 import os
 import re
 import logging
@@ -29,26 +32,26 @@ def parse_bet_line(line_str):
     Parse a bet line string into components.
 
     Examples:
-        "Providence +15.5"       -> {team: "Providence", spread: 15.5, side: None}
-        "UConn -15.5 NO"        -> {team: "UConn", spread: -15.5, side: "NO"}
-        "Furman -10.5 YES"      -> {team: "Furman", spread: -10.5, side: "YES"}
-        "Mercer -9.5"           -> {team: "Mercer", spread: -9.5, side: None}
-        "Alabama -10.5"         -> {team: "Alabama", spread: -10.5, side: None}
+        "Providence +15.5"      -> {team: "Providence", spread: 15.5, side: None, bet_type: "spread"}
+        "UConn -15.5 NO"        -> {team: "UConn", spread: -15.5, side: "NO", bet_type: "spread"}
+        "Furman -10.5 YES"      -> {team: "Furman", spread: -10.5, side: "YES", bet_type: "spread"}
+        "South Carolina ML YES" -> {team: "South Carolina", spread: None, side: "YES", bet_type: "game"}
+        "UConn ML"              -> {team: "UConn", spread: None, side: None, bet_type: "game"}
     """
     line_str = str(line_str).strip()
 
     # Handle embedded newlines from garbled OCR data:
-    # search from the end for a line matching the spread pattern
+    # search from the end for a line matching known bet patterns
     if "\n" in line_str:
         spread_re = re.compile(r"^(.+?)\s+([+-]?\d+\.?\d*)(?:\s+(YES|NO))?$", re.IGNORECASE)
+        game_re = re.compile(r"^(.+?)\s+(?:ML|MONEYLINE|GAME)(?:\s+(YES|NO))?$", re.IGNORECASE)
         for part in reversed(line_str.split("\n")):
             part = part.strip()
-            m = spread_re.match(part)
-            if m:
+            if spread_re.match(part) or game_re.match(part):
                 line_str = part
                 break
         else:
-            # No line matched the spread pattern; use the last non-empty line
+            # No line matched known patterns; use the last non-empty line.
             parts = [p.strip() for p in line_str.split("\n") if p.strip()]
             line_str = parts[-1] if parts else line_str
 
@@ -61,15 +64,24 @@ def parse_bet_line(line_str):
         side = "NO"
         line_str = line_str[:-3].strip()
 
+    # GAME moneyline format (Kalshi GAME contracts and standard ML).
+    game_match = re.match(r"^(.+?)\s+(?:ML|MONEYLINE|GAME)$", line_str, re.IGNORECASE)
+    if game_match:
+        team = game_match.group(1).strip()
+        return {"team": team, "spread": None, "side": side, "bet_type": "game"}
+
     # Split off the spread (last token should be +/- number)
     match = re.match(r"^(.+?)\s+([+-]?\d+\.?\d*)$", line_str)
     if not match:
+        # Support explicit YES/NO game lines without "ML" suffix.
+        if side in {"YES", "NO"} and line_str:
+            return {"team": line_str, "spread": None, "side": side, "bet_type": "game"}
         return None
 
     team = match.group(1).strip()
     spread = float(match.group(2))
 
-    return {"team": team, "spread": spread, "side": side}
+    return {"team": team, "spread": spread, "side": side, "bet_type": "spread"}
 
 
 def match_bet_by_team(line_str, completed_games):
@@ -150,6 +162,7 @@ def determine_bet_result(parsed_line, game_result, game_str):
     team = parsed_line["team"]
     spread = parsed_line["spread"]
     side = parsed_line["side"]
+    bet_type = parsed_line.get("bet_type", "spread")
 
     home_score = game_result["home_score"]
     away_score = game_result["away_score"]
@@ -162,6 +175,17 @@ def determine_bet_result(parsed_line, game_result, game_str):
 
     if not picked_home and not picked_away:
         return None
+
+    if bet_type == "game":
+        # Winner market:
+        # - side YES or no side: team must win
+        # - side NO: team must lose
+        if home_score == away_score:
+            return "void"
+        team_won = (picked_home and home_score > away_score) or (picked_away and away_score > home_score)
+        if side == "NO":
+            return "loss" if team_won else "win"
+        return "win" if team_won else "loss"
 
     if side is not None:
         # Kalshi bet: the spread is a threshold for the named team's margin
@@ -304,7 +328,7 @@ def _format_settlement_detail(line_str, game_str, result, payout, profit, platfo
     return msg
 
 
-def settle_pending_bets(csv_path=None):
+def settle_pending_bets(csv_path=None, league="mens"):
     """
     Settle all pending bets in betting_history.csv.
 
@@ -353,7 +377,7 @@ def settle_pending_bets(csv_path=None):
             if d_str not in fetched_dates:
                 fetched_dates.add(d_str)
                 try:
-                    games_by_date[d_str] = fetch_completed_games(d)
+                    games_by_date[d_str] = fetch_completed_games(d, league=league)
                 except Exception as e:
                     logger.error(f"ESPN API error for {d_str}: {e}")
                     games_by_date[d_str] = {}
@@ -365,6 +389,14 @@ def settle_pending_bets(csv_path=None):
     for idx in pending.index:
         try:
             row = df.loc[idx]
+
+            # Skip Kalshi bets -- they are settled via the Kalshi API
+            # (settle_to_csv) to avoid duplicating rows when both ESPN
+            # and the API resolve the same bet.
+            if str(row.get("platform", "")).strip().upper() == "KALSHI":
+                still_pending += 1
+                continue
+
             date_str = row["date"]
             game_str = row["game"]
             line_str = row["line"]
@@ -452,11 +484,19 @@ def settle_pending_bets(csv_path=None):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Settle pending bets from betting_history.csv.")
+    parser.add_argument(
+        "--league",
+        default="mens",
+        help="League scoreboard to use: mens or womens (aliases supported).",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("SETTLING PENDING BETS")
     print("=" * 60)
 
-    summary = settle_pending_bets()
+    summary = settle_pending_bets(league=args.league)
 
     print(f"\nSettled: {summary['settled']}")
     print(f"Still pending: {summary['still_pending']}")
