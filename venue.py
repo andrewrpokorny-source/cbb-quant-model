@@ -12,6 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, ".cache")
 # Tracked geocode file ships with the repo; .cache/geocode.json holds runtime additions
 GEOCODE_TRACKED = os.path.join(BASE_DIR, "venue_geocode.json")
+TEAM_LOCATIONS_FILE = os.path.join(BASE_DIR, "team_locations.csv")
 
 STATE_CENTROIDS = {
     "AL": (32.8, -86.8), "AK": (64.2, -152.5), "AZ": (34.0, -111.1),
@@ -87,7 +88,22 @@ def geocode_location(loc, cache):
     return coords
 
 
-def build_team_home_locations(df):
+def load_team_locations(league=None):
+    """Load tracked canonical team locations keyed by team name."""
+    if not os.path.exists(TEAM_LOCATIONS_FILE):
+        return {}
+
+    df = pd.read_csv(TEAM_LOCATIONS_FILE)
+    if league is not None and "league" in df.columns:
+        df = df[df["league"] == league]
+
+    if df.empty:
+        return {}
+
+    return dict(zip(df["team"], df["venue_loc"]))
+
+
+def infer_team_home_locations(df):
     """Infer each team's home city/state from non-neutral home games in the data.
 
     Expects columns: team, is_home, is_neutral (or neutral_site), venue_city, venue_state.
@@ -108,6 +124,15 @@ def build_team_home_locations(df):
     best = counts.loc[idx]
 
     return dict(zip(best["team"], best["venue_loc"]))
+
+
+def build_team_home_locations(df, league=None):
+    """Return team home locations, preferring tracked canonical data over inference."""
+    homes = load_team_locations(league=league)
+    inferred = infer_team_home_locations(df)
+    for team, venue_loc in inferred.items():
+        homes.setdefault(team, venue_loc)
+    return homes
 
 
 def compute_distance_advantage(team_home_loc, opp_home_loc, venue_city, venue_state, geo_cache):

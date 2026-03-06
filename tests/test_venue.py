@@ -10,10 +10,13 @@ from venue import (
     compute_distance_advantage,
     compute_distance_advantage_bulk,
     build_team_home_locations,
+    infer_team_home_locations,
     haversine,
     geocode_location,
     load_geocode_cache,
+    load_team_locations,
     GEOCODE_TRACKED,
+    TEAM_LOCATIONS_FILE,
     STATE_CENTROIDS,
 )
 
@@ -169,8 +172,48 @@ class TestBuildTeamHomeLocations:
             "venue_city": [None],
             "venue_state": [None],
         })
-        homes = build_team_home_locations(df)
+        homes = infer_team_home_locations(df)
         assert len(homes) == 0
+
+    def test_infer_team_home_locations_matches_legacy_behavior(self):
+        df = pd.DataFrame({
+            "team": ["Duke"] * 4,
+            "is_home": [1, 1, 1, 0],
+            "is_neutral": [0, 0, 1, 0],
+            "venue_city": ["Durham", "Durham", "Charlotte", "Boston"],
+            "venue_state": ["NC", "NC", "NC", "MA"],
+        })
+        homes = infer_team_home_locations(df)
+        assert homes["Duke"] == "Durham, NC"
+
+    def test_prefers_canonical_team_location_and_fills_missing(self, monkeypatch, tmp_path):
+        canonical = tmp_path / "team_locations.csv"
+        canonical.write_text(
+            "league,team,city,state,venue_loc,latitude,longitude,source\n"
+            "mens,Duke,Durham,NC,\"Durham, NC\",35.99,-78.90,canonical\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("venue.TEAM_LOCATIONS_FILE", str(canonical))
+
+        df = pd.DataFrame({
+            "team": ["Duke", "UNC Greensboro"],
+            "is_home": [1, 1],
+            "is_neutral": [0, 0],
+            "venue_city": ["Raleigh", "Greensboro"],
+            "venue_state": ["NC", "NC"],
+        })
+        homes = build_team_home_locations(df, league="mens")
+        assert homes["Duke"] == "Durham, NC"
+        assert homes["UNC Greensboro"] == "Greensboro, NC"
+
+
+class TestLoadTeamLocations:
+    def test_loads_tracked_team_locations(self):
+        assert os.path.exists(TEAM_LOCATIONS_FILE), "team_locations.csv must be tracked in repo"
+        mens_homes = load_team_locations("mens")
+        womens_homes = load_team_locations("womens")
+        assert len(mens_homes) > 300
+        assert len(womens_homes) > 300
 
 
 # ---------------------------------------------------------------------------

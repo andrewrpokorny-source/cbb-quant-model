@@ -782,7 +782,7 @@ def main(spread_overrides=None, league="mens"):
 
     # Build venue lookups for neutral-site / distance features
     _geo_cache = load_geocode_cache()
-    _team_homes = build_team_home_locations(df_hist) if 'venue_city' in df_hist.columns else {}
+    _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
     if _team_homes:
         print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
 

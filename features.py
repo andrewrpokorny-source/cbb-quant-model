@@ -165,7 +165,7 @@ def main(league="mens"):
     if 'venue_city' in df_final.columns and df_final['venue_city'].notna().any():
         print("   -> Computing distance advantage...")
         geo_cache = load_geocode_cache()
-        team_homes = build_team_home_locations(df_final)
+        team_homes = build_team_home_locations(df_final, league=league)
         df_final = compute_distance_advantage_bulk(df_final, team_homes, geo_cache)
         save_geocode_cache(geo_cache)
     else:
