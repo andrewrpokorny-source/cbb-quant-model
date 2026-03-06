@@ -3,10 +3,13 @@
 import argparse
 import csv
 import json
+import logging
 import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
@@ -189,10 +192,11 @@ def _reconstruct_line(title: str, side: str) -> str:
     parts = title.split(":")
     if len(parts) >= 2:
         qualifier = parts[-1].strip()
+        base_title = ":".join(parts[:-1]).strip()
 
         # Game/winner market -- extract teams from the base title
         if qualifier.lower() == "winner":
-            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
+            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", base_title, flags=re.IGNORECASE)
             if len(team_parts) == 2:
                 if side == "YES":
                     return f"{team_parts[1].strip()} ML"
@@ -209,10 +213,40 @@ def _reconstruct_line(title: str, side: str) -> str:
             if spread_val == 0:
                 return qualifier
             # Find the opposite team from the base title
-            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
+            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", base_title, flags=re.IGNORECASE)
             if len(team_parts) == 2:
-                opp = team_parts[1].strip() if team.strip().lower() == team_parts[0].strip().lower() else team_parts[0].strip()
+                team_lower = team.strip().lower()
+                t0 = team_parts[0].strip()
+                t1 = team_parts[1].strip()
+                t0_match = team_lower in t0.lower()
+                t1_match = team_lower in t1.lower()
+                if t0_match and t1_match:
+                    # Both match (e.g. "virginia" in "virginia tech" and "virginia").
+                    # The qualifier matches the closer-length team; opposite is the other.
+                    if abs(len(team_lower) - len(t1.lower())) < abs(len(team_lower) - len(t0.lower())):
+                        opp = t0
+                    else:
+                        opp = t1
+                elif t0_match:
+                    opp = t1
+                elif t1_match:
+                    opp = t0
+                else:
+                    logger.warning(
+                        "Qualifier team %r matches neither base team (%r, %r) in title %r; "
+                        "using first base team as fallback",
+                        team, t0, t1, title,
+                    )
+                    opp = t0
+                # Strip prefix noise from multi-colon titles (e.g. "NCAA: Duke" -> "Duke")
+                if ":" in opp:
+                    opp = opp.rsplit(":", 1)[-1].strip()
                 return f"{opp} {-spread_val:+.1f}"
+            logger.warning(
+                "Could not extract opposite team from title %r (split produced %d parts); "
+                "falling back to same-team flipped spread",
+                title, len(team_parts),
+            )
             return f"{team} {-spread_val:+.1f}"
         return f"{qualifier} (NO)"
     # Game market -- no colon; try "Team A at/vs Team B Winner?"

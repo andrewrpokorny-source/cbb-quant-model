@@ -1034,7 +1034,7 @@ def _parse_fd_settled_cards(raw_text: str) -> list[dict]:
 def _resolve_game_date(team_name: str) -> str:
     """Look up the game date for a team from prediction files.
 
-    Searches daily_predictions.csv and recent predictions_YYYYMMDD.csv files
+    Searches men's and women's daily and dated prediction files
     for a matching team in the Pick or Matchup column. Returns YYYY-MM-DD or "".
     """
     if not team_name:
@@ -1065,6 +1065,10 @@ def _resolve_game_date(team_name: str) -> str:
             logger.warning("Could not read prediction file %s for date resolution: %s", fpath, e)
             continue
         if "Date/Time" not in df.columns or "Matchup" not in df.columns:
+            logger.warning(
+                "Prediction file %s missing expected columns (has: %s); skipping",
+                fpath, list(df.columns),
+            )
             continue
 
         for _, row in df.iterrows():
@@ -1080,6 +1084,10 @@ def _resolve_game_date(team_name: str) -> str:
                     if month == 12 and now.month <= 2:
                         year -= 1
                     return f"{year}-{month:02d}-{day:02d}"
+                logger.warning(
+                    "Found team %r in %s but Date/Time %r did not match expected MM/DD format",
+                    team_name, fpath, dt_str,
+                )
     return ""
 
 

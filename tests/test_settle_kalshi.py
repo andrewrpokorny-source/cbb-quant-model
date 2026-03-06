@@ -113,13 +113,15 @@ class TestReconstructLine:
 
     def test_no_spread_returns_opposite_team(self):
         title = "Duke at UNC: Duke -5.5"
-        result = _reconstruct_line(title, "NO")
-        assert result == "UNC +5.5"
+        assert _reconstruct_line(title, "NO") == "UNC +5.5"
 
     def test_no_spread_home_favored(self):
         title = "Virginia Tech at Virginia: Virginia -3.5"
-        result = _reconstruct_line(title, "NO")
-        assert result == "Virginia Tech +3.5"
+        assert _reconstruct_line(title, "NO") == "Virginia Tech +3.5"
+
+    def test_no_spread_multi_colon_title(self):
+        title = "NCAA: Duke at UNC: Duke -5.5"
+        assert _reconstruct_line(title, "NO") == "UNC +5.5"
 
     def test_game_market_yes(self):
         # YES = home team (second team) on Kalshi game markets
