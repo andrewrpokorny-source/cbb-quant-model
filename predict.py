@@ -451,11 +451,22 @@ def _infer_yes_team_from_game_market(market, home_team, away_team):
             if home_match and away_match:
                 # Both keywords match (e.g. "virginia" is substring of
                 # "virginia tech"). Prefer the keyword closer in length
-                # to the candidate text.
+                # to the candidate text. On tie (e.g. "kansas st" is
+                # equidistant from "kansas" and "kansas state"), prefer the
+                # keyword the candidate is an abbreviation of.
                 cleaned = _clean(candidate)
                 home_dist = abs(len(cleaned) - len(home_keyword))
                 away_dist = abs(len(cleaned) - len(away_keyword))
-                return away_team if away_dist < home_dist else home_team
+                if away_dist < home_dist:
+                    return away_team
+                if home_dist < away_dist:
+                    return home_team
+                # Tied -- candidate is abbreviation of the longer keyword
+                if cleaned in away_keyword and cleaned not in home_keyword:
+                    return away_team
+                if cleaned in home_keyword and cleaned not in away_keyword:
+                    return home_team
+                return home_team
             if home_match:
                 return home_team
             if away_match:

@@ -86,6 +86,34 @@ def test_infer_yes_team_exact_match_not_confused_by_longer():
     assert yes_team == "Virginia Cavaliers"
 
 
+def test_infer_yes_team_abbreviated_name():
+    """Kansas St. should resolve to Kansas State, not Kansas."""
+    market = {
+        "title": "Kansas St. at Kansas Winner?",
+        "rules_primary": "If Kansas St. wins the Kansas St. at Kansas men's college basketball game.",
+    }
+    yes_team = _infer_yes_team_from_game_market(
+        market,
+        home_team="Kansas Jayhawks",
+        away_team="Kansas State Wildcats",
+    )
+    assert yes_team == "Kansas State Wildcats"
+
+
+def test_infer_yes_team_full_name_not_confused_by_abbreviation():
+    """Kansas should resolve correctly when Kansas State is the opponent."""
+    market = {
+        "title": "Kansas St. at Kansas Winner?",
+        "rules_primary": "If Kansas wins the Kansas St. at Kansas men's college basketball game.",
+    }
+    yes_team = _infer_yes_team_from_game_market(
+        market,
+        home_team="Kansas Jayhawks",
+        away_team="Kansas State Wildcats",
+    )
+    assert yes_team == "Kansas Jayhawks"
+
+
 def test_get_kalshi_game_edge_selects_best_side():
     market = {
         "ticker": "KXNCAAWBGAME-EXAMPLE",
