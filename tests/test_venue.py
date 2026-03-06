@@ -1,5 +1,7 @@
 """Tests for venue.py distance and geocoding utilities."""
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -10,6 +12,8 @@ from venue import (
     build_team_home_locations,
     haversine,
     geocode_location,
+    load_geocode_cache,
+    GEOCODE_TRACKED,
     STATE_CENTROIDS,
 )
 
@@ -185,3 +189,13 @@ class TestGeocodeLocation:
         cache = {"Durham, NC": (35.99, -78.90)}
         result = geocode_location("Durham, NC", cache)
         assert result == (35.99, -78.90)
+
+
+class TestLoadGeocodeCache:
+    def test_tracked_file_exists_and_loads(self):
+        assert os.path.exists(GEOCODE_TRACKED), "venue_geocode.json must be tracked in repo"
+        cache = load_geocode_cache()
+        assert len(cache) > 100, f"Expected 300+ entries, got {len(cache)}"
+        # Spot check a known location
+        sample = next(iter(cache.values()))
+        assert len(sample) == 2

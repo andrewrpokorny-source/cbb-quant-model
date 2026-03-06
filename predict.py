@@ -793,6 +793,7 @@ def main(spread_overrides=None, league="mens"):
     game_predictions = []
     skipped = []
     games_needing_spreads = []
+    _distance_stats = {"total": 0, "nonzero": 0, "neutral": 0}
 
     for g in schedule:
         matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
@@ -860,6 +861,11 @@ def main(spread_overrides=None, league="mens"):
             g.get('venue_state', ''),
             _geo_cache,
         )
+        _distance_stats["total"] += 1
+        if row['distance_advantage'] != 0:
+            _distance_stats["nonzero"] += 1
+        if row['is_neutral']:
+            _distance_stats["neutral"] += 1
         row['rest_days'] = min(home_actual_rest, 7)
         row = calculate_production_features(row, h_stats, a_stats)
 
@@ -1095,6 +1101,15 @@ def main(spread_overrides=None, league="mens"):
     else:
         print("\nNo predictions generated.")
     
+    # Distance feature guardrail
+    dt = _distance_stats
+    if dt["total"] > 0:
+        pct = dt["nonzero"] / dt["total"]
+        level = "WARNING" if pct < 0.5 else "INFO"
+        print(f"\n   [{level}] distance_advantage: {dt['nonzero']}/{dt['total']} games non-zero ({pct:.0%}), {dt['neutral']} neutral-site")
+        if pct < 0.5:
+            print(f"   [{level}] Low distance coverage -- check venue data and geocode cache")
+
     # Show skipped games
     if skipped:
         print(f"\nSkipped {len(skipped)} games:")

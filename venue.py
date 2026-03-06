@@ -8,7 +8,10 @@ from math import asin, cos, radians, sin, sqrt
 import numpy as np
 import pandas as pd
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(BASE_DIR, ".cache")
+# Tracked geocode file ships with the repo; .cache/geocode.json holds runtime additions
+GEOCODE_TRACKED = os.path.join(BASE_DIR, "venue_geocode.json")
 
 STATE_CENTROIDS = {
     "AL": (32.8, -86.8), "AK": (64.2, -152.5), "AZ": (34.0, -111.1),
@@ -40,17 +43,20 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 def load_geocode_cache():
-    """Load cached geocode results."""
-    path = os.path.join(CACHE_DIR, "geocode.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            raw = json.load(f)
-        return {k: tuple(v) for k, v in raw.items() if v and v[0] is not None}
-    return {}
+    """Load geocode results: tracked file first, then .cache/ overlay."""
+    result = {}
+    for path in (GEOCODE_TRACKED, os.path.join(CACHE_DIR, "geocode.json")):
+        if os.path.exists(path):
+            with open(path) as f:
+                raw = json.load(f)
+            for k, v in raw.items():
+                if v and v[0] is not None:
+                    result[k] = tuple(v)
+    return result
 
 
 def save_geocode_cache(cache):
-    """Persist geocode cache."""
+    """Persist runtime geocode additions to .cache/ (tracked file is updated manually)."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = os.path.join(CACHE_DIR, "geocode.json")
     with open(path, "w") as f:
