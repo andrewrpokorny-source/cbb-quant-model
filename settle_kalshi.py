@@ -201,12 +201,19 @@ def _reconstruct_line(title: str, side: str) -> str:
         # Spread markets: qualifier is like "Team -5.5"
         if side == "YES":
             return qualifier
-        # NO side on a spread means the opposite
-        # Try to flip the spread sign
+        # NO side on a spread means the opposite team at the flipped line.
+        # e.g. title "Duke vs UNC: Duke -5.5", NO side -> "UNC +5.5"
         m = re.search(r"(.+?)\s+([+-]?\d+\.?\d*)\s*$", qualifier)
         if m:
             team, spread_val = m.group(1), float(m.group(2))
-            return f"{team} {-spread_val:+.1f}" if spread_val != 0 else qualifier
+            if spread_val == 0:
+                return qualifier
+            # Find the opposite team from the base title
+            team_parts = re.split(r"\s+(?:at|vs\.?)\s+", parts[0].strip(), flags=re.IGNORECASE)
+            if len(team_parts) == 2:
+                opp = team_parts[1].strip() if team.strip().lower() == team_parts[0].strip().lower() else team_parts[0].strip()
+                return f"{opp} {-spread_val:+.1f}"
+            return f"{team} {-spread_val:+.1f}"
         return f"{qualifier} (NO)"
     # Game market -- no colon; try "Team A at/vs Team B Winner?"
     m = re.match(r"(.+?)\s+(?:at|vs\.?)\s+(.+?)(?:\s+Winner\??)?$", title, re.IGNORECASE)

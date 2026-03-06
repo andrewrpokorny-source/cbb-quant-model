@@ -1045,14 +1045,18 @@ def _resolve_game_date(team_name: str) -> str:
     now = datetime.now(eastern)
 
     # Build list of prediction files to search (most recent first)
+    # Include both men's and women's prediction files
     pred_files = []
-    if os.path.exists(DAILY_PREDICTIONS):
-        pred_files.append(DAILY_PREDICTIONS)
+    for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "daily_predictions_wbb.csv")]:
+        if os.path.exists(base):
+            pred_files.append(base)
     for days_back in range(14):
         dt = now - timedelta(days=days_back)
-        fname = os.path.join(BASE_DIR, f"predictions_{dt.strftime('%Y%m%d')}.csv")
-        if os.path.exists(fname) and fname not in pred_files:
-            pred_files.append(fname)
+        date_str = dt.strftime('%Y%m%d')
+        for pattern in [f"predictions_{date_str}.csv", f"predictions_wbb_{date_str}.csv"]:
+            fname = os.path.join(BASE_DIR, pattern)
+            if os.path.exists(fname) and fname not in pred_files:
+                pred_files.append(fname)
 
     for fpath in pred_files:
         try:
