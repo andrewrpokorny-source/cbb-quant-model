@@ -4,9 +4,9 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss
 from scipy.stats import norm
 
@@ -34,6 +34,154 @@ FEATURES = [
     'spread_abs',
     'spread_squared',
 ]
+
+
+class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
+    """GBM with trailing-window sigmoid calibration instead of random CV folds."""
+
+    def __init__(
+        self,
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
+        calibration_fraction=0.2,
+        min_calibration_rows=200,
+    ):
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
+        self.max_depth = max_depth
+        self.random_state = random_state
+        self.calibration_fraction = calibration_fraction
+        self.min_calibration_rows = min_calibration_rows
+
+    def _base_estimator(self):
+        return GradientBoostingClassifier(
+            n_estimators=self.n_estimators,
+            learning_rate=self.learning_rate,
+            max_depth=self.max_depth,
+            random_state=self.random_state,
+        )
+
+    def fit(self, X, y):
+        X_df = pd.DataFrame(X).copy()
+        y_ser = pd.Series(y).astype(int).reset_index(drop=True)
+        X_df = X_df.reset_index(drop=True)
+
+        split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
+        split_idx = min(split_idx, len(X_df) - 1)
+
+        use_calibration = (
+            len(X_df) >= self.min_calibration_rows
+            and split_idx < len(X_df)
+            and y_ser.iloc[:split_idx].nunique() > 1
+            and y_ser.iloc[split_idx:].nunique() > 1
+        )
+
+        base_X = X_df.iloc[:split_idx] if use_calibration else X_df
+        base_y = y_ser.iloc[:split_idx] if use_calibration else y_ser
+
+        self.base_estimator_ = self._base_estimator()
+        self.base_estimator_.fit(base_X, base_y)
+        self.classes_ = np.array([0, 1])
+
+        self.calibrator_ = None
+        self.calibration_rows_ = 0
+        if use_calibration:
+            calib_X = X_df.iloc[split_idx:]
+            calib_y = y_ser.iloc[split_idx:]
+            raw = np.clip(self.base_estimator_.predict_proba(calib_X)[:, 1], 1e-6, 1 - 1e-6)
+            self.calibrator_ = LogisticRegression(solver="lbfgs")
+            self.calibrator_.fit(raw.reshape(-1, 1), calib_y)
+            self.calibration_rows_ = len(calib_X)
+
+        return self
+
+    def predict_proba(self, X):
+        X_df = pd.DataFrame(X).copy()
+        raw = np.clip(self.base_estimator_.predict_proba(X_df)[:, 1], 1e-6, 1 - 1e-6)
+        if self.calibrator_ is not None:
+            calibrated = self.calibrator_.predict_proba(raw.reshape(-1, 1))[:, 1]
+        else:
+            calibrated = raw
+        return np.column_stack([1 - calibrated, calibrated])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    @property
+    def feature_importances_(self):
+        return self.base_estimator_.feature_importances_
+
+
+def _build_game_keys(df_model):
+    return (
+        df_model["_model_date"].dt.strftime("%Y-%m-%d")
+        + "::"
+        + df_model[["team", "opponent"]].fillna("").apply(
+            lambda row: "||".join(sorted(row.tolist())),
+            axis=1,
+        )
+    )
+
+
+def _home_row_mask(df_model):
+    if "is_home" in df_model.columns:
+        return pd.to_numeric(df_model["is_home"], errors="coerce").fillna(0).astype(int) == 1
+    if "location" in df_model.columns:
+        return df_model["location"].astype(str).str.lower() == "home"
+    raise ValueError("Training data must include either 'is_home' or 'location'.")
+
+
+def prepare_time_ordered_training_frame(df, features, target):
+    """Return a clean model frame sorted in chronological order.
+
+    This enforces date ordering before any train/test split so the holdout set
+    always contains the latest games rather than relying on CSV row order.
+    """
+    df_model = df.dropna(subset=features + [target]).copy()
+    if 'date' not in df_model.columns:
+        raise ValueError("Training data must include a 'date' column for time-aware splits.")
+
+    df_model['_model_date'] = pd.to_datetime(df_model['date'], errors='coerce')
+    df_model = df_model.dropna(subset=['_model_date']).copy()
+    df_model['_original_order'] = np.arange(len(df_model))
+    df_model = df_model.sort_values(['_model_date', '_original_order']).reset_index(drop=True)
+    if "team" not in df_model.columns or "opponent" not in df_model.columns:
+        raise ValueError("Training data must include 'team' and 'opponent' columns for game-level splits.")
+    df_model["_game_key"] = _build_game_keys(df_model)
+    return df_model
+
+
+def time_series_train_test_split(df_model, features, target, test_size=0.2, bet_level_test=False):
+    """Split a time-ordered frame into chronological game-level train/test partitions."""
+    if not 0 < test_size < 1:
+        raise ValueError("test_size must be between 0 and 1.")
+    if len(df_model) < 2:
+        raise ValueError("Need at least two rows for a chronological train/test split.")
+
+    game_dates = (
+        df_model.groupby("_game_key")["_model_date"]
+        .min()
+        .sort_values()
+    )
+    if len(game_dates) < 2:
+        raise ValueError("Need at least two games for a chronological train/test split.")
+
+    test_games = max(1, int(len(game_dates) * test_size))
+    test_keys = set(game_dates.index[-test_games:])
+    train_mask = ~df_model["_game_key"].isin(test_keys)
+    test_mask = df_model["_game_key"].isin(test_keys)
+    if bet_level_test:
+        test_mask = test_mask & _home_row_mask(df_model)
+
+    X = df_model[features].astype(float)
+    y = df_model[target].astype(int)
+    X_train = X.loc[train_mask].copy()
+    X_test = X.loc[test_mask].copy()
+    y_train = y.loc[train_mask].copy()
+    y_test = y.loc[test_mask].copy()
+    return X_train, X_test, y_train, y_test
 
 def train_and_evaluate(league="mens"):
     league = normalize_league(league)
@@ -66,19 +214,15 @@ def train_and_evaluate(league="mens"):
         print("Run 'python3 features.py' again to regenerate them.")
         return
 
-    # 4. Clean & Prep
-    df_model = df.dropna(subset=features + [target]).copy()
+    # 4. Clean, validate, and sort chronologically before splitting
+    df_model = prepare_time_ordered_training_frame(df, features, target)
 
-    # Force float types for inputs
-    X = df_model[features].astype(float)
-    y = df_model[target].astype(int)
-
-    print(f"Training on {len(X)} clean games.")
+    print(f"Training on {len(df_model)} clean games.")
     print(f"Features: {len(features)}")
 
     # 5. Split data: train / test (time-series aware)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=False
+    X_train, X_test, y_train, y_test = time_series_train_test_split(
+        df_model, features, target, test_size=0.2, bet_level_test=True
     )
 
     print(f"  Train: {len(X_train)}, Test: {len(X_test)}")
@@ -100,15 +244,11 @@ def train_and_evaluate(league="mens"):
 
     # 8. Train CALIBRATED model using cross-validation
     # CalibratedClassifierCV with cv=5 will handle calibration internally
-    calibrated_clf = CalibratedClassifierCV(
-        GradientBoostingClassifier(
-            n_estimators=150,
-            learning_rate=0.05,
-            max_depth=4,
-            random_state=42
-        ),
-        method='sigmoid',
-        cv=5
+    calibrated_clf = TimeAwareCalibratedGBM(
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
     )
     calibrated_clf.fit(X_train, y_train)
 
