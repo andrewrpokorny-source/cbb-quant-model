@@ -17,6 +17,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 FEATURES = [
     'is_home',
+    'is_neutral',
+    'distance_advantage',
     'spread',
     'rest_days',
     'diff_eFG',
@@ -39,7 +41,7 @@ def train_and_evaluate(league="mens"):
     data_file = paths["data_file"]
     model_file = paths["model_file"]
 
-    print(f"--- TRAINING CBB MODEL ({league}, GBM + Sigmoid Calibration, 15 features) ---")
+    print(f"--- TRAINING CBB MODEL ({league}, GBM + Sigmoid Calibration, {len(FEATURES)} features) ---")
 
     if not os.path.exists(data_file):
         print("No processed data found. Run features.py first.")

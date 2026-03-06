@@ -123,7 +123,7 @@ def run_backtest(league="mens"):
     data_file = paths["data_file"]
     output_file = paths["performance_file"]
 
-    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, 15 features) ---")
+    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, {len(FEATURES)} features) ---")
 
     if not os.path.exists(data_file):
         print("CRITICAL ERROR: Training data not found at", data_file)

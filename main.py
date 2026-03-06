@@ -66,7 +66,14 @@ def fetch_games_for_date(target_date, base_url):
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         spread_val = -val if is_home_fav else val
             except: pass
-            
+
+            # Neutral site + venue info
+            is_neutral = int(comp.get('neutralSite', False))
+            venue = comp.get('venue', {})
+            venue_addr = venue.get('address', {})
+            venue_city = venue_addr.get('city', '')
+            venue_state = venue_addr.get('state', '')
+
             g = {
                 'date': game_date_str,
                 'team': home['team']['displayName'],
@@ -76,10 +83,13 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(away['score']),
                 'is_home': 1,
                 'spread': spread_val,
-                'ats_win': 0 
+                'is_neutral': is_neutral,
+                'venue_city': venue_city,
+                'venue_state': venue_state,
+                'ats_win': 0
             }
             games.append(g)
-            
+
             g_away = {
                 'date': game_date_str,
                 'team': away['team']['displayName'],
@@ -89,6 +99,9 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(home['score']),
                 'is_home': 0,
                 'spread': -1 * spread_val,
+                'is_neutral': is_neutral,
+                'venue_city': venue_city,
+                'venue_state': venue_state,
                 'ats_win': 0
             }
             games.append(g_away)

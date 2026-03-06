@@ -26,6 +26,12 @@ from betting.line_shopping import LineShoppingResult
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
+from venue import (
+    build_team_home_locations,
+    compute_distance_advantage,
+    load_geocode_cache,
+    save_geocode_cache,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -182,6 +188,11 @@ def fetch_schedule():
                     print(f"         Could not parse spread from: {details!r}")
                     spread_val = 0.0
 
+                # Neutral site + venue
+                is_neutral = int(comp.get('neutralSite', False))
+                venue = comp.get('venue', {})
+                venue_addr = venue.get('address', {})
+
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
@@ -191,7 +202,10 @@ def fetch_schedule():
                         'spread': spread_val,  # May be 0 if ESPN doesn't have it
                         'date': game_date,
                         'raw_odds': raw_odds,
-                        'has_espn_spread': spread_val != 0.0
+                        'has_espn_spread': spread_val != 0.0,
+                        'is_neutral': is_neutral,
+                        'venue_city': venue_addr.get('city', ''),
+                        'venue_state': venue_addr.get('state', '')
                     })
                     
         except requests.RequestException as e:
@@ -716,7 +730,7 @@ def main(spread_overrides=None, league="mens"):
     if spread_overrides is None:
         spread_overrides = {}
 
-    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 15 features) ---")
+    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 17 features) ---")
 
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
@@ -765,6 +779,12 @@ def main(spread_overrides=None, league="mens"):
         )
     except (FileNotFoundError, EOFError, IOError, ValueError) as e:
         print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
+
+    # Build venue lookups for neutral-site / distance features
+    _geo_cache = load_geocode_cache()
+    _team_homes = build_team_home_locations(df_hist) if 'venue_city' in df_hist.columns else {}
+    if _team_homes:
+        print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
 
     # Fetch Kalshi markets
     kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
@@ -832,6 +852,14 @@ def main(spread_overrides=None, league="mens"):
 
         # Build common feature row (for both spread and game models)
         row = {'is_home': 1, 'spread': resolved_spread}
+        row['is_neutral'] = g.get('is_neutral', 0)
+        row['distance_advantage'] = compute_distance_advantage(
+            _team_homes.get(home_matched),
+            _team_homes.get(away_matched),
+            g.get('venue_city', ''),
+            g.get('venue_state', ''),
+            _geo_cache,
+        )
         row['rest_days'] = min(home_actual_rest, 7)
         row = calculate_production_features(row, h_stats, a_stats)
 
@@ -910,7 +938,8 @@ def main(spread_overrides=None, league="mens"):
             'momentum_gap': 0, 'roll5_cover_margin': 0,
             'prev_games_played': 10, 'opp_win_pct': 0.5,
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
-            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
+            'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
+            'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
             'spread_abs': 0, 'spread_squared': 0,
         }).fillna(0)
 
@@ -1071,6 +1100,10 @@ def main(spread_overrides=None, league="mens"):
         print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+    # Persist any newly geocoded venues
+    if _geo_cache:
+        save_geocode_cache(_geo_cache)
 
     # Store games that still need manual spreads
     _games_needing_spreads[ACTIVE_LEAGUE] = games_needing_spreads

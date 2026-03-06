@@ -20,6 +20,7 @@ telegram_bot.log
 .telegram_bot.lock
 .kalshi_sync_state.json
 
+.cache/
 IMPROVEMENT_PLAN.md
 betting_history.csv
 screenshots/

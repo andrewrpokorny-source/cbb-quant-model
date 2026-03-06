@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "scipy>=1.10",
     "httpx>=0.24",
+    "geopy>=2.4.1",
 ]
 
 [project.optional-dependencies]
