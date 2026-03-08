@@ -77,8 +77,10 @@ def geocode_location(loc, cache):
             cache[loc] = (result.latitude, result.longitude)
             time.sleep(1.05)
             return cache[loc]
-    except Exception:
-        pass
+    except ImportError:
+        pass  # geopy not installed; fall through to state centroid
+    except Exception as e:
+        print(f"      WARNING: Geocoding failed for '{loc}' ({type(e).__name__}: {e}), falling back to state centroid")
 
     # Fallback to state centroid
     st = loc.split(",")[-1].strip()

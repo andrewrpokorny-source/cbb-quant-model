@@ -872,6 +872,7 @@ def main(spread_overrides=None, league="mens"):
         # Build common feature row (for both spread and game models)
         row = {'is_home': 1, 'spread': resolved_spread}
         row['is_neutral'] = g.get('is_neutral', 0)
+        # Not in FEATURES yet -- computed for monitoring and future use
         row['distance_advantage'] = compute_distance_advantage(
             _team_homes.get(home_matched),
             _team_homes.get(away_matched),

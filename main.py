@@ -101,7 +101,11 @@ def get_last_recorded_date(data_file):
         df = pd.read_csv(data_file)
         df['date'] = pd.to_datetime(df['date'])
         return df['date'].max().to_pydatetime()
-    except Exception:
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as e:
+        print(f"WARNING: Data file corrupted ({e}), will re-download from season start")
+        return datetime(2025, 11, 4)
+    except Exception as e:
+        print(f"WARNING: Could not read last date from {data_file} ({type(e).__name__}: {e})")
         return datetime(2025, 11, 4)
 
 
@@ -141,7 +145,8 @@ def fetch_games_for_date(target_date, base_url):
                         home_name = home['team'].get('displayName', '')
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         spread_val = -val if is_home_fav else val
-            except: pass
+            except (ValueError, IndexError, TypeError):
+                pass
 
             # Neutral site + venue info
             is_neutral = int(comp.get('neutralSite', False))
@@ -181,7 +186,9 @@ def fetch_games_for_date(target_date, base_url):
                 'ats_win': 0
             }
             games.append(g_away)
-        except Exception:
+        except (KeyError, TypeError, ValueError, IndexError) as e:
+            event_id = event.get('id', 'unknown')
+            print(f"      Skipped event {event_id}: {type(e).__name__}: {e}")
             continue
         
     return games
