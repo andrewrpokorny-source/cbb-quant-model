@@ -10,6 +10,7 @@ import pandas as pd
 
 from model import (
     FEATURES,
+    TimeAwareCalibratedGBM,
     cover_prob_at_spread,
     load_model,
     prepare_time_ordered_training_frame,
@@ -20,6 +21,19 @@ from model import (
 def test_production_features_keep_neutral_drop_distance():
     assert "is_neutral" in FEATURES
     assert "distance_advantage" not in FEATURES
+
+
+def test_calibrated_gbm_pickles_under_model_module():
+    assert TimeAwareCalibratedGBM.__module__ == "model"
+
+
+def test_calibrated_gbm_exposes_feature_names_after_fit():
+    X = pd.DataFrame({"a": [0.0, 1.0, 0.0, 1.0], "b": [1.0, 0.0, 1.0, 0.0]})
+    y = [0, 1, 0, 1]
+    clf = TimeAwareCalibratedGBM(min_calibration_rows=9999)
+    clf.fit(X, y)
+    assert clf.feature_names_in_.tolist() == ["a", "b"]
+    assert clf.n_features_in_ == 2
 
 
 class TestTimeAwareTrainingSplit:

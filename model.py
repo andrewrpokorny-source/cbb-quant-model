@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 import joblib
 import numpy as np
@@ -14,6 +15,9 @@ from league_config import get_league_artifact_paths, normalize_league
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+if __name__ == "__main__":
+    sys.modules.setdefault("model", sys.modules[__name__])
 
 FEATURES = [
     'is_home',
@@ -66,6 +70,8 @@ class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
         X_df = pd.DataFrame(X).copy()
         y_ser = pd.Series(y).astype(int).reset_index(drop=True)
         X_df = X_df.reset_index(drop=True)
+        self.feature_names_in_ = X_df.columns.astype(str).to_numpy()
+        self.n_features_in_ = len(self.feature_names_in_)
 
         split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
         split_idx = min(split_idx, len(X_df) - 1)
@@ -111,6 +117,10 @@ class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
     @property
     def feature_importances_(self):
         return self.base_estimator_.feature_importances_
+
+
+# Keep pickle module path stable when model.py is executed as a script.
+TimeAwareCalibratedGBM.__module__ = "model"
 
 
 def _build_game_keys(df_model):
