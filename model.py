@@ -18,7 +18,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FEATURES = [
     'is_home',
     'is_neutral',
-    'distance_advantage',
     'spread',
     'rest_days',
     'diff_eFG',

@@ -23,6 +23,7 @@ def test_artifact_paths_include_womens_files(tmp_path):
     paths = get_league_artifact_paths(str(tmp_path), "womens")
     assert paths["model_file"].endswith("womens_cbb_spread_model_v2.pkl")
     assert paths["win_model_file"].endswith("womens_cbb_win_model_v1.pkl")
+    assert paths["odds_archive_file"].endswith("odds_history.csv")
     assert paths["predictions_archive_prefix"] == "predictions_wbb"
 
 
@@ -31,4 +32,3 @@ def test_scoreboard_base_url_uses_league_path():
     womens_url = get_scoreboard_base_url("womens")
     assert "mens-college-basketball" in mens_url
     assert "womens-college-basketball" in womens_url
-

@@ -9,11 +9,17 @@ import numpy as np
 import pandas as pd
 
 from model import (
+    FEATURES,
     cover_prob_at_spread,
     load_model,
     prepare_time_ordered_training_frame,
     time_series_train_test_split,
 )
+
+
+def test_production_features_keep_neutral_drop_distance():
+    assert "is_neutral" in FEATURES
+    assert "distance_advantage" not in FEATURES
 
 
 class TestTimeAwareTrainingSplit:

@@ -26,6 +26,7 @@ from betting.line_shopping import LineShoppingResult
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
+from odds_archive import append_archive_records, build_archive_record
 from venue import (
     build_team_home_locations,
     compute_distance_advantage,
@@ -793,6 +794,7 @@ def main(spread_overrides=None, league="mens"):
     game_predictions = []
     skipped = []
     games_needing_spreads = []
+    odds_archive_records = []
     _distance_stats = {"total": 0, "nonzero": 0, "neutral": 0}
 
     for g in schedule:
@@ -841,6 +843,19 @@ def main(spread_overrides=None, league="mens"):
                         'matchup': matchup_key,
                     })
                     skipped.append(f"{matchup_key} (No spread -- spread pick skipped)")
+
+        archive_spread = resolved_spread if has_spread_for_spread_model else None
+        odds_archive_records.append(
+            build_archive_record(
+                league=ACTIVE_LEAGUE,
+                game_date=g["date"],
+                home_team=g["home_raw"],
+                away_team=g["away_raw"],
+                spread=archive_spread,
+                spread_source=spread_source if has_spread_for_spread_model else None,
+                raw_line=spread_source,
+            )
+        )
 
         h_stats = team_stats[home_matched]
         a_stats = team_stats[away_matched]
@@ -1033,6 +1048,12 @@ def main(spread_overrides=None, league="mens"):
         pd.DataFrame(spread_predictions).sort_values(by="Conf", ascending=False)
         if spread_predictions else pd.DataFrame()
     )
+    added_archive_rows = append_archive_records(
+        odds_archive_records,
+        get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)["odds_archive_file"],
+    )
+    if added_archive_rows:
+        print(f"   -> Archived {added_archive_rows} market line snapshot(s)")
     game_df = (
         pd.DataFrame(game_predictions).sort_values(by="Conf", ascending=False)
         if game_predictions else pd.DataFrame()
