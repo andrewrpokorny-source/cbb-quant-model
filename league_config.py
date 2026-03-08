@@ -59,6 +59,7 @@ def get_league_artifact_paths(base_dir, league):
         "data_file": os.path.join(base_dir, settings["data_file"]),
         "model_file": os.path.join(base_dir, settings["model_file"]),
         "win_model_file": os.path.join(base_dir, settings["win_model_file"]),
+        "odds_archive_file": os.path.join(base_dir, "odds_history.csv"),
         "predictions_file": os.path.join(base_dir, settings["predictions_file"]),
         "performance_file": os.path.join(base_dir, settings["performance_file"]),
         "predictions_archive_prefix": settings["predictions_archive_prefix"],

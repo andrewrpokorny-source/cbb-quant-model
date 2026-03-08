@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from league_config import get_league_artifact_paths, normalize_league
+from venue import build_team_home_locations, compute_distance_advantage_bulk, load_geocode_cache, save_geocode_cache
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +14,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def clean_stale_data(df):
     print("   -> 🧹 Cleaning stale columns...")
     keywords = ['season_', 'roll', 'prev_', 'opp_', 'diff_', 'eFG', 'TS', 'off_rating', 'poss', 'ats_win']
-    keep_cols = ['date', 'team', 'opponent', 'location', 'team_score', 'opp_score', 'spread', 'is_home']
+    keep_cols = ['date', 'team', 'opponent', 'location', 'team_score', 'opp_score', 'spread', 'is_home',
+                 'is_neutral', 'venue_city', 'venue_state']
     
     current_cols = df.columns.tolist()
     drop_list = []
@@ -153,7 +155,22 @@ def main(league="mens"):
     df['ats_win'] = (df['team_score'] + df['spread'] > df['opp_score']).astype(int)
     
     df_final = merge_opponent_stats(df)
-    
+
+    # Neutral site: ensure column exists (0 for legacy rows without it)
+    if 'is_neutral' not in df_final.columns:
+        df_final['is_neutral'] = 0
+    df_final['is_neutral'] = df_final['is_neutral'].fillna(0).astype(int)
+
+    # Distance advantage from venue data
+    if 'venue_city' in df_final.columns and df_final['venue_city'].notna().any():
+        print("   -> Computing distance advantage...")
+        geo_cache = load_geocode_cache()
+        team_homes = build_team_home_locations(df_final, league=league)
+        df_final = compute_distance_advantage_bulk(df_final, team_homes, geo_cache)
+        save_geocode_cache(geo_cache)
+    else:
+        df_final['distance_advantage'] = 0.0
+
     print(f"✅ Saving processed data ({len(df_final)} rows)...")
     df_final.to_csv(data_file, index=False)
 

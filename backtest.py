@@ -4,13 +4,11 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.base import clone
 from sklearn.metrics import brier_score_loss
 
 from league_config import get_league_artifact_paths, normalize_league
-from model import FEATURES
+from model import FEATURES, TimeAwareCalibratedGBM
 
 # --- BULLETPROOF PATHS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,14 +19,13 @@ HIGH_CONF_THRESHOLD = 0.53
 
 
 def build_pipeline():
-    """Build the production GBM + CalibratedClassifierCV pipeline."""
-    base = GradientBoostingClassifier(
+    """Build the production GBM + trailing-window calibration pipeline."""
+    return TimeAwareCalibratedGBM(
         n_estimators=150,
         learning_rate=0.05,
         max_depth=4,
         random_state=42,
     )
-    return CalibratedClassifierCV(base, method='sigmoid', cv=5)
 
 
 def train_model_at_date(df, cutoff_date, pipeline):
@@ -123,7 +120,7 @@ def run_backtest(league="mens"):
     data_file = paths["data_file"]
     output_file = paths["performance_file"]
 
-    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, 15 features) ---")
+    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, {len(FEATURES)} features) ---")
 
     if not os.path.exists(data_file):
         print("CRITICAL ERROR: Training data not found at", data_file)

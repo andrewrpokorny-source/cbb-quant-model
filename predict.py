@@ -26,6 +26,13 @@ from betting.line_shopping import LineShoppingResult
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
+from odds_archive import append_archive_records, build_archive_record
+from venue import (
+    build_team_home_locations,
+    compute_distance_advantage,
+    load_geocode_cache,
+    save_geocode_cache,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -182,6 +189,11 @@ def fetch_schedule():
                     print(f"         Could not parse spread from: {details!r}")
                     spread_val = 0.0
 
+                # Neutral site + venue
+                is_neutral = int(comp.get('neutralSite', False))
+                venue = comp.get('venue', {})
+                venue_addr = venue.get('address', {})
+
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
@@ -191,7 +203,10 @@ def fetch_schedule():
                         'spread': spread_val,  # May be 0 if ESPN doesn't have it
                         'date': game_date,
                         'raw_odds': raw_odds,
-                        'has_espn_spread': spread_val != 0.0
+                        'has_espn_spread': spread_val != 0.0,
+                        'is_neutral': is_neutral,
+                        'venue_city': venue_addr.get('city', ''),
+                        'venue_state': venue_addr.get('state', '')
                     })
                     
         except requests.RequestException as e:
@@ -716,8 +731,6 @@ def main(spread_overrides=None, league="mens"):
     if spread_overrides is None:
         spread_overrides = {}
 
-    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 15 features) ---")
-
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
@@ -725,6 +738,11 @@ def main(spread_overrides=None, league="mens"):
     # Load model + sigma
     try:
         model, sigma = load_model(league=ACTIVE_LEAGUE)
+        feature_count = len(getattr(model, "feature_names_in_", [])) or "unknown"
+        print(
+            f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, "
+            f"{feature_count} features) ---"
+        )
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -766,6 +784,12 @@ def main(spread_overrides=None, league="mens"):
     except (FileNotFoundError, EOFError, IOError, ValueError) as e:
         print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
+    # Build venue lookups for neutral-site / distance features
+    _geo_cache = load_geocode_cache()
+    _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
+    if _team_homes:
+        print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
+
     # Fetch Kalshi markets
     kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
 
@@ -773,6 +797,8 @@ def main(spread_overrides=None, league="mens"):
     game_predictions = []
     skipped = []
     games_needing_spreads = []
+    odds_archive_records = []
+    _distance_stats = {"total": 0, "nonzero": 0, "neutral": 0}
 
     for g in schedule:
         matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
@@ -821,6 +847,19 @@ def main(spread_overrides=None, league="mens"):
                     })
                     skipped.append(f"{matchup_key} (No spread -- spread pick skipped)")
 
+        archive_spread = resolved_spread if has_spread_for_spread_model else None
+        odds_archive_records.append(
+            build_archive_record(
+                league=ACTIVE_LEAGUE,
+                game_date=g["date"],
+                home_team=g["home_raw"],
+                away_team=g["away_raw"],
+                spread=archive_spread,
+                spread_source=spread_source if has_spread_for_spread_model else None,
+                raw_line=spread_source,
+            )
+        )
+
         h_stats = team_stats[home_matched]
         a_stats = team_stats[away_matched]
 
@@ -832,6 +871,20 @@ def main(spread_overrides=None, league="mens"):
 
         # Build common feature row (for both spread and game models)
         row = {'is_home': 1, 'spread': resolved_spread}
+        row['is_neutral'] = g.get('is_neutral', 0)
+        # Not in FEATURES yet -- computed for monitoring and future use
+        row['distance_advantage'] = compute_distance_advantage(
+            _team_homes.get(home_matched),
+            _team_homes.get(away_matched),
+            g.get('venue_city', ''),
+            g.get('venue_state', ''),
+            _geo_cache,
+        )
+        _distance_stats["total"] += 1
+        if row['distance_advantage'] != 0:
+            _distance_stats["nonzero"] += 1
+        if row['is_neutral']:
+            _distance_stats["neutral"] += 1
         row['rest_days'] = min(home_actual_rest, 7)
         row = calculate_production_features(row, h_stats, a_stats)
 
@@ -910,7 +963,8 @@ def main(spread_overrides=None, league="mens"):
             'momentum_gap': 0, 'roll5_cover_margin': 0,
             'prev_games_played': 10, 'opp_win_pct': 0.5,
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
-            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
+            'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
+            'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
             'spread_abs': 0, 'spread_squared': 0,
         }).fillna(0)
 
@@ -998,6 +1052,12 @@ def main(spread_overrides=None, league="mens"):
         pd.DataFrame(spread_predictions).sort_values(by="Conf", ascending=False)
         if spread_predictions else pd.DataFrame()
     )
+    added_archive_rows = append_archive_records(
+        odds_archive_records,
+        get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)["odds_archive_file"],
+    )
+    if added_archive_rows:
+        print(f"   -> Archived {added_archive_rows} market line snapshot(s)")
     game_df = (
         pd.DataFrame(game_predictions).sort_values(by="Conf", ascending=False)
         if game_predictions else pd.DataFrame()
@@ -1066,11 +1126,28 @@ def main(spread_overrides=None, league="mens"):
     else:
         print("\nNo predictions generated.")
     
+    # Distance feature guardrail
+    dt = _distance_stats
+    if dt["total"] > 0:
+        pct = dt["nonzero"] / dt["total"]
+        level = "WARNING" if pct < 0.5 else "INFO"
+        print(
+            f"\n   [{level}] distance coverage monitor: "
+            f"{dt['nonzero']}/{dt['total']} games non-zero ({pct:.0%}), "
+            f"{dt['neutral']} neutral-site"
+        )
+        if pct < 0.5:
+            print(f"   [{level}] Low distance coverage -- check venue data and geocode cache")
+
     # Show skipped games
     if skipped:
         print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+    # Persist any newly geocoded venues
+    if _geo_cache:
+        save_geocode_cache(_geo_cache)
 
     # Store games that still need manual spreads
     _games_needing_spreads[ACTIVE_LEAGUE] = games_needing_spreads

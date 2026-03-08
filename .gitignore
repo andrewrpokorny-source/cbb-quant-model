@@ -16,10 +16,12 @@ performance_log_wbb.csv
 daily_predictions_wbb.csv
 wbb_training_data_processed.csv
 wbb_model_v2.pkl
+odds_history.csv
 telegram_bot.log
 .telegram_bot.lock
 .kalshi_sync_state.json
 
+.cache/
 IMPROVEMENT_PLAN.md
 betting_history.csv
 screenshots/
