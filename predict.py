@@ -731,8 +731,6 @@ def main(spread_overrides=None, league="mens"):
     if spread_overrides is None:
         spread_overrides = {}
 
-    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 17 features) ---")
-
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
@@ -740,6 +738,11 @@ def main(spread_overrides=None, league="mens"):
     # Load model + sigma
     try:
         model, sigma = load_model(league=ACTIVE_LEAGUE)
+        feature_count = len(getattr(model, "feature_names_in_", [])) or "unknown"
+        print(
+            f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, "
+            f"{feature_count} features) ---"
+        )
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -1127,7 +1130,11 @@ def main(spread_overrides=None, league="mens"):
     if dt["total"] > 0:
         pct = dt["nonzero"] / dt["total"]
         level = "WARNING" if pct < 0.5 else "INFO"
-        print(f"\n   [{level}] distance_advantage: {dt['nonzero']}/{dt['total']} games non-zero ({pct:.0%}), {dt['neutral']} neutral-site")
+        print(
+            f"\n   [{level}] distance coverage monitor: "
+            f"{dt['nonzero']}/{dt['total']} games non-zero ({pct:.0%}), "
+            f"{dt['neutral']} neutral-site"
+        )
         if pct < 0.5:
             print(f"   [{level}] Low distance coverage -- check venue data and geocode cache")
 
