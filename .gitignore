@@ -17,6 +17,7 @@ daily_predictions_wbb.csv
 wbb_training_data_processed.csv
 wbb_model_v2.pkl
 odds_history.csv
+kalshi_game_history.csv
 telegram_bot.log
 .telegram_bot.lock
 .kalshi_sync_state.json

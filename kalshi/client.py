@@ -112,6 +112,53 @@ class KalshiClient:
             print(f"      Kalshi API error: {e}")
             return {}
 
+    def _price_to_cents(self, value):
+        """Normalize cents- or dollars-denominated Kalshi prices to cents."""
+        if value is None:
+            return None
+
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        # Recent API responses may use *_dollars fields on a 0-1 scale.
+        if 0.0 <= numeric <= 1.0:
+            return round(numeric * 100.0, 4)
+        return round(numeric, 4)
+
+    def _extract_market_prices(self, market: dict) -> dict:
+        """Extract fee-model prices from a market payload across old/new formats."""
+        if not market:
+            return {"yes_price": None, "no_price": None, "last_price": None}
+
+        yes_price = self._price_to_cents(
+            market.get("yes_ask_dollars")
+            if market.get("yes_ask_dollars") is not None
+            else market.get("yes_ask")
+        )
+        no_price = self._price_to_cents(
+            market.get("no_ask_dollars")
+            if market.get("no_ask_dollars") is not None
+            else market.get("no_ask")
+        )
+        last_price = self._price_to_cents(
+            market.get("last_price_dollars")
+            if market.get("last_price_dollars") is not None
+            else market.get("last_price")
+        )
+
+        if yes_price is None:
+            yes_price = last_price
+        if no_price is None and yes_price is not None:
+            no_price = round(100.0 - yes_price, 4)
+
+        return {
+            "yes_price": yes_price,
+            "no_price": no_price,
+            "last_price": last_price,
+        }
+
     def search_markets(
         self,
         event_ticker: Optional[str] = None,
@@ -239,20 +286,129 @@ class KalshiClient:
         market = self.get_market(ticker)
         if not market:
             return {"yes_price": None, "no_price": None}
-
-        # Kalshi prices are in cents (0-100)
-        # yes_ask is what you pay to buy YES -- use this for edge calculation
-        yes_ask = market.get("yes_ask")
-        yes_price = yes_ask if yes_ask is not None else market.get("last_price")
-        no_ask = market.get("no_ask")
-        no_price = no_ask if no_ask is not None else (100 - yes_price if yes_price is not None else None)
+        prices = self._extract_market_prices(market)
 
         return {
-            "yes_price": yes_price,
-            "no_price": no_price,
+            "yes_price": prices["yes_price"],
+            "no_price": prices["no_price"],
             "ticker": ticker,
             "title": market.get("title", ""),
         }
+
+    def get_historical_markets(
+        self,
+        limit: int = 200,
+        ticker: Optional[str] = None,
+        event_ticker: Optional[str] = None,
+        series_ticker: Optional[str] = None,
+        min_close_ts: Optional[int] = None,
+        max_close_ts: Optional[int] = None,
+    ) -> list[dict]:
+        """Fetch historical markets from Kalshi's historical API."""
+        all_markets: list[dict] = []
+        cursor: Optional[str] = None
+        page_size = min(limit, 200)
+
+        while True:
+            params: dict = {"limit": page_size}
+            if ticker:
+                params["ticker"] = ticker
+            if event_ticker:
+                params["event_ticker"] = event_ticker
+            if series_ticker:
+                params["series_ticker"] = series_ticker
+            if min_close_ts is not None:
+                params["min_close_ts"] = min_close_ts
+            if max_close_ts is not None:
+                params["max_close_ts"] = max_close_ts
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/historical/markets", params)
+            if not result:
+                break
+
+            raw_markets = result.get("markets", [])
+            markets = raw_markets
+            if series_ticker:
+                markets = [m for m in raw_markets if m.get("ticker", "").startswith(series_ticker)]
+            all_markets.extend(markets)
+            if len(all_markets) >= limit:
+                return all_markets[:limit]
+            cursor = result.get("cursor")
+            if not cursor or len(raw_markets) < page_size:
+                break
+
+        return all_markets
+
+    def get_historical_market(self, ticker: str) -> dict:
+        """Fetch one historical market record."""
+        result = self._get(f"/historical/markets/{ticker}")
+        return result.get("market", result)
+
+    def get_market_any(self, ticker: str) -> dict:
+        """Fetch a market from historical storage first, then the live endpoint."""
+        market = self.get_historical_market(ticker)
+        if market:
+            return market
+        return self.get_market(ticker)
+
+    def get_historical_market_candlesticks(
+        self,
+        ticker: str,
+        *,
+        start_ts: Optional[int] = None,
+        end_ts: Optional[int] = None,
+        period_interval: Optional[int] = None,
+    ) -> list[dict]:
+        """Fetch historical candlesticks for a market."""
+        params: dict = {}
+        if start_ts is not None:
+            params["start_ts"] = start_ts
+        if end_ts is not None:
+            params["end_ts"] = end_ts
+        if period_interval is not None:
+            params["period_interval"] = period_interval
+        result = self._get(f"/historical/markets/{ticker}/candlesticks", params or None)
+        return result.get("candlesticks", [])
+
+    def get_historical_trades(
+        self,
+        *,
+        ticker: Optional[str] = None,
+        limit: int = 1000,
+        min_ts: Optional[int] = None,
+        max_ts: Optional[int] = None,
+    ) -> list[dict]:
+        """Fetch historical trades from Kalshi's historical API."""
+        all_trades: list[dict] = []
+        cursor: Optional[str] = None
+        page_size = min(limit, 1000)
+
+        while True:
+            params: dict = {"limit": page_size}
+            if ticker:
+                params["ticker"] = ticker
+            if min_ts is not None:
+                params["min_ts"] = min_ts
+            if max_ts is not None:
+                params["max_ts"] = max_ts
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/historical/trades", params)
+            if not result:
+                break
+
+            trades = result.get("trades", [])
+            all_trades.extend(trades)
+            if len(all_trades) >= limit:
+                return all_trades[:limit]
+            cursor = result.get("cursor")
+            if not cursor or len(trades) < page_size:
+                break
+
+        return all_trades
 
     def get_settlements(
         self,
@@ -274,9 +430,10 @@ class KalshiClient:
         """
         all_settlements: list[dict] = []
         cursor: Optional[str] = None
+        page_size = min(limit, 200)
 
         while True:
-            params: dict = {"limit": min(limit, 200)}
+            params: dict = {"limit": page_size}
             if ticker:
                 params["ticker"] = ticker
             if min_ts is not None:
@@ -291,9 +448,11 @@ class KalshiClient:
                 raise RuntimeError("Kalshi API request failed fetching settlements")
             settlements = result.get("settlements", [])
             all_settlements.extend(settlements)
+            if len(all_settlements) >= limit:
+                return all_settlements[:limit]
 
             cursor = result.get("cursor")
-            if not cursor or len(settlements) < min(limit, 200):
+            if not cursor or len(settlements) < page_size:
                 break
 
         return all_settlements
