@@ -23,6 +23,8 @@ from betting import calculate_edge, get_rating, recommended_units, EdgeRating, S
 from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
+from kalshi_game_archive import append_archive_records as append_kalshi_game_archive_records
+from kalshi_game_archive import build_game_archive_record
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
@@ -798,6 +800,7 @@ def main(spread_overrides=None, league="mens"):
     skipped = []
     games_needing_spreads = []
     odds_archive_records = []
+    kalshi_game_archive_records = []
     _distance_stats = {"total": 0, "nonzero": 0, "neutral": 0}
 
     for g in schedule:
@@ -913,6 +916,7 @@ def main(spread_overrides=None, league="mens"):
                     side = game_kalshi.get("Kalshi_Side", "YES")
                     side_prob = yes_prob if side == "YES" else (1.0 - yes_prob)
                     pick_line = f"{yes_team} ML {side}"
+                    edge = game_kalshi.get("Edge")
                     game_predictions.append({
                         "Bet_Type": "game",
                         "Date/Time": time_str,
@@ -923,10 +927,12 @@ def main(spread_overrides=None, league="mens"):
                         "Raw Odds": "Kalshi GAME",
                         "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
                         "Kalshi_Side": side,
+                        "Kalshi_Yes": game_kalshi.get("Kalshi_Yes"),
+                        "Kalshi_No": game_kalshi.get("Kalshi_No"),
                         "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
                         "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
                         "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
-                        "Edge": game_kalshi.get("Edge"),
+                        "Edge": edge,
                         "Edge_Pct": game_kalshi.get("Edge_Pct"),
                         "Rating": game_kalshi.get("Rating"),
                         "Units": game_kalshi.get("Units"),
@@ -934,6 +940,7 @@ def main(spread_overrides=None, league="mens"):
                         "Away_Matched": away_matched,
                         "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
                         "Kalshi_Yes_Team": yes_team,
+                        "Picked_Team": game_kalshi.get("Picked_Team"),
                         "Win_Model_Home_Prob": home_win_prob,
                         "Win_Model_Variant": win_variant,
                         "Std_Edge": 0.0,
@@ -942,6 +949,31 @@ def main(spread_overrides=None, league="mens"):
                         "Std_Units": 0.0,
                         "Breakeven_Spread": np.nan,
                     })
+                    kalshi_game_archive_records.append(
+                        build_game_archive_record(
+                            league=ACTIVE_LEAGUE,
+                            game_datetime=g["date"],
+                            home_team=g["home_raw"],
+                            away_team=g["away_raw"],
+                            matchup=matchup_key,
+                            pick=pick_line,
+                            picked_team=game_kalshi.get("Picked_Team"),
+                            kalshi_side=side,
+                            kalshi_ticker=game_kalshi.get("Kalshi_Ticker"),
+                            kalshi_title=game_kalshi.get("Kalshi_Title"),
+                            kalshi_yes_team=yes_team,
+                            kalshi_yes_price=game_kalshi.get("Kalshi_Yes"),
+                            kalshi_no_price=game_kalshi.get("Kalshi_No"),
+                            kalshi_price=game_kalshi.get("Kalshi_Price"),
+                            kalshi_fee=game_kalshi.get("Kalshi_Fee"),
+                            win_model_home_prob=home_win_prob,
+                            conf=side_prob,
+                            edge=edge,
+                            edge_pct=(edge * 100.0) if edge is not None else None,
+                            rating=game_kalshi.get("Rating"),
+                            units=game_kalshi.get("Units"),
+                        )
+                    )
             except (KeyError, TypeError, ValueError) as e:
                 print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
 
@@ -1058,6 +1090,12 @@ def main(spread_overrides=None, league="mens"):
     )
     if added_archive_rows:
         print(f"   -> Archived {added_archive_rows} market line snapshot(s)")
+    added_game_archive_rows = append_kalshi_game_archive_records(
+        kalshi_game_archive_records,
+        get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)["kalshi_game_archive_file"],
+    )
+    if added_game_archive_rows:
+        print(f"   -> Archived {added_game_archive_rows} Kalshi GAME snapshot(s)")
     game_df = (
         pd.DataFrame(game_predictions).sort_values(by="Conf", ascending=False)
         if game_predictions else pd.DataFrame()
