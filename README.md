@@ -67,6 +67,14 @@ uv run python grade_predictions.py --league womens
 - Men's game-winner model bundle: `cbb_win_model_v1.pkl`
 - Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
 
+### Neutral-Site and Venue Features
+
+The spread model includes neutral-site detection and travel distance monitoring:
+- `is_neutral` flag from ESPN's `neutralSite` field (in FEATURES, used by model)
+- `distance_advantage` computed from geocoded team/venue locations (stored in CSV for monitoring, not yet in FEATURES)
+- `venue.py` handles geocoding with Nominatim + state-centroid fallback
+- `venue_geocode.json` ships 357 pre-geocoded locations for offline use
+
 ### Kalshi GAME Markets (P(win))
 
 `predict.py` now evaluates Kalshi GAME contracts with the P(win) model bundle:
