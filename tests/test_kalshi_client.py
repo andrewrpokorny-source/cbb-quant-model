@@ -89,6 +89,28 @@ def test_get_historical_markets_filters_series_prefix(monkeypatch):
     assert [m["ticker"] for m in markets] == ["KXNCAAMBGAME-EXAMPLE"]
 
 
+def test_get_historical_markets_continues_pagination_based_on_raw_page(monkeypatch):
+    client = KalshiClient(api_key="test")
+    calls = []
+
+    def _fake_get(endpoint, params=None):
+        calls.append(params.copy())
+        if len(calls) == 1:
+            return {
+                "markets": [{"ticker": "KXOTHER-1"}, {"ticker": "KXOTHER-2"}],
+                "cursor": "next-page",
+            }
+        return {
+            "markets": [{"ticker": "KXNCAAMBGAME-EXAMPLE"}],
+            "cursor": None,
+        }
+
+    monkeypatch.setattr(client, "_get", _fake_get)
+    markets = client.get_historical_markets(limit=2, series_ticker="KXNCAAMBGAME")
+    assert [m["ticker"] for m in markets] == ["KXNCAAMBGAME-EXAMPLE"]
+    assert len(calls) == 2
+
+
 def test_get_market_any_falls_back_to_live_market(monkeypatch):
     client = KalshiClient(api_key="test")
     monkeypatch.setattr(client, "get_historical_market", lambda ticker: {})

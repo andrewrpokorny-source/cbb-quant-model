@@ -328,14 +328,15 @@ class KalshiClient:
             if not result:
                 break
 
-            markets = result.get("markets", [])
+            raw_markets = result.get("markets", [])
+            markets = raw_markets
             if series_ticker:
-                markets = [m for m in markets if m.get("ticker", "").startswith(series_ticker)]
+                markets = [m for m in raw_markets if m.get("ticker", "").startswith(series_ticker)]
             all_markets.extend(markets)
             if len(all_markets) >= limit:
                 return all_markets[:limit]
             cursor = result.get("cursor")
-            if not cursor or len(markets) < page_size:
+            if not cursor or len(raw_markets) < page_size:
                 break
 
         return all_markets

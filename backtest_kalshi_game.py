@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 from typing import Callable
 
 import pandas as pd
 
-from betting import get_rating
+from betting import VALUE_RATINGS, RATING_RANK, get_rating
 from betting.ev_calculator import kalshi_fee_cents
 from grade_predictions import fetch_completed_games
 from kalshi_game_archive import ARCHIVE_COLUMNS
@@ -44,6 +45,42 @@ RESULT_COLUMNS = [
     "edge_bucket",
     "price_bucket",
 ]
+
+
+def _parse_game_date_from_kalshi_ticker(ticker: str) -> str | None:
+    """Parse a YYYY-MM-DD game date from a Kalshi market ticker."""
+    match = re.search(r"-(\d{2})([A-Z]{3})(\d{2})", str(ticker or ""))
+    if not match:
+        return None
+    year_short, month_str, day = match.groups()
+    months = {
+        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+    }
+    month = months.get(month_str)
+    if month is None:
+        return None
+    try:
+        return pd.Timestamp(2000 + int(year_short), month, int(day)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def filter_archived_predictions_by_rating(
+    archived_inputs: pd.DataFrame,
+    min_rating: str = "GOOD",
+) -> pd.DataFrame:
+    """Filter archived predictions to the minimum actionable rating."""
+    threshold = str(min_rating or "GOOD").strip().upper()
+    if threshold == "ALL":
+        return archived_inputs.copy()
+    if threshold not in RATING_RANK:
+        raise ValueError(f"Unsupported min_rating '{min_rating}'.")
+
+    filtered = archived_inputs.copy()
+    ratings = filtered["rating"].fillna("").astype(str).str.upper()
+    keep = ratings.map(lambda rating: RATING_RANK.get(rating, -1) >= RATING_RANK[threshold])
+    return filtered[keep].copy()
 
 
 def load_actual_betting_history_rows(csv_path: str, league: str | None = None) -> pd.DataFrame:
@@ -249,7 +286,8 @@ def load_actual_betting_history_results(csv_path: str, league: str | None = None
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
     settled["captured_at"] = pd.to_datetime(settled["date"], errors="coerce")
-    settled["game_date"] = settled["captured_at"].dt.strftime("%Y-%m-%d")
+    settled["game_date"] = settled["bet_id"].apply(_parse_game_date_from_kalshi_ticker)
+    settled["game_date"] = settled["game_date"].fillna(settled["captured_at"].dt.strftime("%Y-%m-%d"))
     settled["stake"] = pd.to_numeric(settled["wager"], errors="coerce")
     settled["payout"] = pd.to_numeric(settled["payout"], errors="coerce")
     settled["profit"] = pd.to_numeric(settled["profit"], errors="coerce")
@@ -315,7 +353,9 @@ def compare_actual_bets_to_archived_predictions(
     actual["payout"] = pd.to_numeric(actual["payout"], errors="coerce")
     actual["profit"] = pd.to_numeric(actual["profit"], errors="coerce")
     actual["result"] = actual["result"].astype(str).str.lower()
-    actual["game_date"] = pd.to_datetime(actual["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    actual["captured_at_actual"] = pd.to_datetime(actual["date"], errors="coerce")
+    actual["game_date"] = actual["bet_id"].apply(_parse_game_date_from_kalshi_ticker)
+    actual["game_date"] = actual["game_date"].fillna(actual["captured_at_actual"].dt.strftime("%Y-%m-%d"))
 
     merged = actual.merge(
         archived,
@@ -527,6 +567,12 @@ def parse_args():
         help="Resolve outcomes from Kalshi historical markets when possible, or ESPN scores.",
     )
     parser.add_argument(
+        "--min-rating",
+        choices=("ALL", "PASS", "MARGINAL", "GOOD", "STRONG"),
+        default="GOOD",
+        help="Minimum archived Kalshi GAME rating to include in prediction replay backtests.",
+    )
+    parser.add_argument(
         "--all-snapshots",
         action="store_true",
         help="Use every archived snapshot instead of only the latest per game",
@@ -573,7 +619,12 @@ def main():
         print("No archived Kalshi GAME picks found.")
         return
 
-    snapshots = inputs if args.all_snapshots else select_latest_snapshot_per_game(inputs)
+    filtered_inputs = filter_archived_predictions_by_rating(inputs, min_rating=args.min_rating)
+    if filtered_inputs.empty:
+        print(f"No archived Kalshi GAME picks met min rating {args.min_rating}.")
+        return
+
+    snapshots = filtered_inputs if args.all_snapshots else select_latest_snapshot_per_game(filtered_inputs)
     market_resolver = None
     if args.resolution_source in {"auto", "kalshi"}:
         client = KalshiClient()

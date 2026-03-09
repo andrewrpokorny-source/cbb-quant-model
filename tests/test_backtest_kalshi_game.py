@@ -8,6 +8,7 @@ import pytest
 from backtest_kalshi_game import (
     calculate_kalshi_contract_outcome,
     compare_actual_bets_to_archived_predictions,
+    filter_archived_predictions_by_rating,
     load_actual_betting_history_rows,
     load_actual_betting_history_results,
     result_from_market_result,
@@ -66,6 +67,12 @@ def test_select_latest_snapshot_per_game_keeps_latest():
     latest = select_latest_snapshot_per_game(_sample_snapshots())
     assert len(latest) == 1
     assert latest.iloc[0]["kalshi_side"] == "NO"
+
+
+def test_filter_archived_predictions_by_rating_defaults_to_good_or_better():
+    filtered = filter_archived_predictions_by_rating(_sample_snapshots(), min_rating="GOOD")
+    assert len(filtered) == 1
+    assert filtered.iloc[0]["rating"] == "GOOD"
 
 
 def test_calculate_kalshi_contract_outcome_handles_win_and_loss():
@@ -222,6 +229,7 @@ def test_load_actual_betting_history_results(tmp_path):
     assert len(results) == 2
     assert results.iloc[0]["rating"] == "actual_bet"
     assert results.iloc[0]["price_bucket"] == "unknown"
+    assert results.iloc[0]["game_date"] == "2026-03-01"
     assert results.iloc[1]["profit"] == pytest.approx(6.8)
 
 
