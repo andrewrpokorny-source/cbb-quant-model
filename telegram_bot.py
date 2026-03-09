@@ -938,8 +938,9 @@ def _parse_fd_blocks(text: str) -> list[dict]:
         $X.XX           <- payout
     """
     # FD spread lines have NO odds on the same line: "Team +/-X.X" alone
+    # Parens allow FanDuel's "(W)" women's league suffix
     spread_line_re = re.compile(
-        r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$", re.MULTILINE
+        r"^([A-Za-z][A-Za-z &'.()\-]+?)\s+([+-]\d+\.?\d*)\s*$", re.MULTILINE
     )
     matches = list(spread_line_re.finditer(text))
     if not matches:
@@ -950,6 +951,12 @@ def _parse_fd_blocks(text: str) -> list[dict]:
         team = match.group(1).strip()
         spread = match.group(2)
 
+        # Detect women's league from FanDuel "(W)" suffix
+        league = ""
+        if re.search(r"\(W\)\s*$", team):
+            league = "womens"
+            team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
+
         # Block of text between this spread line and the next
         block_start = match.end()
         block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
@@ -957,11 +964,13 @@ def _parse_fd_blocks(text: str) -> list[dict]:
 
         # Matchup: "Team1 @ Team2"
         matchup_match = re.search(
-            r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)",
+            r"([A-Za-z][A-Za-z &'.()\-]+?)\s+@\s+([A-Za-z][A-Za-z &'.()\-]+)",
             block,
         )
         if matchup_match:
-            game = f"{matchup_match.group(1).strip()} vs {matchup_match.group(2).strip()}"
+            g1 = re.sub(r"\s*\(W\)\s*$", "", matchup_match.group(1).strip())
+            g2 = re.sub(r"\s*\(W\)\s*$", "", matchup_match.group(2).strip())
+            game = f"{g1} vs {g2}"
         else:
             game = ""
 
@@ -985,6 +994,7 @@ def _parse_fd_blocks(text: str) -> list[dict]:
             "line": f"{team} {spread}",
             "odds": odds,
             "wager": wager,
+            "league": league,
         })
 
     return bets
@@ -1211,12 +1221,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     lines = card_text.split("\n")
     cleaned = _clean_ocr_text(lines)
 
-    spread_re = re.compile(r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$")
-    matchup_re = re.compile(r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)")
+    # Parens allow FanDuel's "(W)" women's league suffix
+    spread_re = re.compile(r"^([A-Za-z][A-Za-z &'.()\-]+?)\s+([+-]\d+\.?\d*)\s*$")
+    matchup_re = re.compile(r"([A-Za-z][A-Za-z &'.()\-]+?)\s+@\s+([A-Za-z][A-Za-z &'.()\-]+)")
 
     team = ""
     spread = ""
     game = ""
+    league = ""
     wager = 0.0
     odds = "n/a"
 
@@ -1227,11 +1239,17 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             if sm:
                 team = sm.group(1).strip()
                 spread = sm.group(2)
+                # Detect women's league from FanDuel "(W)" suffix
+                if re.search(r"\(W\)\s*$", team):
+                    league = "womens"
+                    team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
                 continue
         if not game:
             mm = matchup_re.search(cl)
             if mm:
-                game = f"{mm.group(1).strip()} vs {mm.group(2).strip()}"
+                g1 = re.sub(r"\s*\(W\)\s*$", "", mm.group(1).strip())
+                g2 = re.sub(r"\s*\(W\)\s*$", "", mm.group(2).strip())
+                game = f"{g1} vs {g2}"
                 continue
 
     # Fallback game detection: in the FanDuel "Finished" format, team names
@@ -1260,7 +1278,12 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 ):
                     game_teams.append(stripped)
         if len(game_teams) >= 2:
-            game = f"{game_teams[0]} vs {game_teams[1]}"
+            # Detect women's league from "(W)" in team names
+            if not league and any("(W)" in t for t in game_teams):
+                league = "womens"
+            gt0 = re.sub(r"\s*\(W\)\s*$", "", game_teams[0]).strip()
+            gt1 = re.sub(r"\s*\(W\)\s*$", "", game_teams[1]).strip()
+            game = f"{gt0} vs {gt1}"
 
     # Wager: first dollar amount in range from cleaned text
     for cl in cleaned:
@@ -1354,6 +1377,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         "payout": payout,
         "profit": profit,
         "bet_id": bet_id,
+        "league": league,
         "_settled": True,
     }
 
