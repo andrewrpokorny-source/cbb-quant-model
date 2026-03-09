@@ -7,6 +7,8 @@ import pytest
 
 from backtest_kalshi_game import (
     calculate_kalshi_contract_outcome,
+    compare_actual_bets_to_archived_predictions,
+    load_actual_betting_history_rows,
     load_actual_betting_history_results,
     result_from_market_result,
     resolve_backtest_results,
@@ -221,3 +223,57 @@ def test_load_actual_betting_history_results(tmp_path):
     assert results.iloc[0]["rating"] == "actual_bet"
     assert results.iloc[0]["price_bucket"] == "unknown"
     assert results.iloc[1]["profit"] == pytest.approx(6.8)
+
+
+def test_load_actual_betting_history_rows_filters_kalshi_game(tmp_path):
+    csv_path = tmp_path / "betting_history.csv"
+    csv_path.write_text(
+        "date,platform,game,bet_type,line,odds,wager,result,payout,profit,bet_id,league\n"
+        "2026-03-02,Kalshi,Game A,game,Team A ML,,0.11,loss,0.0,-0.11,TICKER1,mens\n"
+        "2026-03-02,FanDuel,Game B,spread,Team B -3.5,-110,1.10,win,2.10,1.00,BET2,mens\n"
+    )
+    rows = load_actual_betting_history_rows(str(csv_path), league="mens")
+    assert len(rows) == 1
+    assert rows.iloc[0]["bet_id"] == "TICKER1"
+
+
+def test_compare_actual_bets_to_archived_predictions_matches_on_ticker(tmp_path):
+    csv_path = tmp_path / "betting_history.csv"
+    csv_path.write_text(
+        "date,platform,game,bet_type,line,odds,wager,result,payout,profit,bet_id,league\n"
+        "2026-03-10,Kalshi,Providence Friars @ UConn Huskies,game,UConn Huskies ML YES,,0.58,win,1.0,0.42,TICKER1,mens\n"
+    )
+    archived = pd.DataFrame(
+        [
+            {
+                "captured_at": pd.Timestamp("2026-03-09T15:00:00Z"),
+                "league": "mens",
+                "game_date": "2026-03-10",
+                "game_datetime": pd.Timestamp("2026-03-10T20:00:00Z"),
+                "matchup": "Providence Friars @ UConn Huskies",
+                "home_team": "UConn Huskies",
+                "away_team": "Providence Friars",
+                "pick": "UConn Huskies ML YES",
+                "picked_team": "UConn Huskies",
+                "kalshi_side": "YES",
+                "kalshi_ticker": "TICKER1",
+                "kalshi_price": 58.0,
+                "kalshi_fee": 1.7,
+                "edge": 0.08,
+                "edge_pct": 8.0,
+                "rating": "STRONG",
+                "conf": 0.67,
+            }
+        ]
+    )
+
+    comparisons = compare_actual_bets_to_archived_predictions(
+        archived,
+        str(csv_path),
+        league="mens",
+    )
+    assert len(comparisons) == 1
+    row = comparisons.iloc[0]
+    assert row["rating"] == "STRONG"
+    assert row["result"] == "win"
+    assert row["edge_bucket"] == "STRONG"

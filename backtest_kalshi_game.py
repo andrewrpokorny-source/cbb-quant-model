@@ -46,6 +46,24 @@ RESULT_COLUMNS = [
 ]
 
 
+def load_actual_betting_history_rows(csv_path: str, league: str | None = None) -> pd.DataFrame:
+    """Load settled Kalshi GAME bet rows from betting_history.csv."""
+    if not os.path.exists(csv_path):
+        return pd.DataFrame()
+
+    df = pd.read_csv(csv_path)
+    df["platform"] = df["platform"].astype(str).str.lower()
+    df["bet_type"] = df["bet_type"].astype(str).str.lower()
+    settled = df[
+        (df["platform"] == "kalshi")
+        & (df["bet_type"] == "game")
+        & df["result"].astype(str).str.lower().isin({"win", "loss", "void"})
+    ].copy()
+    if league is not None:
+        settled = settled[settled["league"].astype(str).str.lower() == normalize_league(league)]
+    return settled.reset_index(drop=True)
+
+
 def price_bucket(price_cents) -> str:
     """Bucket a Kalshi ask price into coarse bands."""
     if price_cents is None or pd.isna(price_cents):
@@ -226,19 +244,7 @@ def load_backtest_inputs(
 
 def load_actual_betting_history_results(csv_path: str, league: str | None = None) -> pd.DataFrame:
     """Load settled Kalshi GAME bets from betting_history.csv into result format."""
-    if not os.path.exists(csv_path):
-        return pd.DataFrame(columns=RESULT_COLUMNS)
-
-    df = pd.read_csv(csv_path)
-    df["platform"] = df["platform"].astype(str).str.lower()
-    df["bet_type"] = df["bet_type"].astype(str).str.lower()
-    settled = df[
-        (df["platform"] == "kalshi")
-        & (df["bet_type"] == "game")
-        & df["result"].astype(str).str.lower().isin({"win", "loss", "void"})
-    ].copy()
-    if league is not None:
-        settled = settled[settled["league"].astype(str).str.lower() == normalize_league(league)]
+    settled = load_actual_betting_history_rows(csv_path, league=league)
     if settled.empty:
         return pd.DataFrame(columns=RESULT_COLUMNS)
 
@@ -280,6 +286,82 @@ def load_actual_betting_history_results(csv_path: str, league: str | None = None
         }
     )
     return results[RESULT_COLUMNS].reset_index(drop=True)
+
+
+def compare_actual_bets_to_archived_predictions(
+    archived_inputs: pd.DataFrame,
+    betting_history_file: str,
+    *,
+    league: str,
+) -> pd.DataFrame:
+    """Join settled Kalshi GAME bets to archived model snapshots by ticker."""
+    actual = load_actual_betting_history_rows(betting_history_file, league=league)
+    if actual.empty or archived_inputs.empty:
+        return pd.DataFrame(columns=RESULT_COLUMNS)
+
+    archived = archived_inputs.copy()
+    archived = archived[archived["league"] == normalize_league(league)].copy()
+    archived = archived[archived["kalshi_ticker"].notna() & (archived["kalshi_ticker"].astype(str) != "")]
+    if archived.empty:
+        return pd.DataFrame(columns=RESULT_COLUMNS)
+
+    archived = archived.sort_values("captured_at", na_position="last")
+    archived = archived.groupby(["league", "kalshi_ticker"], as_index=False, dropna=False).tail(1)
+
+    actual = actual.copy()
+    actual["league"] = actual["league"].astype(str).str.lower()
+    actual["bet_id"] = actual["bet_id"].astype(str)
+    actual["stake"] = pd.to_numeric(actual["wager"], errors="coerce")
+    actual["payout"] = pd.to_numeric(actual["payout"], errors="coerce")
+    actual["profit"] = pd.to_numeric(actual["profit"], errors="coerce")
+    actual["result"] = actual["result"].astype(str).str.lower()
+    actual["game_date"] = pd.to_datetime(actual["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+
+    merged = actual.merge(
+        archived,
+        left_on=["league", "bet_id"],
+        right_on=["league", "kalshi_ticker"],
+        how="inner",
+        suffixes=("_actual", "_pred"),
+    )
+    if merged.empty:
+        return pd.DataFrame(columns=RESULT_COLUMNS)
+
+    picked_team = merged["picked_team"] if "picked_team" in merged.columns else merged["line"].apply(
+        lambda line: (parse_bet_line(line) or {}).get("team", "")
+    )
+    game_date_pred = merged["game_date_pred"] if "game_date_pred" in merged.columns else merged.get("game_date")
+    game_date_actual = merged["game_date_actual"] if "game_date_actual" in merged.columns else merged.get("game_date")
+
+    comparison = pd.DataFrame(
+        {
+            "captured_at": merged["captured_at"],
+            "league": merged["league"],
+            "game_date": game_date_pred.fillna(game_date_actual),
+            "game_datetime": merged["game_datetime"],
+            "matchup": merged["matchup"],
+            "home_team": merged["home_team"],
+            "away_team": merged["away_team"],
+            "pick": merged["pick"],
+            "picked_team": picked_team,
+            "kalshi_side": merged["kalshi_side"],
+            "kalshi_ticker": merged["kalshi_ticker"],
+            "kalshi_price": merged["kalshi_price"],
+            "kalshi_fee": merged["kalshi_fee"],
+            "edge": merged["edge"],
+            "edge_pct": merged["edge_pct"],
+            "rating": merged["rating"],
+            "conf": merged["conf"],
+            "result": merged["result"],
+            "profit": merged["profit"],
+            "stake": merged["stake"],
+            "payout": merged["payout"],
+            "roi": merged["profit"] / merged["stake"],
+            "edge_bucket": merged["edge"].apply(edge_bucket),
+            "price_bucket": merged["kalshi_price"].apply(price_bucket),
+        }
+    )
+    return comparison[RESULT_COLUMNS].reset_index(drop=True)
 
 
 def select_latest_snapshot_per_game(df: pd.DataFrame) -> pd.DataFrame:
@@ -434,6 +516,11 @@ def parse_args():
         help="Optional betting_history.csv path to summarize actual settled Kalshi GAME bets",
     )
     parser.add_argument(
+        "--compare-betting-history-file",
+        default=None,
+        help="Optional betting_history.csv path to join settled Kalshi GAME bets to archived predictions by ticker",
+    )
+    parser.add_argument(
         "--resolution-source",
         choices=("auto", "kalshi", "espn"),
         default="auto",
@@ -470,6 +557,18 @@ def main():
         archive_file=args.archive_file,
         include_prediction_archives=not args.skip_prediction_archives,
     )
+    if args.compare_betting_history_file:
+        comparisons = compare_actual_bets_to_archived_predictions(
+            inputs,
+            args.compare_betting_history_file,
+            league=league,
+        )
+        if comparisons.empty:
+            print("No settled Kalshi GAME bets matched archived predictions by ticker.")
+            return
+        print_summary(summarize_backtest(comparisons))
+        return
+
     if inputs.empty:
         print("No archived Kalshi GAME picks found.")
         return
