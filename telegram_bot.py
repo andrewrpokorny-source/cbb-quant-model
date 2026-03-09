@@ -968,8 +968,12 @@ def _parse_fd_blocks(text: str) -> list[dict]:
             block,
         )
         if matchup_match:
-            g1 = re.sub(r"\s*\(W\)\s*$", "", matchup_match.group(1).strip())
-            g2 = re.sub(r"\s*\(W\)\s*$", "", matchup_match.group(2).strip())
+            raw_g1 = matchup_match.group(1).strip()
+            raw_g2 = matchup_match.group(2).strip()
+            if not league and ("(W)" in raw_g1 or "(W)" in raw_g2):
+                league = "womens"
+            g1 = re.sub(r"\s*\(W\)\s*$", "", raw_g1)
+            g2 = re.sub(r"\s*\(W\)\s*$", "", raw_g2)
             game = f"{g1} vs {g2}"
         else:
             game = ""
@@ -1247,8 +1251,12 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         if not game:
             mm = matchup_re.search(cl)
             if mm:
-                g1 = re.sub(r"\s*\(W\)\s*$", "", mm.group(1).strip())
-                g2 = re.sub(r"\s*\(W\)\s*$", "", mm.group(2).strip())
+                raw_g1 = mm.group(1).strip()
+                raw_g2 = mm.group(2).strip()
+                if not league and ("(W)" in raw_g1 or "(W)" in raw_g2):
+                    league = "womens"
+                g1 = re.sub(r"\s*\(W\)\s*$", "", raw_g1)
+                g2 = re.sub(r"\s*\(W\)\s*$", "", raw_g2)
                 game = f"{g1} vs {g2}"
                 continue
 

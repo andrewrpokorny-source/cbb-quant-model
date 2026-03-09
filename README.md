@@ -73,7 +73,7 @@ The spread model includes neutral-site detection and travel distance monitoring:
 - `is_neutral` flag from ESPN's `neutralSite` field (in FEATURES, used by model)
 - `distance_advantage` computed from geocoded team/venue locations (stored in CSV for monitoring, not yet in FEATURES)
 - `venue.py` handles geocoding with Nominatim + state-centroid fallback
-- `venue_geocode.json` ships 356 pre-geocoded locations for offline use
+- `venue_geocode.json` ships 357 pre-geocoded locations for offline use
 
 ### Kalshi GAME Markets (P(win))
 

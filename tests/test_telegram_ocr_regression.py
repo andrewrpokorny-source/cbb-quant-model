@@ -639,6 +639,22 @@ def test_fanduel_womens_settled_parsing() -> None:
     assert ch["league"] == "womens"
 
 
+def test_fanduel_womens_league_from_matchup_only() -> None:
+    """league should be detected from matchup (W) even if spread line lacks it."""
+    # Simulate OCR dropping (W) from spread line but keeping it on matchup
+    text = (
+        "Villanova -7.5\n"
+        "-114\n"
+        "Seton Hall (W) @ Villanova (W)\n"
+        "$3.00\n"
+    )
+    bets = BOT._parse_fd_blocks(text)
+    assert len(bets) == 1
+    assert bets[0]["league"] == "womens"
+    assert bets[0]["line"] == "Villanova -7.5"
+    assert bets[0]["game"] == "Seton Hall vs Villanova"
+
+
 def test_fanduel_womens_w_stripped_from_game_name() -> None:
     """(W) suffix should be stripped from game names in both paths."""
     text = _read_fixture("fanduel_womens_pending.txt")
