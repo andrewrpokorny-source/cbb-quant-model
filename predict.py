@@ -910,7 +910,8 @@ def main(spread_overrides=None, league="mens"):
                     g['date'],
                     home_win_prob,
                 )
-                if game_kalshi.get("Kalshi_Ticker"):
+                if game_kalshi.get("Kalshi_Ticker") and game_kalshi.get("Rating") == "STRONG":
+                    game_kalshi["Units"] = min(game_kalshi.get("Units", 0), 0.5)
                     yes_team = game_kalshi.get("Kalshi_Yes_Team")
                     yes_prob = home_win_prob if yes_team == g['home_raw'] else (1.0 - home_win_prob)
                     side = game_kalshi.get("Kalshi_Side", "YES")
