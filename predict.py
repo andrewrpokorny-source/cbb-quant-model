@@ -54,6 +54,13 @@ _latest_game_predictions = {}
 _games_needing_spreads = {}
 _RUNTIME_LOCK = threading.Lock()
 
+GAME_STRONG_MIN_PROB = 0.55
+GAME_STRONG_MIN_PRICE = 10
+GAME_STRONG_MAX_PRICE = 90
+GAME_GOOD_MIN_PROB = 0.52
+GAME_GOOD_MIN_PRICE = 15
+GAME_GOOD_MAX_PRICE = 85
+
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
 with open(TEAM_MAP_FILE, 'r') as f:
@@ -499,6 +506,32 @@ def _infer_yes_team_from_game_market(market, home_team, away_team):
     return None
 
 
+def get_kalshi_game_live_rating(edge, side_prob, price_cents):
+    """Apply live GAME filters so edge alone cannot promote tail punts."""
+    if edge is None or side_prob is None or price_cents is None:
+        return EdgeRating.PASS.value
+
+    edge = float(edge)
+    side_prob = float(side_prob)
+    price_cents = float(price_cents)
+
+    if (
+        edge >= 0.08
+        and side_prob >= GAME_STRONG_MIN_PROB
+        and GAME_STRONG_MIN_PRICE <= price_cents <= GAME_STRONG_MAX_PRICE
+    ):
+        return EdgeRating.STRONG.value
+
+    if (
+        edge >= 0.04
+        and side_prob >= GAME_GOOD_MIN_PROB
+        and GAME_GOOD_MIN_PRICE <= price_cents <= GAME_GOOD_MAX_PRICE
+    ):
+        return EdgeRating.GOOD.value
+
+    return EdgeRating.PASS.value
+
+
 def get_kalshi_game_edge(
     client,
     mapper,
@@ -599,8 +632,16 @@ def get_kalshi_game_edge(
         if best_choice is None:
             return result
 
-        rating = get_rating(best_choice["edge"])
-        units = recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
+        rating = get_kalshi_game_live_rating(
+            best_choice["edge"],
+            best_choice["prob"],
+            best_choice["price"],
+        )
+        units = (
+            recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
+            if rating in VALUE_RATINGS
+            else 0.0
+        )
         return {
             "Kalshi_Yes": best_choice["yes_price"],
             "Kalshi_No": best_choice["no_price"],
@@ -608,7 +649,7 @@ def get_kalshi_game_edge(
             "Kalshi_Fee": round(kalshi_fee_cents(best_choice["price"]), 1),
             "Edge": best_choice["edge"],
             "Edge_Pct": f"{best_choice['edge'] * 100:+.1f}%",
-            "Rating": rating.value,
+            "Rating": rating,
             "Units": units,
             "Kalshi_Ticker": best_choice["ticker"],
             "Kalshi_Side": best_choice["side"],
@@ -917,38 +958,39 @@ def main(spread_overrides=None, league="mens"):
                     side_prob = yes_prob if side == "YES" else (1.0 - yes_prob)
                     pick_line = f"{yes_team} ML {side}"
                     edge = game_kalshi.get("Edge")
-                    game_predictions.append({
-                        "Bet_Type": "game",
-                        "Date/Time": time_str,
-                        "Matchup": matchup_key,
-                        "Spread": resolved_spread if has_spread_for_spread_model else np.nan,
-                        "Pick": pick_line,
-                        "Conf": side_prob,
-                        "Raw Odds": "Kalshi GAME",
-                        "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
-                        "Kalshi_Side": side,
-                        "Kalshi_Yes": game_kalshi.get("Kalshi_Yes"),
-                        "Kalshi_No": game_kalshi.get("Kalshi_No"),
-                        "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
-                        "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
-                        "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
-                        "Edge": edge,
-                        "Edge_Pct": game_kalshi.get("Edge_Pct"),
-                        "Rating": game_kalshi.get("Rating"),
-                        "Units": game_kalshi.get("Units"),
-                        "Home_Matched": home_matched,
-                        "Away_Matched": away_matched,
-                        "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
-                        "Kalshi_Yes_Team": yes_team,
-                        "Picked_Team": game_kalshi.get("Picked_Team"),
-                        "Win_Model_Home_Prob": home_win_prob,
-                        "Win_Model_Variant": win_variant,
-                        "Std_Edge": 0.0,
-                        "Std_Edge_Pct": "",
-                        "Std_Rating": "PASS",
-                        "Std_Units": 0.0,
-                        "Breakeven_Spread": np.nan,
-                    })
+                    if game_kalshi.get("Rating") in VALUE_RATINGS:
+                        game_predictions.append({
+                            "Bet_Type": "game",
+                            "Date/Time": time_str,
+                            "Matchup": matchup_key,
+                            "Spread": resolved_spread if has_spread_for_spread_model else np.nan,
+                            "Pick": pick_line,
+                            "Conf": side_prob,
+                            "Raw Odds": "Kalshi GAME",
+                            "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
+                            "Kalshi_Side": side,
+                            "Kalshi_Yes": game_kalshi.get("Kalshi_Yes"),
+                            "Kalshi_No": game_kalshi.get("Kalshi_No"),
+                            "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
+                            "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
+                            "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
+                            "Edge": edge,
+                            "Edge_Pct": game_kalshi.get("Edge_Pct"),
+                            "Rating": game_kalshi.get("Rating"),
+                            "Units": min(game_kalshi.get("Units", 0), 0.5),
+                            "Home_Matched": home_matched,
+                            "Away_Matched": away_matched,
+                            "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
+                            "Kalshi_Yes_Team": yes_team,
+                            "Picked_Team": game_kalshi.get("Picked_Team"),
+                            "Win_Model_Home_Prob": home_win_prob,
+                            "Win_Model_Variant": win_variant,
+                            "Std_Edge": 0.0,
+                            "Std_Edge_Pct": "",
+                            "Std_Rating": "PASS",
+                            "Std_Units": 0.0,
+                            "Breakeven_Spread": np.nan,
+                        })
                     kalshi_game_archive_records.append(
                         build_game_archive_record(
                             league=ACTIVE_LEAGUE,
