@@ -958,6 +958,34 @@ def main(spread_overrides=None, league="mens"):
                     side_prob = yes_prob if side == "YES" else (1.0 - yes_prob)
                     pick_line = f"{yes_team} ML {side}"
                     edge = game_kalshi.get("Edge")
+
+                    # Archive all candidates for backtest analysis
+                    kalshi_game_archive_records.append(
+                        build_game_archive_record(
+                            league=ACTIVE_LEAGUE,
+                            game_datetime=g["date"],
+                            home_team=g["home_raw"],
+                            away_team=g["away_raw"],
+                            matchup=matchup_key,
+                            pick=pick_line,
+                            picked_team=game_kalshi.get("Picked_Team"),
+                            kalshi_side=side,
+                            kalshi_ticker=game_kalshi.get("Kalshi_Ticker"),
+                            kalshi_title=game_kalshi.get("Kalshi_Title"),
+                            kalshi_yes_team=yes_team,
+                            kalshi_yes_price=game_kalshi.get("Kalshi_Yes"),
+                            kalshi_no_price=game_kalshi.get("Kalshi_No"),
+                            kalshi_price=game_kalshi.get("Kalshi_Price"),
+                            kalshi_fee=game_kalshi.get("Kalshi_Fee"),
+                            win_model_home_prob=home_win_prob,
+                            conf=side_prob,
+                            edge=edge,
+                            edge_pct=(edge * 100.0) if edge is not None else None,
+                            rating=game_kalshi.get("Rating"),
+                            units=game_kalshi.get("Units"),
+                        )
+                    )
+
                     if game_kalshi.get("Rating") in VALUE_RATINGS:
                         game_predictions.append({
                             "Bet_Type": "game",
@@ -991,31 +1019,6 @@ def main(spread_overrides=None, league="mens"):
                             "Std_Units": 0.0,
                             "Breakeven_Spread": np.nan,
                         })
-                    kalshi_game_archive_records.append(
-                        build_game_archive_record(
-                            league=ACTIVE_LEAGUE,
-                            game_datetime=g["date"],
-                            home_team=g["home_raw"],
-                            away_team=g["away_raw"],
-                            matchup=matchup_key,
-                            pick=pick_line,
-                            picked_team=game_kalshi.get("Picked_Team"),
-                            kalshi_side=side,
-                            kalshi_ticker=game_kalshi.get("Kalshi_Ticker"),
-                            kalshi_title=game_kalshi.get("Kalshi_Title"),
-                            kalshi_yes_team=yes_team,
-                            kalshi_yes_price=game_kalshi.get("Kalshi_Yes"),
-                            kalshi_no_price=game_kalshi.get("Kalshi_No"),
-                            kalshi_price=game_kalshi.get("Kalshi_Price"),
-                            kalshi_fee=game_kalshi.get("Kalshi_Fee"),
-                            win_model_home_prob=home_win_prob,
-                            conf=side_prob,
-                            edge=edge,
-                            edge_pct=(edge * 100.0) if edge is not None else None,
-                            rating=game_kalshi.get("Rating"),
-                            units=game_kalshi.get("Units"),
-                        )
-                    )
             except (KeyError, TypeError, ValueError) as e:
                 print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
 
