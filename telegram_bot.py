@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import csv
+import glob
 import json
 import errno
 import fcntl
@@ -1064,13 +1065,17 @@ def _resolve_game_date(team_name: str) -> str:
     for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "daily_predictions_wbb.csv")]:
         if os.path.exists(base):
             pred_files.append(base)
-    for days_back in range(14):
-        dt = now - timedelta(days=days_back)
-        date_str = dt.strftime('%Y%m%d')
-        for pattern in [f"predictions_{date_str}.csv", f"predictions_wbb_{date_str}.csv"]:
-            fname = os.path.join(BASE_DIR, pattern)
-            if os.path.exists(fname) and fname not in pred_files:
-                pred_files.append(fname)
+    archive_files = []
+    for pattern in ("predictions_*.csv", "predictions_wbb_*.csv"):
+        archive_files.extend(glob.glob(os.path.join(BASE_DIR, pattern)))
+
+    def _archive_sort_key(path: str) -> str:
+        match = re.search(r"(\d{8})", os.path.basename(path))
+        return match.group(1) if match else ""
+
+    for fname in sorted(archive_files, key=_archive_sort_key, reverse=True):
+        if fname not in pred_files:
+            pred_files.append(fname)
 
     for fpath in pred_files:
         try:
