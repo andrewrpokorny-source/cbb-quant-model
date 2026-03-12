@@ -283,8 +283,8 @@ def _parse_settlement(s: dict) -> list[dict]:
     and NO were filled, returns two entries with revenue assigned by market
     outcome: the winning side receives $1/contract and the losing side $0.
     """
-    yes_count = s.get("yes_count", 0) or 0
-    no_count = s.get("no_count", 0) or 0
+    yes_count = int(float(s.get("yes_count_fp") or s.get("yes_count") or 0))
+    no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
     yes_cost = s.get("yes_total_cost", 0) or 0
     no_cost = s.get("no_total_cost", 0) or 0
     revenue = s.get("revenue", 0) or 0
@@ -384,6 +384,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     new_rows = []
     settled_count = 0
     skipped = 0
+    parse_failed = 0
     rows_modified = False
 
     for s in cbb:
@@ -394,6 +395,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
 
         entries = _parse_settlement(s)
         if not entries:
+            parse_failed += 1
             skipped += 1
             continue
 
@@ -438,6 +440,16 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
             }
             new_rows.append(row)
 
+    # Detect possible API schema change: new settlements exist but none parsed
+    unseen = len(cbb) - skipped + parse_failed  # tickers not in existing_ids
+    error = None
+    if parse_failed > 0 and parse_failed == unseen and not new_rows and settled_count == 0:
+        sample_keys = sorted(cbb[0].keys()) if cbb else []
+        error = (
+            f"Possible Kalshi API schema change: {parse_failed}/{len(cbb)} "
+            f"new settlements failed to parse. Sample keys: {sample_keys}"
+        )
+
     if not dry_run:
         if rows_modified:
             tmp_path = BETTING_HISTORY + ".settle_tmp"
@@ -456,7 +468,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
 
         _write_sync_ts(now_ts)
 
-    return {"logged": new_rows, "settled": settled_count, "skipped": skipped, "error": None}
+    return {"logged": new_rows, "settled": settled_count, "skipped": skipped, "error": error}
 
 
 def settle(days: int, dry_run: bool):
