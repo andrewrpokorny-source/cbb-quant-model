@@ -384,6 +384,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     new_rows = []
     settled_count = 0
     skipped = 0
+    parse_failed = 0
     rows_modified = False
 
     for s in cbb:
@@ -394,6 +395,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
 
         entries = _parse_settlement(s)
         if not entries:
+            parse_failed += 1
             skipped += 1
             continue
 
@@ -438,6 +440,16 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
             }
             new_rows.append(row)
 
+    # Detect possible API schema change: new settlements exist but none parsed
+    unseen = len(cbb) - skipped + parse_failed  # tickers not in existing_ids
+    error = None
+    if parse_failed > 0 and parse_failed == unseen and not new_rows and settled_count == 0:
+        sample_keys = sorted(cbb[0].keys()) if cbb else []
+        error = (
+            f"Possible Kalshi API schema change: {parse_failed}/{len(cbb)} "
+            f"new settlements failed to parse. Sample keys: {sample_keys}"
+        )
+
     if not dry_run:
         if rows_modified:
             tmp_path = BETTING_HISTORY + ".settle_tmp"
@@ -456,7 +468,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
 
         _write_sync_ts(now_ts)
 
-    return {"logged": new_rows, "settled": settled_count, "skipped": skipped, "error": None}
+    return {"logged": new_rows, "settled": settled_count, "skipped": skipped, "error": error}
 
 
 def settle(days: int, dry_run: bool):
