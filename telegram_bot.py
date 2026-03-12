@@ -16,6 +16,7 @@ import glob
 import json
 import errno
 import fcntl
+import asyncio
 import base64
 import shutil
 import tempfile
@@ -54,6 +55,9 @@ PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Guard against concurrent /settle invocations (e.g. double-tap)
+_settle_lock = asyncio.Lock()
 
 # User authorization: comma-separated list of allowed Telegram user IDs
 _allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USERS", "")
@@ -1951,46 +1955,51 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @authorized_only
 async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Settle all pending bets and import Kalshi settlements."""
-    await update.message.reply_text("Settling bets...")
+    if _settle_lock.locked():
+        await update.message.reply_text("Settlement already in progress.")
+        return
 
-    # 1) Settle pending (FanDuel etc.) bets via score lookup
-    summary = settle_pending_bets()
+    async with _settle_lock:
+        await update.message.reply_text("Settling bets...")
 
-    msg_parts = [
-        f"Pending settled: {summary['settled']}",
-        f"Still pending: {summary['still_pending']}",
-    ]
-    if summary["details"]:
-        msg_parts.append("")
-        msg_parts.extend(summary["details"][:20])
+        # 1) Settle pending (FanDuel etc.) bets via score lookup
+        summary = settle_pending_bets()
 
-    # 2) Import settled Kalshi positions (uses persisted sync cursor)
-    try:
-        kalshi_result = settle_to_csv()
-        logged = kalshi_result["logged"]
-        kalshi_settled = kalshi_result["settled"]
-        skipped = kalshi_result["skipped"]
-        if kalshi_result["error"]:
-            msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
-        elif logged or kalshi_settled:
-            parts = []
-            if logged:
-                profit = sum(float(r["profit"]) for r in logged)
-                wins = sum(1 for r in logged if r["result"] == "win")
-                losses = sum(1 for r in logged if r["result"] == "loss")
-                parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
-            if kalshi_settled:
-                parts.append(f"{kalshi_settled} pending settled")
-            msg_parts.append(f"\nKalshi: {', '.join(parts)}")
-        elif skipped:
-            msg_parts.append(f"\nKalshi: all {skipped} already logged")
-        else:
-            msg_parts.append("\nKalshi: no recent settlements")
-    except Exception:
-        logger.exception("Kalshi settlement fetch failed")
-        msg_parts.append("\nKalshi: fetch failed")
+        msg_parts = [
+            f"Pending settled: {summary['settled']}",
+            f"Still pending: {summary['still_pending']}",
+        ]
+        if summary["details"]:
+            msg_parts.append("")
+            msg_parts.extend(summary["details"][:20])
 
-    await update.message.reply_text("\n".join(msg_parts))
+        # 2) Import settled Kalshi positions (uses persisted sync cursor)
+        try:
+            kalshi_result = settle_to_csv()
+            logged = kalshi_result["logged"]
+            kalshi_settled = kalshi_result["settled"]
+            skipped = kalshi_result["skipped"]
+            if kalshi_result["error"]:
+                msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+            elif logged or kalshi_settled:
+                parts = []
+                if logged:
+                    profit = sum(float(r["profit"]) for r in logged)
+                    wins = sum(1 for r in logged if r["result"] == "win")
+                    losses = sum(1 for r in logged if r["result"] == "loss")
+                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+                if kalshi_settled:
+                    parts.append(f"{kalshi_settled} pending settled")
+                msg_parts.append(f"\nKalshi: {', '.join(parts)}")
+            elif skipped:
+                msg_parts.append(f"\nKalshi: all {skipped} already logged")
+            else:
+                msg_parts.append("\nKalshi: no recent settlements")
+        except Exception:
+            logger.exception("Kalshi settlement fetch failed")
+            msg_parts.append("\nKalshi: fetch failed")
+
+        await update.message.reply_text("\n".join(msg_parts))
 
 
 @authorized_only
