@@ -54,21 +54,22 @@ def test_get_market_prices_falls_back_to_last_price(monkeypatch):
     assert prices["no_price"] == 63.0
 
 
-def test_get_settlements_stops_at_total_limit(monkeypatch):
+def test_get_settlements_paginates_all_results(monkeypatch):
     client = KalshiClient(api_key="test")
     calls = []
+    page1 = [{"ticker": f"T{i}"} for i in range(200)]
 
     def _fake_get(endpoint, params=None):
         calls.append((endpoint, params))
-        return {
-            "settlements": [{"ticker": "A"}, {"ticker": "B"}, {"ticker": "C"}],
-            "cursor": "next-page",
-        }
+        if len(calls) == 1:
+            return {"settlements": page1, "cursor": "next-page"}
+        return {"settlements": [{"ticker": "LAST"}], "cursor": ""}
 
     monkeypatch.setattr(client, "_get", _fake_get)
-    settlements = client.get_settlements(limit=2)
-    assert [s["ticker"] for s in settlements] == ["A", "B"]
-    assert len(calls) == 1
+    settlements = client.get_settlements()
+    assert len(settlements) == 201
+    assert settlements[-1]["ticker"] == "LAST"
+    assert len(calls) == 2
 
 
 def test_get_historical_markets_filters_series_prefix(monkeypatch):

@@ -412,15 +412,15 @@ class KalshiClient:
 
     def get_settlements(
         self,
-        limit: int = 200,
         ticker: Optional[str] = None,
         min_ts: Optional[int] = None,
         max_ts: Optional[int] = None,
     ) -> list[dict]:
         """Fetch settled positions from the user's portfolio.
 
+        Paginates through all results (API max 200 per page).
+
         Args:
-            limit: Max results per page (API max 200).
             ticker: Filter to a specific market ticker.
             min_ts: Minimum settlement timestamp (epoch seconds).
             max_ts: Maximum settlement timestamp (epoch seconds).
@@ -430,10 +430,9 @@ class KalshiClient:
         """
         all_settlements: list[dict] = []
         cursor: Optional[str] = None
-        page_size = min(limit, 200)
 
         while True:
-            params: dict = {"limit": page_size}
+            params: dict = {"limit": 200}
             if ticker:
                 params["ticker"] = ticker
             if min_ts is not None:
@@ -448,11 +447,9 @@ class KalshiClient:
                 raise RuntimeError("Kalshi API request failed fetching settlements")
             settlements = result.get("settlements", [])
             all_settlements.extend(settlements)
-            if len(all_settlements) >= limit:
-                return all_settlements[:limit]
 
             cursor = result.get("cursor")
-            if not cursor or len(settlements) < page_size:
+            if not cursor or len(settlements) < 200:
                 break
 
         return all_settlements
