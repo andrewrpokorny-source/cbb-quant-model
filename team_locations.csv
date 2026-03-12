@@ -1,0 +1,988 @@
+league,team,city,state,venue_loc,latitude,longitude,source
+mens,Abilene Christian,Abilene,TX,"Abilene, TX",32.44645,-99.7475905,processed_inference
+mens,Air Force,Colorado Springs,CO,"Colorado Springs, CO",38.8339578,-104.825348,processed_inference
+mens,Air Force Falcons,Colorado Springs,CO,"Colorado Springs, CO",38.8339578,-104.825348,processed_inference
+mens,Akron,Akron,OH,"Akron, OH",41.083064,-81.518485,processed_inference
+mens,Akron Zips,Akron,OH,"Akron, OH",41.083064,-81.518485,processed_inference
+mens,Alabama,Tuscaloosa,AL,"Tuscaloosa, AL",33.2095614,-87.5675258,processed_inference
+mens,Alabama A&M,Huntsville,AL,"Huntsville, AL",34.729847,-86.5859011,processed_inference
+mens,Alabama A&M Bulldogs,Huntsville,AL,"Huntsville, AL",34.729847,-86.5859011,processed_inference
+mens,Alabama Crimson Tide,Tuscaloosa,AL,"Tuscaloosa, AL",33.2095614,-87.5675258,processed_inference
+mens,Alabama St.,Montgomery,AL,"Montgomery, AL",32.3777111,-86.3090775,processed_inference
+mens,Alabama State Hornets,Montgomery,AL,"Montgomery, AL",32.3777111,-86.3090775,processed_inference
+mens,Alcorn St.,Lorman,MS,"Lorman, MS",31.8204396,-91.0501057,processed_inference
+mens,American,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,American University Eagles,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,Arizona,Tucson,AZ,"Tucson, AZ",32.2228765,-110.974847,processed_inference
+mens,Arizona St.,Tempe,AZ,"Tempe, AZ",33.4255117,-111.940016,processed_inference
+mens,Arizona State Sun Devils,Tempe,AZ,"Tempe, AZ",33.4255117,-111.940016,processed_inference
+mens,Arizona Wildcats,Tucson,AZ,"Tucson, AZ",32.2228765,-110.974847,processed_inference
+mens,Arkansas,Fayetteville,AR,"Fayetteville, AR",36.0625843,-94.1574328,processed_inference
+mens,Arkansas Pine Bluff,Pine Bluff,AR,"Pine Bluff, AR",34.2228884,-92.004334,processed_inference
+mens,Arkansas Razorbacks,Fayetteville,AR,"Fayetteville, AR",36.0625843,-94.1574328,processed_inference
+mens,Arkansas St.,Jonesboro,AR,"Jonesboro, AR",35.8348088,-90.7045297,processed_inference
+mens,Arkansas State Red Wolves,Jonesboro,AR,"Jonesboro, AR",35.8348088,-90.7045297,processed_inference
+mens,Army,West Point,NY,"West Point, NY",41.3926455,-73.9599242,processed_inference
+mens,Army Black Knights,West Point,NY,"West Point, NY",41.3926455,-73.9599242,processed_inference
+mens,Auburn,Auburn,AL,"Auburn, AL",32.6098566,-85.4807825,processed_inference
+mens,Auburn Tigers,Auburn,AL,"Auburn, AL",32.6098566,-85.4807825,processed_inference
+mens,Austin Peay,Clarksville,TN,"Clarksville, TN",36.5277607,-87.3588703,processed_inference
+mens,BYU,Provo,UT,"Provo, UT",40.2337289,-111.6587085,processed_inference
+mens,BYU Cougars,Provo,UT,"Provo, UT",40.2337289,-111.6587085,processed_inference
+mens,Ball St.,Muncie,IN,"Muncie, IN",40.1936892,-85.3865271,processed_inference
+mens,Baylor,Waco,TX,"Waco, TX",31.5491899,-97.1474628,processed_inference
+mens,Baylor Bears,Waco,TX,"Waco, TX",31.5491899,-97.1474628,processed_inference
+mens,Bellarmine,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,processed_inference
+mens,Bellarmine Knights,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,processed_inference
+mens,Belmont,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Belmont Bruins,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Bethune Cookman,Daytona Beach,FL,"Daytona Beach, FL",29.2108147,-81.0228331,processed_inference
+mens,Bethune-Cookman Wildcats,Daytona Beach,FL,"Daytona Beach, FL",29.2108147,-81.0228331,processed_inference
+mens,Binghamton,Binghamton,NY,"Binghamton, NY",42.098698,-75.9125187,processed_inference
+mens,Binghamton Bearcats,Binghamton,NY,"Binghamton, NY",42.098698,-75.9125187,processed_inference
+mens,Boise St.,Boise,ID,"Boise, ID",43.6166163,-116.200886,processed_inference
+mens,Boise State Broncos,Boise,ID,"Boise, ID",43.6166163,-116.200886,processed_inference
+mens,Boston College,Chestnut Hill,MA,"Chestnut Hill, MA",42.3234735,-71.1639159,processed_inference
+mens,Boston University,Boston,MA,"Boston, MA",42.3588336,-71.0578303,processed_inference
+mens,Boston University Terriers,Boston,MA,"Boston, MA",42.3588336,-71.0578303,processed_inference
+mens,Bowling Green,Bowling Green,OH,"Bowling Green, OH",41.3747744,-83.6513229,processed_inference
+mens,Bowling Green Falcons,Bowling Green,OH,"Bowling Green, OH",41.3747744,-83.6513229,processed_inference
+mens,Bradley,Peoria,IL,"Peoria, IL",40.6938609,-89.5891008,processed_inference
+mens,Bradley Braves,Peoria,IL,"Peoria, IL",40.6938609,-89.5891008,processed_inference
+mens,Brown,Providence,RI,"Providence, RI",41.8239891,-71.4128343,processed_inference
+mens,Bryant,Smithfield,RI,"Smithfield, RI",41.9220433,-71.549507,processed_inference
+mens,Bryant Bulldogs,Smithfield,RI,"Smithfield, RI",41.9220433,-71.549507,processed_inference
+mens,Bucknell,Lewisburg,PA,"Lewisburg, PA",40.9645337,-76.8847639,processed_inference
+mens,Bucknell Bison,Lewisburg,PA,"Lewisburg, PA",40.9645337,-76.8847639,processed_inference
+mens,Buffalo,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,processed_inference
+mens,Buffalo Bulls,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,processed_inference
+mens,Butler,Indianapolis,IN,"Indianapolis, IN",39.7683331,-86.1583502,processed_inference
+mens,Cal Poly,San Luis Obispo,CA,"San Luis Obispo, CA",35.3540209,-120.375716,processed_inference
+mens,Cal Poly Mustangs,San Luis Obispo,CA,"San Luis Obispo, CA",35.3540209,-120.375716,processed_inference
+mens,Cal St. Bakersfield,Bakersfield,CA,"Bakersfield, CA",35.3738712,-119.019463,processed_inference
+mens,Cal St. Fullerton,Fullerton,CA,"Fullerton, CA",33.8708215,-117.929416,processed_inference
+mens,Cal St. Northridge,Northridge,CA,"Northridge, CA",34.2345615,-118.5369316,processed_inference
+mens,Cal State Bakersfield Roadrunners,Bakersfield,CA,"Bakersfield, CA",35.3738712,-119.019463,processed_inference
+mens,Cal State Fullerton Titans,Fullerton,CA,"Fullerton, CA",33.8708215,-117.929416,processed_inference
+mens,Cal State Northridge Matadors,Northridge,CA,"Northridge, CA",34.2345615,-118.5369316,processed_inference
+mens,California,Berkeley,CA,"Berkeley, CA",37.8708393,-122.272863,processed_inference
+mens,California Baptist Lancers,Riverside,CA,"Riverside, CA",33.9824949,-117.374238,processed_inference
+mens,California Golden Bears,Berkeley,CA,"Berkeley, CA",37.8708393,-122.272863,processed_inference
+mens,Campbell,Buies Creek,NC,"Buies Creek, NC",35.4123325,-78.7366506,processed_inference
+mens,Campbell Fighting Camels,Buies Creek,NC,"Buies Creek, NC",35.4123325,-78.7366506,processed_inference
+mens,Canisius,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,processed_inference
+mens,Canisius Golden Griffins,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,processed_inference
+mens,Central Arkansas,Conway,AR,"Conway, AR",35.0891932,-92.4398402,processed_inference
+mens,Central Connecticut,New Britain,CT,"New Britain, CT",41.6612104,-72.7795419,processed_inference
+mens,Central Connecticut Blue Devils,New Britain,CT,"New Britain, CT",41.6612104,-72.7795419,processed_inference
+mens,Central Michigan,Mount Pleasant,MI,"Mount Pleasant, MI",43.597646,-84.7668495,processed_inference
+mens,Central Michigan Chippewas,Mount Pleasant,MI,"Mount Pleasant, MI",43.597646,-84.7668495,processed_inference
+mens,Charleston,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,Charleston Cougars,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,Charleston Southern,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,Charleston Southern Buccaneers,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,Charlotte,Charlotte,NC,"Charlotte, NC",35.2272086,-80.8430827,processed_inference
+mens,Charlotte 49ers,Charlotte,NC,"Charlotte, NC",35.2272086,-80.8430827,processed_inference
+mens,Chattanooga,Chattanooga,TN,"Chattanooga, TN",35.0457219,-85.3094883,processed_inference
+mens,Chattanooga Mocs,Chattanooga,TN,"Chattanooga, TN",35.0457219,-85.3094883,processed_inference
+mens,Chicago St.,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,processed_inference
+mens,Cincinnati,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,processed_inference
+mens,Cincinnati Bearcats,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,processed_inference
+mens,Clemson,Clemson,SC,"Clemson, SC",34.6850749,-82.8364111,processed_inference
+mens,Clemson Tigers,Clemson,SC,"Clemson, SC",34.6850749,-82.8364111,processed_inference
+mens,Cleveland St.,Cleveland,OH,"Cleveland, OH",41.4996574,-81.6936772,processed_inference
+mens,Coastal Carolina,Conway,SC,"Conway, SC",33.8360035,-79.0478143,processed_inference
+mens,Coastal Carolina Chanticleers,Conway,SC,"Conway, SC",33.8360035,-79.0478143,processed_inference
+mens,Colgate,Hamilton,NY,"Hamilton, NY",42.825646,-75.544673,processed_inference
+mens,Colgate Raiders,Hamilton,NY,"Hamilton, NY",42.825646,-75.544673,processed_inference
+mens,Colorado,Boulder,CO,"Boulder, CO",40.0149856,-105.270545,processed_inference
+mens,Colorado Buffaloes,Boulder,CO,"Boulder, CO",40.0149856,-105.270545,processed_inference
+mens,Colorado St.,Fort Collins,CO,"Fort Collins, CO",40.5871782,-105.0770113,processed_inference
+mens,Colorado State Rams,Fort Collins,CO,"Fort Collins, CO",40.5871782,-105.0770113,processed_inference
+mens,Columbia,New York,NY,"New York, NY",40.7127281,-74.0060152,processed_inference
+mens,Columbia Lions,New York,NY,"New York, NY",40.7127281,-74.0060152,processed_inference
+mens,Coppin St.,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Coppin State Eagles,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Cornell,Ithaca,NY,"Ithaca, NY",42.4374175,-76.5483724,processed_inference
+mens,Cornell Big Red,Ithaca,NY,"Ithaca, NY",42.4374175,-76.5483724,processed_inference
+mens,Creighton,Omaha,NE,"Omaha, NE",41.2587459,-95.9383758,processed_inference
+mens,Creighton Bluejays,Omaha,NE,"Omaha, NE",41.2587459,-95.9383758,processed_inference
+mens,Dartmouth,Hanover,NH,"Hanover, NH",43.7023545,-72.2892164,processed_inference
+mens,Davidson,Davidson,NC,"Davidson, NC",35.7902384,-80.2115053,processed_inference
+mens,Davidson Wildcats,Davidson,NC,"Davidson, NC",35.7902384,-80.2115053,processed_inference
+mens,Dayton,Dayton,OH,"Dayton, OH",39.7589478,-84.1916069,processed_inference
+mens,DePaul,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,processed_inference
+mens,Delaware,Newark,DE,"Newark, DE",39.6828358,-75.7515682,processed_inference
+mens,Delaware St.,Dover,DE,"Dover, DE",39.158168,-75.5243682,processed_inference
+mens,Delaware State Hornets,Dover,DE,"Dover, DE",39.158168,-75.5243682,processed_inference
+mens,Denver,Denver,CO,"Denver, CO",39.7392364,-104.984862,processed_inference
+mens,Denver Pioneers,Denver,CO,"Denver, CO",39.7392364,-104.984862,processed_inference
+mens,Detroit Mercy,Detroit,MI,"Detroit, MI",42.3315509,-83.0466403,processed_inference
+mens,Detroit Mercy Titans,Detroit,MI,"Detroit, MI",42.3315509,-83.0466403,processed_inference
+mens,Drake,Des Moines,IA,"Des Moines, IA",41.5868654,-93.6249494,processed_inference
+mens,Drake Bulldogs,Des Moines,IA,"Des Moines, IA",41.5868654,-93.6249494,processed_inference
+mens,Drexel,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Drexel Dragons,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Duke,Durham,NC,"Durham, NC",35.996653,-78.9018053,processed_inference
+mens,Duke Blue Devils,Durham,NC,"Durham, NC",35.996653,-78.9018053,processed_inference
+mens,Duquesne,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,processed_inference
+mens,Duquesne Dukes,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,processed_inference
+mens,East Carolina,Greenville,NC,"Greenville, NC",35.613224,-77.3724593,processed_inference
+mens,East Carolina Pirates,Greenville,NC,"Greenville, NC",35.613224,-77.3724593,processed_inference
+mens,East Tennessee St.,Johnson City,TN,"Johnson City, TN",36.3167671,-82.352903,processed_inference
+mens,East Tennessee State Buccaneers,Johnson City,TN,"Johnson City, TN",36.3167671,-82.352903,processed_inference
+mens,East Texas A&M,Commerce,TX,"Commerce, TX",33.2436492,-95.9026927,processed_inference
+mens,East Texas A&M Lions,Commerce,TX,"Commerce, TX",33.2436492,-95.9026927,processed_inference
+mens,Eastern Illinois,Charleston,IL,"Charleston, IL",39.4961458,-88.1761521,processed_inference
+mens,Eastern Illinois Panthers,Charleston,IL,"Charleston, IL",39.4961458,-88.1761521,processed_inference
+mens,Eastern Kentucky,Richmond,KY,"Richmond, KY",37.7478572,-84.2946539,processed_inference
+mens,Eastern Kentucky Colonels,Richmond,KY,"Richmond, KY",37.7478572,-84.2946539,processed_inference
+mens,Eastern Michigan,Ypsilanti,MI,"Ypsilanti, MI",42.241051,-83.6117646,processed_inference
+mens,Eastern Michigan Eagles,Ypsilanti,MI,"Ypsilanti, MI",42.241051,-83.6117646,processed_inference
+mens,Eastern Washington,Cheney,WA,"Cheney, WA",47.4892246,-117.579304,processed_inference
+mens,Eastern Washington Eagles,Cheney,WA,"Cheney, WA",47.4892246,-117.579304,processed_inference
+mens,Elon,Elon,NC,"Elon, NC",36.1029132,-79.5066895,processed_inference
+mens,Elon Phoenix,Elon,NC,"Elon, NC",36.1029132,-79.5066895,processed_inference
+mens,Evansville,Evansville,IN,"Evansville, IN",37.970495,-87.5715641,processed_inference
+mens,Evansville Purple Aces,Evansville,IN,"Evansville, IN",37.970495,-87.5715641,processed_inference
+mens,FIU,Miami,FL,"Miami, FL",25.7741566,-80.1935973,processed_inference
+mens,Fairfield,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,processed_inference
+mens,Fairfield Stags,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,processed_inference
+mens,Fairleigh Dickinson,Hackensack,NJ,"Hackensack, NJ",40.8870781,-74.0410667,processed_inference
+mens,Fairleigh Dickinson Knights,Hackensack,NJ,"Hackensack, NJ",40.8870781,-74.0410667,processed_inference
+mens,Florida,Gainesville,FL,"Gainesville, FL",29.6519684,-82.3249846,processed_inference
+mens,Florida A&M,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,processed_inference
+mens,Florida A&M Rattlers,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,processed_inference
+mens,Florida Atlantic,Boca Raton,FL,"Boca Raton, FL",26.3586885,-80.0830984,processed_inference
+mens,Florida Atlantic Owls,Boca Raton,FL,"Boca Raton, FL",26.3586885,-80.0830984,processed_inference
+mens,Florida Gators,Gainesville,FL,"Gainesville, FL",29.6519684,-82.3249846,processed_inference
+mens,Florida Gulf Coast,Fort Myers,FL,"Fort Myers, FL",26.640628,-81.8723084,processed_inference
+mens,Florida Gulf Coast Eagles,Fort Myers,FL,"Fort Myers, FL",26.640628,-81.8723084,processed_inference
+mens,Florida St.,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,processed_inference
+mens,Florida State Seminoles,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,processed_inference
+mens,Fordham,Bronx,NY,"Bronx, NY",40.8466508,-73.8785937,processed_inference
+mens,Fordham Rams,Bronx,NY,"Bronx, NY",40.8466508,-73.8785937,processed_inference
+mens,Fresno St.,Fresno,CA,"Fresno, CA",36.7394421,-119.78483,processed_inference
+mens,Fresno State Bulldogs,Fresno,CA,"Fresno, CA",36.7394421,-119.78483,processed_inference
+mens,Furman,Greenville,SC,"Greenville, SC",34.851354,-82.3984882,processed_inference
+mens,Furman Paladins,Greenville,SC,"Greenville, SC",34.851354,-82.3984882,processed_inference
+mens,Gardner Webb,Boiling Springs,NC,"Boiling Springs, NC",35.254292,-81.6670407,processed_inference
+mens,Gardner-Webb Runnin' Bulldogs,Boiling Springs,NC,"Boiling Springs, NC",35.254292,-81.6670407,processed_inference
+mens,George Mason,Fairfax,VA,"Fairfax, VA",38.8462236,-77.3063733,processed_inference
+mens,George Mason Patriots,Fairfax,VA,"Fairfax, VA",38.8462236,-77.3063733,processed_inference
+mens,George Washington,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,George Washington Revolutionaries,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,Georgetown,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,Georgetown Hoyas,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,Georgia,Athens,GA,"Athens, GA",33.9597677,-83.376398,processed_inference
+mens,Georgia Bulldogs,Athens,GA,"Athens, GA",33.9597677,-83.376398,processed_inference
+mens,Georgia Southern,Statesboro,GA,"Statesboro, GA",32.4490141,-81.7832912,processed_inference
+mens,Georgia St.,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,processed_inference
+mens,Georgia State Panthers,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,processed_inference
+mens,Georgia Tech,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,processed_inference
+mens,Georgia Tech Yellow Jackets,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,processed_inference
+mens,Gonzaga,Spokane,WA,"Spokane, WA",47.6571934,-117.42351,processed_inference
+mens,Gonzaga Bulldogs,Spokane,WA,"Spokane, WA",47.6571934,-117.42351,processed_inference
+mens,Grand Canyon,Phoenix,AZ,"Phoenix, AZ",33.4484367,-112.074141,processed_inference
+mens,Grand Canyon Lopes,Phoenix,AZ,"Phoenix, AZ",33.4484367,-112.074141,processed_inference
+mens,Green Bay,Ashwaubenon,WI,"Ashwaubenon, WI",44.4752606,-88.060735,processed_inference
+mens,Green Bay Phoenix,Ashwaubenon,WI,"Ashwaubenon, WI",44.4752606,-88.060735,processed_inference
+mens,Hampton,Hampton,VA,"Hampton, VA",37.0264414,-76.3442846,processed_inference
+mens,Harvard,Cambridge,MA,"Cambridge, MA",42.3656347,-71.1040018,processed_inference
+mens,Hawai'i Rainbow Warriors,Honolulu,HI,"Honolulu, HI",21.304547,-157.855676,processed_inference
+mens,Hawaii,Honolulu,HI,"Honolulu, HI",21.304547,-157.855676,processed_inference
+mens,High Point,High Point,NC,"High Point, NC",35.9556924,-80.0053176,processed_inference
+mens,High Point Panthers,High Point,NC,"High Point, NC",35.9556924,-80.0053176,processed_inference
+mens,Hofstra,Hempstead,NY,"Hempstead, NY",40.6736812,-73.6190736,processed_inference
+mens,Hofstra Pride,Hempstead,NY,"Hempstead, NY",40.6736812,-73.6190736,processed_inference
+mens,Holy Cross,Worcester,MA,"Worcester, MA",42.2625621,-71.8018877,processed_inference
+mens,Holy Cross Crusaders,Worcester,MA,"Worcester, MA",42.2625621,-71.8018877,processed_inference
+mens,Houston,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Houston Christian,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Houston Cougars,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Howard,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,Howard Bison,Washington,DC,"Washington, DC",38.8950368,-77.0365427,processed_inference
+mens,IU Indy,Indianapolis,IN,"Indianapolis, IN",39.7683331,-86.1583502,processed_inference
+mens,Idaho,Moscow,ID,"Moscow, ID",46.7323875,-117.000165,processed_inference
+mens,Idaho St.,Pocatello,ID,"Pocatello, ID",42.8620287,-112.450627,processed_inference
+mens,Idaho Vandals,Moscow,ID,"Moscow, ID",46.7323875,-117.000165,processed_inference
+mens,Illinois,Champaign,IL,"Champaign, IL",40.1164841,-88.2430932,processed_inference
+mens,Illinois Fighting Illini,Champaign,IL,"Champaign, IL",40.1164841,-88.2430932,processed_inference
+mens,Illinois St.,Normal,IL,"Normal, IL",40.5092961,-88.9843937,processed_inference
+mens,Illinois State Redbirds,Normal,IL,"Normal, IL",40.5092961,-88.9843937,processed_inference
+mens,Incarnate Word,San Antonio,TX,"San Antonio, TX",29.4246002,-98.4951405,processed_inference
+mens,Indiana,Bloomington,IN,"Bloomington, IN",39.1670396,-86.5342881,processed_inference
+mens,Indiana Hoosiers,Bloomington,IN,"Bloomington, IN",39.1670396,-86.5342881,processed_inference
+mens,Indiana St.,Terre Haute,IN,"Terre Haute, IN",39.4667025,-87.4139119,processed_inference
+mens,Indiana State Sycamores,Terre Haute,IN,"Terre Haute, IN",39.4667025,-87.4139119,processed_inference
+mens,Iona,New Rochelle,NY,"New Rochelle, NY",40.9115386,-73.7826363,processed_inference
+mens,Iona Gaels,New Rochelle,NY,"New Rochelle, NY",40.9115386,-73.7826363,processed_inference
+mens,Iowa,Iowa City,IA,"Iowa City, IA",41.6612561,-91.5299106,processed_inference
+mens,Iowa Hawkeyes,Iowa City,IA,"Iowa City, IA",41.6612561,-91.5299106,processed_inference
+mens,Iowa St.,Ames,IA,"Ames, IA",42.0267567,-93.6170448,processed_inference
+mens,Iowa State Cyclones,Ames,IA,"Ames, IA",42.0267567,-93.6170448,processed_inference
+mens,Jackson St.,Jackson,MS,"Jackson, MS",32.2998686,-90.1830408,processed_inference
+mens,Jacksonville,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,processed_inference
+mens,Jacksonville Dolphins,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,processed_inference
+mens,Jacksonville St.,Jacksonville,AL,"Jacksonville, AL",33.8137919,-85.7612872,processed_inference
+mens,Jacksonville State Gamecocks,Jacksonville,AL,"Jacksonville, AL",33.8137919,-85.7612872,processed_inference
+mens,James Madison,Harrisonburg,VA,"Harrisonburg, VA",38.4493315,-78.8688833,processed_inference
+mens,James Madison Dukes,Harrisonburg,VA,"Harrisonburg, VA",38.4493315,-78.8688833,processed_inference
+mens,Kansas,Lawrence,KS,"Lawrence, KS",38.9719137,-95.2359403,processed_inference
+mens,Kansas City Roos,Kansas City,MO,"Kansas City, MO",39.100105,-94.5781416,processed_inference
+mens,Kansas Jayhawks,Lawrence,KS,"Lawrence, KS",38.9719137,-95.2359403,processed_inference
+mens,Kansas St.,Manhattan,KS,"Manhattan, KS",39.1836082,-96.5716694,processed_inference
+mens,Kansas State Wildcats,Manhattan,KS,"Manhattan, KS",39.1836082,-96.5716694,processed_inference
+mens,Kennesaw St.,Kennesaw,GA,"Kennesaw, GA",34.0234337,-84.6154897,processed_inference
+mens,Kennesaw State Owls,Kennesaw,GA,"Kennesaw, GA",34.0234337,-84.6154897,processed_inference
+mens,Kent St.,Kent,OH,"Kent, OH",41.1513108,-81.3578047,processed_inference
+mens,Kentucky,Lexington,KY,"Lexington, KY",38.0464066,-84.4970393,processed_inference
+mens,Kentucky Wildcats,Lexington,KY,"Lexington, KY",38.0464066,-84.4970393,processed_inference
+mens,LSU,Baton Rouge,LA,"Baton Rouge, LA",30.4494155,-91.1869659,processed_inference
+mens,LSU Tigers,Baton Rouge,LA,"Baton Rouge, LA",30.4494155,-91.1869659,processed_inference
+mens,La Salle,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,La Salle Explorers,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Lafayette,Easton,PA,"Easton, PA",40.6916081,-75.2099866,processed_inference
+mens,Lafayette Leopards,Easton,PA,"Easton, PA",40.6916081,-75.2099866,processed_inference
+mens,Lamar,Beaumont,TX,"Beaumont, TX",30.0829344,-94.0984277,processed_inference
+mens,Lamar Cardinals,Beaumont,TX,"Beaumont, TX",30.0829344,-94.0984277,processed_inference
+mens,Le Moyne,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,processed_inference
+mens,Le Moyne Dolphins,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,processed_inference
+mens,Lehigh,Bethlehem,PA,"Bethlehem, PA",40.6178915,-75.3786521,processed_inference
+mens,Lehigh Mountain Hawks,Bethlehem,PA,"Bethlehem, PA",40.6178915,-75.3786521,processed_inference
+mens,Liberty,Lynchburg,VA,"Lynchburg, VA",37.4137536,-79.1422464,processed_inference
+mens,Lindenwood Lions,Saint Charles,MO,"Saint Charles, MO",38.783855,-90.481677,processed_inference
+mens,Lipscomb,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Little Rock,Little Rock,AR,"Little Rock, AR",34.7465071,-92.2896267,processed_inference
+mens,Long Beach St.,Long Beach,CA,"Long Beach, CA",33.7690164,-118.191604,processed_inference
+mens,Long Beach State Beach,Long Beach,CA,"Long Beach, CA",33.7690164,-118.191604,processed_inference
+mens,Long Island University Sharks,Brooklyn,NY,"Brooklyn, NY",40.6526006,-73.9497211,processed_inference
+mens,Longwood,Farmville,VA,"Farmville, VA",37.3024713,-78.3923813,processed_inference
+mens,Longwood Lancers,Farmville,VA,"Farmville, VA",37.3024713,-78.3923813,processed_inference
+mens,Louisiana,Lafayette,LA,"Lafayette, LA",30.2262187,-92.0178202,processed_inference
+mens,Louisiana Ragin' Cajuns,Lafayette,LA,"Lafayette, LA",30.2262187,-92.0178202,processed_inference
+mens,Louisiana Tech,Ruston,LA,"Ruston, LA",32.5297498,-92.6386604,processed_inference
+mens,Louisiana Tech Bulldogs,Ruston,LA,"Ruston, LA",32.5297498,-92.6386604,processed_inference
+mens,Louisville,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,processed_inference
+mens,Louisville Cardinals,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,processed_inference
+mens,Loyola Chicago,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,processed_inference
+mens,Loyola Chicago Ramblers,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,processed_inference
+mens,Loyola MD,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Loyola Maryland Greyhounds,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Loyola Marymount,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,Loyola Marymount Lions,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,Maine,Orono,ME,"Orono, ME",44.883607,-68.672791,processed_inference
+mens,Manhattan,Riverdale,NY,"Riverdale, NY",40.90056,-73.90639,processed_inference
+mens,Manhattan Jaspers,Riverdale,NY,"Riverdale, NY",40.90056,-73.90639,processed_inference
+mens,Marist,Poughkeepsie,NY,"Poughkeepsie, NY",41.7065539,-73.9283672,processed_inference
+mens,Marquette,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,processed_inference
+mens,Marquette Golden Eagles,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,processed_inference
+mens,Marshall,Huntington,WV,"Huntington, WV",38.4192496,-82.445154,processed_inference
+mens,Marshall Thundering Herd,Huntington,WV,"Huntington, WV",38.4192496,-82.445154,processed_inference
+mens,Maryland,College Park,MD,"College Park, MD",38.980666,-76.9369189,processed_inference
+mens,Maryland Eastern Shore,Princess Anne,MD,"Princess Anne, MD",38.2028428,-75.6920008,processed_inference
+mens,Maryland Eastern Shore Hawks,Princess Anne,MD,"Princess Anne, MD",38.2028428,-75.6920008,processed_inference
+mens,Maryland Terrapins,College Park,MD,"College Park, MD",38.980666,-76.9369189,processed_inference
+mens,Massachusetts,Amherst,MA,"Amherst, MA",42.3731948,-72.5198761,processed_inference
+mens,Massachusetts Minutemen,Amherst,MA,"Amherst, MA",42.3731948,-72.5198761,processed_inference
+mens,McNeese Cowboys,Lake Charles,LA,"Lake Charles, LA",30.2305095,-93.2169807,processed_inference
+mens,Memphis,Memphis,TN,"Memphis, TN",35.1460249,-90.0517638,processed_inference
+mens,Memphis Tigers,Memphis,TN,"Memphis, TN",35.1460249,-90.0517638,processed_inference
+mens,Mercer,Macon,GA,"Macon, GA",32.8406946,-83.6324022,processed_inference
+mens,Mercer Bears,Macon,GA,"Macon, GA",32.8406946,-83.6324022,processed_inference
+mens,Mercyhurst,Erie,PA,"Erie, PA",42.1294712,-80.0852695,processed_inference
+mens,Merrimack,North Andover,MA,"North Andover, MA",42.7029687,-71.1309117,processed_inference
+mens,Miami (OH) RedHawks,Oxford,OH,"Oxford, OH",39.5103048,-84.7420519,processed_inference
+mens,Miami Hurricanes,Coral Gables,FL,"Coral Gables, FL",25.7331105,-80.2585107,processed_inference
+mens,Miami OH,Oxford,OH,"Oxford, OH",39.5103048,-84.7420519,processed_inference
+mens,Michigan,Ann Arbor,MI,"Ann Arbor, MI",42.2813722,-83.7484616,processed_inference
+mens,Michigan St.,East Lansing,MI,"East Lansing, MI",42.7320307,-84.4721678,processed_inference
+mens,Michigan State Spartans,East Lansing,MI,"East Lansing, MI",42.7320307,-84.4721678,processed_inference
+mens,Michigan Wolverines,Ann Arbor,MI,"Ann Arbor, MI",42.2813722,-83.7484616,processed_inference
+mens,Middle Tennessee,Murfreesboro,TN,"Murfreesboro, TN",35.8460396,-86.3921096,processed_inference
+mens,Milwaukee,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,processed_inference
+mens,Milwaukee Panthers,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,processed_inference
+mens,Minnesota,Minneapolis,MN,"Minneapolis, MN",44.9772995,-93.2654692,processed_inference
+mens,Minnesota Golden Gophers,Minneapolis,MN,"Minneapolis, MN",44.9772995,-93.2654692,processed_inference
+mens,Mississippi St.,Starkville,MS,"Starkville, MS",33.4638745,-88.8152074,processed_inference
+mens,Mississippi State Bulldogs,Starkville,MS,"Starkville, MS",33.4638745,-88.8152074,processed_inference
+mens,Mississippi Valley St.,Itta Bena,MS,"Itta Bena, MS",33.4951269,-90.3229458,processed_inference
+mens,Missouri,Columbia,MO,"Columbia, MO",38.951883,-92.3337366,processed_inference
+mens,Missouri St.,Springfield,MO,"Springfield, MO",37.2081729,-93.2922715,processed_inference
+mens,Missouri State Bears,Springfield,MO,"Springfield, MO",37.2081729,-93.2922715,processed_inference
+mens,Missouri Tigers,Columbia,MO,"Columbia, MO",38.951883,-92.3337366,processed_inference
+mens,Monmouth,West Long Branch,NJ,"West Long Branch, NJ",40.2904235,-74.0172558,processed_inference
+mens,Monmouth Hawks,West Long Branch,NJ,"West Long Branch, NJ",40.2904235,-74.0172558,processed_inference
+mens,Montana,Missoula,MT,"Missoula, MT",46.8701049,-113.995267,processed_inference
+mens,Montana St.,Bozeman,MT,"Bozeman, MT",45.6794293,-111.044047,processed_inference
+mens,Morehead St.,Morehead,KY,"Morehead, KY",38.1839705,-83.4326841,processed_inference
+mens,Morehead State Eagles,Morehead,KY,"Morehead, KY",38.1839705,-83.4326841,processed_inference
+mens,Morgan St.,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Morgan State Bears,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,Mount St. Mary's,Emmitsburg,MD,"Emmitsburg, MD",39.7045417,-77.3269307,processed_inference
+mens,Mount St. Mary's Mountaineers,Emmitsburg,MD,"Emmitsburg, MD",39.7045417,-77.3269307,processed_inference
+mens,Murray St.,Murray,KY,"Murray, KY",36.6106122,-88.3021092,processed_inference
+mens,Murray State Racers,Murray,KY,"Murray, KY",36.6106122,-88.3021092,processed_inference
+mens,NJIT,Newark,NJ,"Newark, NJ",40.735657,-74.1723667,processed_inference
+mens,NJIT Highlanders,Newark,NJ,"Newark, NJ",40.735657,-74.1723667,processed_inference
+mens,Navy,Annapolis,MD,"Annapolis, MD",38.9786401,-76.492786,processed_inference
+mens,Navy Midshipmen,Annapolis,MD,"Annapolis, MD",38.9786401,-76.492786,processed_inference
+mens,Nebraska,Lincoln,NE,"Lincoln, NE",40.8088861,-96.7077751,processed_inference
+mens,Nebraska Cornhuskers,Lincoln,NE,"Lincoln, NE",40.8088861,-96.7077751,processed_inference
+mens,Nevada,Reno,NV,"Reno, NV",39.5261788,-119.812658,processed_inference
+mens,Nevada Wolf Pack,Reno,NV,"Reno, NV",39.5261788,-119.812658,processed_inference
+mens,New Hampshire,Durham,NH,"Durham, NH",43.134564,-70.927048,processed_inference
+mens,New Haven Chargers,West Haven,CT,"West Haven, CT",41.2706527,-72.9470471,processed_inference
+mens,New Mexico,Albuquerque,NM,"Albuquerque, NM",35.0841034,-106.650985,processed_inference
+mens,New Mexico Lobos,Albuquerque,NM,"Albuquerque, NM",35.0841034,-106.650985,processed_inference
+mens,New Mexico St.,Las Cruces,NM,"Las Cruces, NM",32.3140354,-106.779807,processed_inference
+mens,New Mexico State Aggies,Las Cruces,NM,"Las Cruces, NM",32.3140354,-106.779807,processed_inference
+mens,New Orleans,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,processed_inference
+mens,New Orleans Privateers,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,processed_inference
+mens,Niagara,Niagara Falls,NY,"Niagara Falls, NY",43.084841,-79.0701786,processed_inference
+mens,Norfolk St.,Norfolk,VA,"Norfolk, VA",36.8493695,-76.2899539,processed_inference
+mens,Norfolk State Spartans,Norfolk,VA,"Norfolk, VA",36.8493695,-76.2899539,processed_inference
+mens,North Alabama,Florence,AL,"Florence, AL",34.79981,-87.677251,processed_inference
+mens,North Carolina,Chapel Hill,NC,"Chapel Hill, NC",35.9131542,-79.05578,processed_inference
+mens,North Carolina A&T,Greensboro,NC,"Greensboro, NC",36.0726355,-79.7919754,processed_inference
+mens,North Carolina A&T Aggies,Greensboro,NC,"Greensboro, NC",36.0726355,-79.7919754,processed_inference
+mens,North Carolina Central,Durham,NC,"Durham, NC",35.996653,-78.9018053,processed_inference
+mens,North Carolina Tar Heels,Chapel Hill,NC,"Chapel Hill, NC",35.9131542,-79.05578,processed_inference
+mens,North Dakota,Grand Forks,ND,"Grand Forks, ND",47.9252104,-97.0306325,processed_inference
+mens,North Dakota St.,Fargo,ND,"Fargo, ND",46.877229,-96.789821,processed_inference
+mens,North Dakota State Bison,Fargo,ND,"Fargo, ND",46.877229,-96.789821,processed_inference
+mens,North Florida,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,processed_inference
+mens,North Florida Ospreys,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,processed_inference
+mens,North Texas,Denton,TX,"Denton, TX",33.1838787,-97.1413417,processed_inference
+mens,North Texas Mean Green,Denton,TX,"Denton, TX",33.1838787,-97.1413417,processed_inference
+mens,Northeastern,Boston,MA,"Boston, MA",42.3588336,-71.0578303,processed_inference
+mens,Northeastern Huskies,Boston,MA,"Boston, MA",42.3588336,-71.0578303,processed_inference
+mens,Northern Arizona,Flagstaff,AZ,"Flagstaff, AZ",35.1987522,-111.651822,processed_inference
+mens,Northern Arizona Lumberjacks,Flagstaff,AZ,"Flagstaff, AZ",35.1987522,-111.651822,processed_inference
+mens,Northern Colorado,Greeley,CO,"Greeley, CO",40.4233142,-104.7091322,processed_inference
+mens,Northern Colorado Bears,Greeley,CO,"Greeley, CO",40.4233142,-104.7091322,processed_inference
+mens,Northern Illinois,Dekalb,IL,"Dekalb, IL",41.8903447,-88.7713953,processed_inference
+mens,Northern Iowa,Cedar Falls,IA,"Cedar Falls, IA",42.5361805,-92.447758,processed_inference
+mens,Northern Iowa Panthers,Cedar Falls,IA,"Cedar Falls, IA",42.5361805,-92.447758,processed_inference
+mens,Northern Kentucky,Highland Heights,KY,"Highland Heights, KY",39.0330902,-84.4521512,processed_inference
+mens,Northwestern,Evanston,IL,"Evanston, IL",42.0470043,-87.6846053,processed_inference
+mens,Northwestern St.,Natchitoches,LA,"Natchitoches, LA",31.7606732,-93.0860209,processed_inference
+mens,Northwestern State Demons,Natchitoches,LA,"Natchitoches, LA",31.7606732,-93.0860209,processed_inference
+mens,Northwestern Wildcats,Evanston,IL,"Evanston, IL",42.0470043,-87.6846053,processed_inference
+mens,Notre Dame,South Bend,IN,"South Bend, IN",41.6833813,-86.2500066,processed_inference
+mens,Notre Dame Fighting Irish,South Bend,IN,"South Bend, IN",41.6833813,-86.2500066,processed_inference
+mens,Oakland,Rochester,MI,"Rochester, MI",42.680588,-83.1338214,processed_inference
+mens,Oakland Golden Grizzlies,Rochester,MI,"Rochester, MI",42.680588,-83.1338214,processed_inference
+mens,Ohio,Athens,OH,"Athens, OH",39.3575616,-82.0609557,processed_inference
+mens,Ohio Bobcats,Athens,OH,"Athens, OH",39.3575616,-82.0609557,processed_inference
+mens,Ohio St.,Columbus,OH,"Columbus, OH",39.9622601,-83.0007065,processed_inference
+mens,Oklahoma,Norman,OK,"Norman, OK",35.2225717,-97.4394816,processed_inference
+mens,Oklahoma Sooners,Norman,OK,"Norman, OK",35.2225717,-97.4394816,processed_inference
+mens,Oklahoma St.,Stillwater,OK,"Stillwater, OK",36.1156306,-97.0585717,processed_inference
+mens,Oklahoma State Cowboys,Stillwater,OK,"Stillwater, OK",36.1156306,-97.0585717,processed_inference
+mens,Old Dominion,Norfolk,VA,"Norfolk, VA",36.8493695,-76.2899539,processed_inference
+mens,Ole Miss Rebels,Oxford,MS,"Oxford, MS",34.3663773,-89.5187664,processed_inference
+mens,Omaha Mavericks,Omaha,NE,"Omaha, NE",41.2587459,-95.9383758,processed_inference
+mens,Oral Roberts,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,processed_inference
+mens,Oral Roberts Golden Eagles,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,processed_inference
+mens,Oregon,Eugene,OR,"Eugene, OR",44.0505054,-123.0950506,processed_inference
+mens,Oregon Ducks,Eugene,OR,"Eugene, OR",44.0505054,-123.0950506,processed_inference
+mens,Oregon St.,Corvallis,OR,"Corvallis, OR",44.5645659,-123.2620435,processed_inference
+mens,Oregon State Beavers,Corvallis,OR,"Corvallis, OR",44.5645659,-123.2620435,processed_inference
+mens,Pacific,Stockton,CA,"Stockton, CA",37.9577016,-121.290779,processed_inference
+mens,Pacific Tigers,Stockton,CA,"Stockton, CA",37.9577016,-121.290779,processed_inference
+mens,Penn,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Penn St.,University Park,PA,"University Park, PA",40.8128971,-77.8710571,processed_inference
+mens,Penn State Nittany Lions,University Park,PA,"University Park, PA",40.8128971,-77.8710571,processed_inference
+mens,Pennsylvania Quakers,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Pepperdine,Malibu,CA,"Malibu, CA",34.035591,-118.689423,processed_inference
+mens,Pepperdine Waves,Malibu,CA,"Malibu, CA",34.035591,-118.689423,processed_inference
+mens,Pittsburgh,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,processed_inference
+mens,Pittsburgh Panthers,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,processed_inference
+mens,Portland,Portland,OR,"Portland, OR",45.5202471,-122.674194,processed_inference
+mens,Portland Pilots,Portland,OR,"Portland, OR",45.5202471,-122.674194,processed_inference
+mens,Portland St.,Portland,OR,"Portland, OR",45.5202471,-122.674194,processed_inference
+mens,Portland State Vikings,Portland,OR,"Portland, OR",45.5202471,-122.674194,processed_inference
+mens,Prairie View A&M,Prairie View,TX,"Prairie View, TX",30.0857916,-95.9907058,processed_inference
+mens,Prairie View A&M Panthers,Prairie View,TX,"Prairie View, TX",30.0857916,-95.9907058,processed_inference
+mens,Presbyterian,Clinton,SC,"Clinton, SC",34.4726277,-81.8806562,processed_inference
+mens,Presbyterian Blue Hose,Clinton,SC,"Clinton, SC",34.4726277,-81.8806562,processed_inference
+mens,Princeton,Princeton,NJ,"Princeton, NJ",40.3496953,-74.6597376,processed_inference
+mens,Princeton Tigers,Princeton,NJ,"Princeton, NJ",40.3496953,-74.6597376,processed_inference
+mens,Providence,Providence,RI,"Providence, RI",41.8239891,-71.4128343,processed_inference
+mens,Providence Friars,Providence,RI,"Providence, RI",41.8239891,-71.4128343,processed_inference
+mens,Purdue,West Lafayette,IN,"West Lafayette, IN",40.4258686,-86.9080655,processed_inference
+mens,Purdue Boilermakers,West Lafayette,IN,"West Lafayette, IN",40.4258686,-86.9080655,processed_inference
+mens,Purdue Fort Wayne,Fort Wayne,IN,"Fort Wayne, IN",41.0799898,-85.1386015,processed_inference
+mens,Quinnipiac,Hamden,CT,"Hamden, CT",41.3836233,-72.9020069,processed_inference
+mens,Quinnipiac Bobcats,Hamden,CT,"Hamden, CT",41.3836233,-72.9020069,processed_inference
+mens,Radford,Radford,VA,"Radford, VA",37.1343148,-80.5749169,processed_inference
+mens,Radford Highlanders,Radford,VA,"Radford, VA",37.1343148,-80.5749169,processed_inference
+mens,Rhode Island,Kingston,RI,"Kingston, RI",41.4729285,-71.5223479,processed_inference
+mens,Rhode Island Rams,Kingston,RI,"Kingston, RI",41.4729285,-71.5223479,processed_inference
+mens,Rice,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Rice Owls,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Richmond,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,processed_inference
+mens,Richmond Spiders,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,processed_inference
+mens,Rider,Lawrenceville,NJ,"Lawrenceville, NJ",40.3009876,-74.7373728,processed_inference
+mens,Rider Broncs,Lawrenceville,NJ,"Lawrenceville, NJ",40.3009876,-74.7373728,processed_inference
+mens,Robert Morris,Moon Township,PA,"Moon Township, PA",40.5061,-80.2082,processed_inference
+mens,Robert Morris Colonials,Moon Township,PA,"Moon Township, PA",40.5061,-80.2082,processed_inference
+mens,Rutgers,Piscataway,NJ,"Piscataway, NJ",40.5464326,-74.4660542,processed_inference
+mens,Rutgers Scarlet Knights,Piscataway,NJ,"Piscataway, NJ",40.5464326,-74.4660542,processed_inference
+mens,SE Louisiana Lions,Hammond,LA,"Hammond, LA",30.5043583,-90.4611995,processed_inference
+mens,SIU Edwardsville,Edwardsville,IL,"Edwardsville, IL",38.8114364,-89.953157,processed_inference
+mens,SIU Edwardsville Cougars,Edwardsville,IL,"Edwardsville, IL",38.8114364,-89.953157,processed_inference
+mens,SMU,Dallas,TX,"Dallas, TX",32.7762719,-96.7968559,processed_inference
+mens,SMU Mustangs,Dallas,TX,"Dallas, TX",32.7762719,-96.7968559,processed_inference
+mens,Sacramento St.,Sacramento,CA,"Sacramento, CA",38.5810606,-121.493895,processed_inference
+mens,Sacred Heart,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,processed_inference
+mens,Sacred Heart Pioneers,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,processed_inference
+mens,Saint Francis,Loretto,PA,"Loretto, PA",40.5029161,-78.6314019,processed_inference
+mens,Saint Joseph's,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Saint Joseph's Hawks,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Saint Louis,St. Louis,MO,"St. Louis, MO",38.6254063,-90.190009,processed_inference
+mens,Saint Louis Billikens,St. Louis,MO,"St. Louis, MO",38.6254063,-90.190009,processed_inference
+mens,Saint Mary's,Moraga,CA,"Moraga, CA",37.834897,-122.12883,processed_inference
+mens,Saint Mary's Gaels,Moraga,CA,"Moraga, CA",37.834897,-122.12883,processed_inference
+mens,Saint Peter's,Jersey City,NJ,"Jersey City, NJ",40.7215682,-74.047455,processed_inference
+mens,Saint Peter's Peacocks,Jersey City,NJ,"Jersey City, NJ",40.7215682,-74.047455,processed_inference
+mens,Sam Houston Bearkats,Huntsville,TX,"Huntsville, TX",30.7235263,-95.5507771,processed_inference
+mens,Samford,Homewood,AL,"Homewood, AL",33.4737098,-86.8084509,processed_inference
+mens,Samford Bulldogs,Homewood,AL,"Homewood, AL",33.4737098,-86.8084509,processed_inference
+mens,San Diego,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,San Diego St.,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,San Diego State Aztecs,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,San Diego Toreros,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,San Francisco,San Francisco,CA,"San Francisco, CA",37.7879363,-122.4075201,processed_inference
+mens,San Francisco Dons,San Francisco,CA,"San Francisco, CA",37.7879363,-122.4075201,processed_inference
+mens,San José State Spartans,San Jose,CA,"San Jose, CA",37.3361663,-121.890591,processed_inference
+mens,Santa Clara,Santa Clara,CA,"Santa Clara, CA",37.3541132,-121.955174,processed_inference
+mens,Santa Clara Broncos,Santa Clara,CA,"Santa Clara, CA",37.3541132,-121.955174,processed_inference
+mens,Seton Hall,Newark,NJ,"Newark, NJ",40.735657,-74.1723667,processed_inference
+mens,Seton Hall Pirates,Newark,NJ,"Newark, NJ",40.735657,-74.1723667,processed_inference
+mens,Siena,Albany,NY,"Albany, NY",42.6511674,-73.754968,processed_inference
+mens,Siena Saints,Albany,NY,"Albany, NY",42.6511674,-73.754968,processed_inference
+mens,South Alabama,Mobile,AL,"Mobile, AL",30.6913462,-88.0437509,processed_inference
+mens,South Alabama Jaguars,Mobile,AL,"Mobile, AL",30.6913462,-88.0437509,processed_inference
+mens,South Carolina,Columbia,SC,"Columbia, SC",34.000754,-81.0352313,processed_inference
+mens,South Carolina Gamecocks,Columbia,SC,"Columbia, SC",34.000754,-81.0352313,processed_inference
+mens,South Carolina St.,Orangeburg,SC,"Orangeburg, SC",33.4054944,-80.778429,processed_inference
+mens,South Carolina Upstate Spartans,Spartanburg,SC,"Spartanburg, SC",34.9498007,-81.9320157,processed_inference
+mens,South Dakota,Vermillion,SD,"Vermillion, SD",42.7795273,-96.929101,processed_inference
+mens,South Dakota Coyotes,Vermillion,SD,"Vermillion, SD",42.7795273,-96.929101,processed_inference
+mens,South Dakota St.,Brookings,SD,"Brookings, SD",44.311461,-96.79844,processed_inference
+mens,South Dakota State Jackrabbits,Brookings,SD,"Brookings, SD",44.311461,-96.79844,processed_inference
+mens,South Florida,Tampa,FL,"Tampa, FL",27.9449854,-82.4583107,processed_inference
+mens,South Florida Bulls,Tampa,FL,"Tampa, FL",27.9449854,-82.4583107,processed_inference
+mens,Southeast Missouri St.,Cape Girardeau,MO,"Cape Girardeau, MO",37.304731,-89.5176418,processed_inference
+mens,Southern,Baton Rouge,LA,"Baton Rouge, LA",30.4494155,-91.1869659,processed_inference
+mens,Southern Illinois,Carbondale,IL,"Carbondale, IL",37.7274692,-89.216655,processed_inference
+mens,Southern Illinois Salukis,Carbondale,IL,"Carbondale, IL",37.7274692,-89.216655,processed_inference
+mens,Southern Indiana Screaming Eagles,Evansville,IN,"Evansville, IN",37.970495,-87.5715641,processed_inference
+mens,Southern Miss,Hattiesburg,MS,"Hattiesburg, MS",31.3271189,-89.2903392,processed_inference
+mens,Southern Miss Golden Eagles,Hattiesburg,MS,"Hattiesburg, MS",31.3271189,-89.2903392,processed_inference
+mens,Southern Utah,Cedar City,UT,"Cedar City, UT",37.6774238,-113.061827,processed_inference
+mens,St. Bonaventure,Saint Bonaventure,NY,"Saint Bonaventure, NY",42.08047,-78.4772369,processed_inference
+mens,St. Bonaventure Bonnies,Saint Bonaventure,NY,"Saint Bonaventure, NY",42.08047,-78.4772369,processed_inference
+mens,St. John's,New York,NY,"New York, NY",40.7127281,-74.0060152,processed_inference
+mens,St. John's Red Storm,New York,NY,"New York, NY",40.7127281,-74.0060152,processed_inference
+mens,St. Thomas-Minnesota Tommies,Saint Paul,MN,"Saint Paul, MN",44.9497487,-93.0931028,processed_inference
+mens,Stanford,Stanford,CA,"Stanford, CA",37.4265407,-122.1703055,processed_inference
+mens,Stanford Cardinal,Stanford,CA,"Stanford, CA",37.4265407,-122.1703055,processed_inference
+mens,Stephen F. Austin,Nacogdoches,TX,"Nacogdoches, TX",31.5970503,-94.5927451,processed_inference
+mens,Stephen F. Austin Lumberjacks,Nacogdoches,TX,"Nacogdoches, TX",31.5970503,-94.5927451,processed_inference
+mens,Stetson,DeLand,FL,"DeLand, FL",29.0281051,-81.3034183,processed_inference
+mens,Stetson Hatters,DeLand,FL,"DeLand, FL",29.0281051,-81.3034183,processed_inference
+mens,Stonehill,South Easton,MA,"South Easton, MA",42.0473222,-71.0814358,processed_inference
+mens,Stonehill Skyhawks,South Easton,MA,"South Easton, MA",42.0473222,-71.0814358,processed_inference
+mens,Stony Brook,Stony Brook,NY,"Stony Brook, NY",40.908482,-73.1325471,processed_inference
+mens,Stony Brook Seawolves,Stony Brook,NY,"Stony Brook, NY",40.908482,-73.1325471,processed_inference
+mens,Syracuse,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,processed_inference
+mens,Syracuse Orange,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,processed_inference
+mens,TCU,Fort Worth,TX,"Fort Worth, TX",32.753177,-97.3327459,processed_inference
+mens,TCU Horned Frogs,Fort Worth,TX,"Fort Worth, TX",32.753177,-97.3327459,processed_inference
+mens,Tarleton St.,Stephenville,TX,"Stephenville, TX",32.2201387,-98.2045388,processed_inference
+mens,Tarleton State Texans,Stephenville,TX,"Stephenville, TX",32.2201387,-98.2045388,processed_inference
+mens,Temple,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Temple Owls,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,processed_inference
+mens,Tennessee,Knoxville,TN,"Knoxville, TN",35.9603948,-83.9210261,processed_inference
+mens,Tennessee St.,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Tennessee Tech,Cookeville,TN,"Cookeville, TN",36.1623886,-85.4997057,processed_inference
+mens,Tennessee Volunteers,Knoxville,TN,"Knoxville, TN",35.9603948,-83.9210261,processed_inference
+mens,Texas,Austin,TX,"Austin, TX",30.2711286,-97.7436995,processed_inference
+mens,Texas A&M,College Station,TX,"College Station, TX",30.6183939,-96.3455991,processed_inference
+mens,Texas A&M Aggies,College Station,TX,"College Station, TX",30.6183939,-96.3455991,processed_inference
+mens,Texas Longhorns,Austin,TX,"Austin, TX",30.2711286,-97.7436995,processed_inference
+mens,Texas Southern,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Texas Southern Tigers,Houston,TX,"Houston, TX",29.7589382,-95.3676974,processed_inference
+mens,Texas St.,San Marcos,TX,"San Marcos, TX",29.8826436,-97.9405828,processed_inference
+mens,Texas State Bobcats,San Marcos,TX,"San Marcos, TX",29.8826436,-97.9405828,processed_inference
+mens,Texas Tech,Lubbock,TX,"Lubbock, TX",33.5855677,-101.8470215,processed_inference
+mens,Texas Tech Red Raiders,Lubbock,TX,"Lubbock, TX",33.5855677,-101.8470215,processed_inference
+mens,The Citadel,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,The Citadel Bulldogs,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,processed_inference
+mens,Toledo,Toledo,OH,"Toledo, OH",41.6529143,-83.5378173,processed_inference
+mens,Toledo Rockets,Toledo,OH,"Toledo, OH",41.6529143,-83.5378173,processed_inference
+mens,Towson,Towson,MD,"Towson, MD",39.3964591,-76.6148148,processed_inference
+mens,Towson Tigers,Towson,MD,"Towson, MD",39.3964591,-76.6148148,processed_inference
+mens,Troy,Troy,AL,"Troy, AL",31.8087678,-85.969951,processed_inference
+mens,Troy Trojans,Troy,AL,"Troy, AL",31.8087678,-85.969951,processed_inference
+mens,Tulane,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,processed_inference
+mens,Tulane Green Wave,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,processed_inference
+mens,Tulsa,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,processed_inference
+mens,Tulsa Golden Hurricane,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,processed_inference
+mens,UAB,Birmingham,AL,"Birmingham, AL",33.5206824,-86.8024326,processed_inference
+mens,UAB Blazers,Birmingham,AL,"Birmingham, AL",33.5206824,-86.8024326,processed_inference
+mens,UAlbany Great Danes,Albany,NY,"Albany, NY",42.6511674,-73.754968,processed_inference
+mens,UC Davis,Davis,CA,"Davis, CA",38.5435526,-121.739005,processed_inference
+mens,UC Irvine,Irvine,CA,"Irvine, CA",33.6856969,-117.825981,processed_inference
+mens,UC Irvine Anteaters,Irvine,CA,"Irvine, CA",33.6856969,-117.825981,processed_inference
+mens,UC Riverside,Riverside,CA,"Riverside, CA",33.9824949,-117.374238,processed_inference
+mens,UC Riverside Highlanders,Riverside,CA,"Riverside, CA",33.9824949,-117.374238,processed_inference
+mens,UC San Diego,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,UC San Diego Tritons,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,processed_inference
+mens,UC Santa Barbara,Santa Barbara,CA,"Santa Barbara, CA",34.4221319,-119.702667,processed_inference
+mens,UC Santa Barbara Gauchos,Santa Barbara,CA,"Santa Barbara, CA",34.4221319,-119.702667,processed_inference
+mens,UCF,Orlando,FL,"Orlando, FL",28.5421218,-81.379045,processed_inference
+mens,UCF Knights,Orlando,FL,"Orlando, FL",28.5421218,-81.379045,processed_inference
+mens,UCLA,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,UCLA Bruins,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,UConn Huskies,Hartford,CT,"Hartford, CT",41.764582,-72.6908547,processed_inference
+mens,UIC Flames,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,processed_inference
+mens,UMBC,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,UMBC Retrievers,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,processed_inference
+mens,UMass Lowell,Lowell,MA,"Lowell, MA",42.6414437,-71.3085329,processed_inference
+mens,UNC Asheville,Asheville,NC,"Asheville, NC",35.595363,-82.5508407,processed_inference
+mens,UNC Asheville Bulldogs,Asheville,NC,"Asheville, NC",35.595363,-82.5508407,processed_inference
+mens,UNC Greensboro,Greensboro,NC,"Greensboro, NC",36.0726355,-79.7919754,processed_inference
+mens,UNC Wilmington,Wilmington,NC,"Wilmington, NC",34.2352853,-77.9487284,processed_inference
+mens,UNLV,Las Vegas,NV,"Las Vegas, NV",36.1674263,-115.1484131,processed_inference
+mens,UNLV Rebels,Las Vegas,NV,"Las Vegas, NV",36.1674263,-115.1484131,processed_inference
+mens,USC,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,USC Trojans,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,processed_inference
+mens,UT Arlington,Arlington,TX,"Arlington, TX",32.7355816,-97.1071186,processed_inference
+mens,UT Arlington Mavericks,Arlington,TX,"Arlington, TX",32.7355816,-97.1071186,processed_inference
+mens,UT Rio Grande Valley,Edinburg,TX,"Edinburg, TX",26.3013982,-98.1624501,processed_inference
+mens,UTEP,El Paso,TX,"El Paso, TX",31.7601001,-106.4870476,processed_inference
+mens,UTEP Miners,El Paso,TX,"El Paso, TX",31.7601001,-106.4870476,processed_inference
+mens,UTSA,San Antonio,TX,"San Antonio, TX",29.4246002,-98.4951405,processed_inference
+mens,UTSA Roadrunners,San Antonio,TX,"San Antonio, TX",29.4246002,-98.4951405,processed_inference
+mens,Utah,Salt Lake City,UT,"Salt Lake City, UT",40.7596198,-111.886797,processed_inference
+mens,Utah St.,Logan,UT,"Logan, UT",41.7313063,-111.834914,processed_inference
+mens,Utah State Aggies,Logan,UT,"Logan, UT",41.7313063,-111.834914,processed_inference
+mens,Utah Tech,St. George,UT,"St. George, UT",37.1098772,-113.5832063,processed_inference
+mens,Utah Utes,Salt Lake City,UT,"Salt Lake City, UT",40.7596198,-111.886797,processed_inference
+mens,Utah Valley,Orem,UT,"Orem, UT",40.2981599,-111.6944313,processed_inference
+mens,Utah Valley Wolverines,Orem,UT,"Orem, UT",40.2981599,-111.6944313,processed_inference
+mens,VCU,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,processed_inference
+mens,VCU Rams,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,processed_inference
+mens,VMI,Lexington,VA,"Lexington, VA",37.7840208,-79.4428157,processed_inference
+mens,Valparaiso,Valparaiso,IN,"Valparaiso, IN",41.4672552,-87.0604487,processed_inference
+mens,Valparaiso Beacons,Valparaiso,IN,"Valparaiso, IN",41.4672552,-87.0604487,processed_inference
+mens,Vanderbilt,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Vanderbilt Commodores,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,processed_inference
+mens,Vermont,Burlington,VT,"Burlington, VT",44.4761601,-73.212906,processed_inference
+mens,Vermont Catamounts,Burlington,VT,"Burlington, VT",44.4761601,-73.212906,processed_inference
+mens,Villanova,Villanova,PA,"Villanova, PA",40.0373323,-75.3490769,processed_inference
+mens,Villanova Wildcats,Villanova,PA,"Villanova, PA",40.0373323,-75.3490769,processed_inference
+mens,Virginia,Charlottesville,VA,"Charlottesville, VA",38.029306,-78.4766781,processed_inference
+mens,Virginia Cavaliers,Charlottesville,VA,"Charlottesville, VA",38.029306,-78.4766781,processed_inference
+mens,Virginia Tech,Blacksburg,VA,"Blacksburg, VA",37.2296566,-80.4136767,processed_inference
+mens,Virginia Tech Hokies,Blacksburg,VA,"Blacksburg, VA",37.2296566,-80.4136767,processed_inference
+mens,Wagner,Staten Island,NY,"Staten Island, NY",40.5834557,-74.1496048,processed_inference
+mens,Wagner Seahawks,Staten Island,NY,"Staten Island, NY",40.5834557,-74.1496048,processed_inference
+mens,Wake Forest,Winston-Salem,NC,"Winston-Salem, NC",36.0998131,-80.2440518,processed_inference
+mens,Wake Forest Demon Deacons,Winston-Salem,NC,"Winston-Salem, NC",36.0998131,-80.2440518,processed_inference
+mens,Washington,Seattle,WA,"Seattle, WA",47.6038321,-122.330062,processed_inference
+mens,Washington Huskies,Seattle,WA,"Seattle, WA",47.6038321,-122.330062,processed_inference
+mens,Washington St.,Pullman,WA,"Pullman, WA",46.7295818,-117.1799363,processed_inference
+mens,Weber St.,Ogden,UT,"Ogden, UT",41.2230048,-111.9738429,processed_inference
+mens,West Georgia,Carrollton,GA,"Carrollton, GA",33.5801103,-85.0766113,processed_inference
+mens,West Virginia,Morgantown,WV,"Morgantown, WV",39.6296809,-79.9559437,processed_inference
+mens,West Virginia Mountaineers,Morgantown,WV,"Morgantown, WV",39.6296809,-79.9559437,processed_inference
+mens,Western Carolina,Cullowhee,NC,"Cullowhee, NC",35.3137739,-83.1765814,processed_inference
+mens,Western Carolina Catamounts,Cullowhee,NC,"Cullowhee, NC",35.3137739,-83.1765814,processed_inference
+mens,Western Illinois,Macomb,IL,"Macomb, IL",40.4588934,-90.6713939,processed_inference
+mens,Western Illinois Leathernecks,Macomb,IL,"Macomb, IL",40.4588934,-90.6713939,processed_inference
+mens,Western Kentucky,Bowling Green,KY,"Bowling Green, KY",36.9929203,-86.4428677,processed_inference
+mens,Western Kentucky Hilltoppers,Bowling Green,KY,"Bowling Green, KY",36.9929203,-86.4428677,processed_inference
+mens,Western Michigan,Kalamazoo,MI,"Kalamazoo, MI",42.291707,-85.5872286,processed_inference
+mens,Western Michigan Broncos,Kalamazoo,MI,"Kalamazoo, MI",42.291707,-85.5872286,processed_inference
+mens,Wichita St.,Wichita,KS,"Wichita, KS",37.6922361,-97.3375448,processed_inference
+mens,Wichita State Shockers,Wichita,KS,"Wichita, KS",37.6922361,-97.3375448,processed_inference
+mens,William & Mary,Williamsburg,VA,"Williamsburg, VA",37.2708788,-76.7074042,processed_inference
+mens,Winthrop,Rock Hill,SC,"Rock Hill, SC",34.9248667,-81.0250784,processed_inference
+mens,Winthrop Eagles,Rock Hill,SC,"Rock Hill, SC",34.9248667,-81.0250784,processed_inference
+mens,Wisconsin,Madison,WI,"Madison, WI",43.07469,-89.3841663,processed_inference
+mens,Wofford,Spartanburg,SC,"Spartanburg, SC",34.9498007,-81.9320157,processed_inference
+mens,Wofford Terriers,Spartanburg,SC,"Spartanburg, SC",34.9498007,-81.9320157,processed_inference
+mens,Wright St.,Dayton,OH,"Dayton, OH",39.7589478,-84.1916069,processed_inference
+mens,Wyoming,Laramie,WY,"Laramie, WY",41.3116442,-105.5917876,processed_inference
+mens,Wyoming Cowboys,Laramie,WY,"Laramie, WY",41.3116442,-105.5917876,processed_inference
+mens,Xavier,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,processed_inference
+mens,Xavier Musketeers,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,processed_inference
+mens,Yale,New Haven,CT,"New Haven, CT",41.3082138,-72.9250518,processed_inference
+mens,Youngstown St.,Youngstown,OH,"Youngstown, OH",41.1035786,-80.6520161,processed_inference
+mens,Youngstown State Penguins,Youngstown,OH,"Youngstown, OH",41.1035786,-80.6520161,processed_inference
+womens,Abilene Christian Wildcats,Abilene,TX,"Abilene, TX",32.44645,-99.7475905,espn_schedule_2026
+womens,Air Force Falcons,Colorado Springs,CO,"Colorado Springs, CO",38.8339578,-104.825348,espn_schedule_2026
+womens,Akron Zips,Akron,OH,"Akron, OH",41.083064,-81.518485,espn_schedule_2026
+womens,Alabama A&M Bulldogs,Huntsville,AL,"Huntsville, AL",34.729847,-86.5859011,espn_schedule_2026
+womens,Alabama Crimson Tide,Tuscaloosa,AL,"Tuscaloosa, AL",33.2095614,-87.5675258,espn_schedule_2026
+womens,Alabama State Lady Hornets,Montgomery,AL,"Montgomery, AL",32.3777111,-86.3090775,espn_schedule_2026
+womens,Alcorn State Lady Braves,Lorman,MS,"Lorman, MS",31.8204396,-91.0501057,espn_schedule_2026
+womens,American University Eagles,Washington,DC,"Washington, DC",38.8950368,-77.0365427,espn_schedule_2026
+womens,App State Mountaineers,Boone,NC,"Boone, NC",36.2187873,-81.684004,espn_schedule_2026
+womens,Arizona State Sun Devils,Tempe,AZ,"Tempe, AZ",33.4255117,-111.940016,espn_schedule_2026
+womens,Arizona Wildcats,Tucson,AZ,"Tucson, AZ",32.2228765,-110.974847,espn_schedule_2026
+womens,Arkansas Razorbacks,Fayetteville,AR,"Fayetteville, AR",36.0625843,-94.1574328,espn_schedule_2026
+womens,Arkansas State Red Wolves,Jonesboro,AR,"Jonesboro, AR",35.8348088,-90.7045297,espn_schedule_2026
+womens,Arkansas-Pine Bluff Golden Lions,Pine Bluff,AR,"Pine Bluff, AR",34.2228884,-92.004334,espn_schedule_2026
+womens,Army Black Knights,West Point,NY,"West Point, NY",41.3926455,-73.9599242,espn_schedule_2026
+womens,Auburn Tigers,Auburn,AL,"Auburn, AL",32.6098566,-85.4807825,espn_schedule_2026
+womens,Austin Peay Governors,Clarksville,TN,"Clarksville, TN",36.5277607,-87.3588703,espn_schedule_2026
+womens,BYU Cougars,Provo,UT,"Provo, UT",40.2337289,-111.6587085,espn_schedule_2026
+womens,Ball State Cardinals,Muncie,IN,"Muncie, IN",40.1936892,-85.3865271,espn_schedule_2026
+womens,Baylor Bears,Waco,TX,"Waco, TX",31.5491899,-97.1474628,espn_schedule_2026
+womens,Bellarmine Knights,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,espn_schedule_2026
+womens,Belmont Bruins,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,espn_schedule_2026
+womens,Bethune-Cookman Wildcats,Daytona Beach,FL,"Daytona Beach, FL",29.2108147,-81.0228331,espn_schedule_2026
+womens,Binghamton Bearcats,Binghamton,NY,"Binghamton, NY",42.098698,-75.9125187,espn_schedule_2026
+womens,Boise State Broncos,Boise,ID,"Boise, ID",43.6166163,-116.200886,espn_schedule_2026
+womens,Boston College Eagles,Chestnut Hill,MA,"Chestnut Hill, MA",42.3234735,-71.1639159,espn_schedule_2026
+womens,Boston University Terriers,Boston,MA,"Boston, MA",42.3588336,-71.0578303,espn_schedule_2026
+womens,Bowling Green Falcons,Bowling Green,OH,"Bowling Green, OH",41.3747744,-83.6513229,espn_schedule_2026
+womens,Bradley Braves,Peoria,IL,"Peoria, IL",40.6938609,-89.5891008,espn_schedule_2026
+womens,Brown Bears,Providence,RI,"Providence, RI",41.8239891,-71.4128343,espn_schedule_2026
+womens,Bryant Bulldogs,Smithfield,RI,"Smithfield, RI",41.9220433,-71.549507,espn_schedule_2026
+womens,Bucknell Bison,Lewisburg,PA,"Lewisburg, PA",40.9645337,-76.8847639,espn_schedule_2026
+womens,Buffalo Bulls,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,espn_schedule_2026
+womens,Butler Bulldogs,Indianapolis,IN,"Indianapolis, IN",39.7683331,-86.1583502,espn_schedule_2026
+womens,Cal Poly Mustangs,San Luis Obispo,CA,"San Luis Obispo, CA",35.3540209,-120.375716,espn_schedule_2026
+womens,Cal State Bakersfield Roadrunners,Bakersfield,CA,"Bakersfield, CA",35.3738712,-119.019463,espn_schedule_2026
+womens,Cal State Fullerton Titans,Fullerton,CA,"Fullerton, CA",33.8708215,-117.929416,espn_schedule_2026
+womens,Cal State Northridge Matadors,Northridge,CA,"Northridge, CA",34.2345615,-118.5369316,espn_schedule_2026
+womens,California Baptist Lancers,Riverside,CA,"Riverside, CA",33.9824949,-117.374238,espn_schedule_2026
+womens,California Golden Bears,Berkeley,CA,"Berkeley, CA",37.8708393,-122.272863,espn_schedule_2026
+womens,Campbell Fighting Camels,Buies Creek,NC,"Buies Creek, NC",35.4123325,-78.7366506,espn_schedule_2026
+womens,Canisius Golden Griffins,Buffalo,NY,"Buffalo, NY",42.8864163,-78.8781493,espn_schedule_2026
+womens,Central Arkansas Sugar Bears,Conway,AR,"Conway, AR",35.0891932,-92.4398402,espn_schedule_2026
+womens,Central Connecticut Blue Devils,New Britain,CT,"New Britain, CT",41.6612104,-72.7795419,espn_schedule_2026
+womens,Central Michigan Chippewas,Mount Pleasant,MI,"Mount Pleasant, MI",43.597646,-84.7668495,espn_schedule_2026
+womens,Charleston Cougars,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,espn_schedule_2026
+womens,Charleston Southern Buccaneers,Charleston,SC,"Charleston, SC",32.7884363,-79.9399309,espn_schedule_2026
+womens,Charlotte 49ers,Charlotte,NC,"Charlotte, NC",35.2272086,-80.8430827,espn_schedule_2026
+womens,Chattanooga Mocs,Chattanooga,TN,"Chattanooga, TN",35.0457219,-85.3094883,espn_schedule_2026
+womens,Chicago State Cougars,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,espn_schedule_2026
+womens,Cincinnati Bearcats,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,espn_schedule_2026
+womens,Clemson Tigers,Clemson,SC,"Clemson, SC",34.6850749,-82.8364111,espn_schedule_2026
+womens,Cleveland State Vikings,Cleveland,OH,"Cleveland, OH",41.4996574,-81.6936772,espn_schedule_2026
+womens,Coastal Carolina Chanticleers,Conway,SC,"Conway, SC",33.8360035,-79.0478143,espn_schedule_2026
+womens,Colgate Raiders,Hamilton,NY,"Hamilton, NY",42.825646,-75.544673,espn_schedule_2026
+womens,Colorado Buffaloes,Boulder,CO,"Boulder, CO",40.0149856,-105.270545,espn_schedule_2026
+womens,Colorado State Rams,Fort Collins,CO,"Fort Collins, CO",40.5871782,-105.0770113,espn_schedule_2026
+womens,Columbia Lions,New York,NY,"New York, NY",40.7127281,-74.0060152,espn_schedule_2026
+womens,Coppin State Eagles,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,espn_schedule_2026
+womens,Cornell Big Red,Ithaca,NY,"Ithaca, NY",42.4374175,-76.5483724,espn_schedule_2026
+womens,Creighton Bluejays,Omaha,NE,"Omaha, NE",41.2587459,-95.9383758,espn_schedule_2026
+womens,Dartmouth Big Green,Hanover,NH,"Hanover, NH",43.7023545,-72.2892164,espn_schedule_2026
+womens,Davidson Wildcats,Davidson,NC,"Davidson, NC",35.7902384,-80.2115053,espn_schedule_2026
+womens,Dayton Flyers,Dayton,OH,"Dayton, OH",39.7589478,-84.1916069,espn_schedule_2026
+womens,DePaul Blue Demons,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,espn_schedule_2026
+womens,Delaware Blue Hens,Newark,DE,"Newark, DE",39.6828358,-75.7515682,espn_schedule_2026
+womens,Delaware State Hornets,Dover,DE,"Dover, DE",39.158168,-75.5243682,espn_schedule_2026
+womens,Denver Pioneers,Denver,CO,"Denver, CO",39.7392364,-104.984862,espn_schedule_2026
+womens,Detroit Mercy Titans,Detroit,MI,"Detroit, MI",42.3315509,-83.0466403,espn_schedule_2026
+womens,Drake Bulldogs,Des Moines,IA,"Des Moines, IA",41.5868654,-93.6249494,espn_schedule_2026
+womens,Drexel Dragons,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,espn_schedule_2026
+womens,Duke Blue Devils,Durham,NC,"Durham, NC",35.996653,-78.9018053,espn_schedule_2026
+womens,Duquesne Dukes,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,espn_schedule_2026
+womens,East Carolina Pirates,Greenville,NC,"Greenville, NC",35.613224,-77.3724593,espn_schedule_2026
+womens,East Tennessee State Bucs,Johnson City,TN,"Johnson City, TN",36.3167671,-82.352903,espn_schedule_2026
+womens,East Texas A&M Lions,Commerce,TX,"Commerce, TX",33.2436492,-95.9026927,espn_schedule_2026
+womens,Eastern Illinois Panthers,Charleston,IL,"Charleston, IL",39.4961458,-88.1761521,espn_schedule_2026
+womens,Eastern Kentucky Colonels,Richmond,KY,"Richmond, KY",37.7478572,-84.2946539,espn_schedule_2026
+womens,Eastern Michigan Eagles,Ypsilanti,MI,"Ypsilanti, MI",42.241051,-83.6117646,espn_schedule_2026
+womens,Eastern Washington Eagles,Cheney,WA,"Cheney, WA",47.4892246,-117.579304,espn_schedule_2026
+womens,Elon Phoenix,Elon,NC,"Elon, NC",36.1029132,-79.5066895,espn_schedule_2026
+womens,Evansville Purple Aces,Evansville,IN,"Evansville, IN",37.970495,-87.5715641,espn_schedule_2026
+womens,Fairfield Stags,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,espn_schedule_2026
+womens,Fairleigh Dickinson Knights,Hackensack,NJ,"Hackensack, NJ",40.8870781,-74.0410667,espn_schedule_2026
+womens,Florida A&M Rattlers,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,espn_schedule_2026
+womens,Florida Atlantic Owls,Boca Raton,FL,"Boca Raton, FL",26.3586885,-80.0830984,espn_schedule_2026
+womens,Florida Gators,Gainesville,FL,"Gainesville, FL",29.6519684,-82.3249846,espn_schedule_2026
+womens,Florida Gulf Coast Eagles,Fort Myers,FL,"Fort Myers, FL",26.640628,-81.8723084,espn_schedule_2026
+womens,Florida International Panthers,Miami,FL,"Miami, FL",25.7741566,-80.1935973,espn_schedule_2026
+womens,Florida State Seminoles,Tallahassee,FL,"Tallahassee, FL",30.4380832,-84.2809332,espn_schedule_2026
+womens,Fordham Rams,Bronx,NY,"Bronx, NY",40.8466508,-73.8785937,espn_schedule_2026
+womens,Fresno State Bulldogs,Fresno,CA,"Fresno, CA",36.7394421,-119.78483,espn_schedule_2026
+womens,Furman Paladins,Greenville,SC,"Greenville, SC",34.851354,-82.3984882,espn_schedule_2026
+womens,Gardner-Webb Runnin' Bulldogs,Boiling Springs,NC,"Boiling Springs, NC",35.254292,-81.6670407,espn_schedule_2026
+womens,George Mason Patriots,Fairfax,VA,"Fairfax, VA",38.8462236,-77.3063733,espn_schedule_2026
+womens,George Washington Revolutionaries,Washington,DC,"Washington, DC",38.8950368,-77.0365427,espn_schedule_2026
+womens,Georgetown Hoyas,Washington,DC,"Washington, DC",38.8950368,-77.0365427,espn_schedule_2026
+womens,Georgia Lady Bulldogs,Athens,GA,"Athens, GA",33.9597677,-83.376398,espn_schedule_2026
+womens,Georgia Southern Eagles,Statesboro,GA,"Statesboro, GA",32.4490141,-81.7832912,espn_schedule_2026
+womens,Georgia State Panthers,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,espn_schedule_2026
+womens,Georgia Tech Yellow Jackets,Atlanta,GA,"Atlanta, GA",33.7544657,-84.3898151,espn_schedule_2026
+womens,Gonzaga Bulldogs,Spokane,WA,"Spokane, WA",47.6571934,-117.42351,espn_schedule_2026
+womens,Grambling Lady Tigers,Grambling,LA,"Grambling, LA",32.5276503,-92.7140403,espn_schedule_2026
+womens,Grand Canyon Lopes,Phoenix,AZ,"Phoenix, AZ",33.4484367,-112.074141,espn_schedule_2026
+womens,Green Bay Phoenix,Green Bay,WI,"Green Bay, WI",44.5126379,-88.0125794,espn_schedule_2026
+womens,Hampton Lady Pirates,Hampton,VA,"Hampton, VA",37.0264414,-76.3442846,espn_schedule_2026
+womens,Harvard Crimson,Cambridge,MA,"Cambridge, MA",42.3656347,-71.1040018,espn_schedule_2026
+womens,Hawai'i Rainbow Wahine,Honolulu,HI,"Honolulu, HI",21.304547,-157.855676,espn_schedule_2026
+womens,High Point Panthers,High Point,NC,"High Point, NC",35.9556924,-80.0053176,espn_schedule_2026
+womens,Hofstra Pride,Hempstead,NY,"Hempstead, NY",40.6736812,-73.6190736,espn_schedule_2026
+womens,Holy Cross Crusaders,Worcester,MA,"Worcester, MA",42.2625621,-71.8018877,espn_schedule_2026
+womens,Houston Christian Huskies,Houston,TX,"Houston, TX",29.7589382,-95.3676974,espn_schedule_2026
+womens,Houston Cougars,Houston,TX,"Houston, TX",29.7589382,-95.3676974,espn_schedule_2026
+womens,Howard Bison,Washington,DC,"Washington, DC",38.8950368,-77.0365427,espn_schedule_2026
+womens,IU Indianapolis Jaguars,Indianapolis,IN,"Indianapolis, IN",39.7683331,-86.1583502,espn_schedule_2026
+womens,Idaho State Bengals,Pocatello,ID,"Pocatello, ID",42.8620287,-112.450627,espn_schedule_2026
+womens,Idaho Vandals,Moscow,ID,"Moscow, ID",46.7323875,-117.000165,espn_schedule_2026
+womens,Illinois Fighting Illini,Champaign,IL,"Champaign, IL",40.1164841,-88.2430932,espn_schedule_2026
+womens,Illinois State Redbirds,Normal,IL,"Normal, IL",40.5092961,-88.9843937,espn_schedule_2026
+womens,Incarnate Word Cardinals,San Antonio,TX,"San Antonio, TX",29.4246002,-98.4951405,espn_schedule_2026
+womens,Indiana Hoosiers,Bloomington,IN,"Bloomington, IN",39.1670396,-86.5342881,espn_schedule_2026
+womens,Indiana State Sycamores,Terre Haute,IN,"Terre Haute, IN",39.4667025,-87.4139119,espn_schedule_2026
+womens,Iona Gaels,New Rochelle,NY,"New Rochelle, NY",40.9115386,-73.7826363,espn_schedule_2026
+womens,Iowa Hawkeyes,Iowa City,IA,"Iowa City, IA",41.6612561,-91.5299106,espn_schedule_2026
+womens,Iowa State Cyclones,Ames,IA,"Ames, IA",42.0267567,-93.6170448,espn_schedule_2026
+womens,Jackson State Lady Tigers,Jackson,MS,"Jackson, MS",32.2998686,-90.1830408,espn_schedule_2026
+womens,Jacksonville Dolphins,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,espn_schedule_2026
+womens,Jacksonville State Gamecocks,Jacksonville,AL,"Jacksonville, AL",33.8137919,-85.7612872,espn_schedule_2026
+womens,James Madison Dukes,Harrisonburg,VA,"Harrisonburg, VA",38.4493315,-78.8688833,espn_schedule_2026
+womens,Kansas City Roos,Kansas City,MO,"Kansas City, MO",39.100105,-94.5781416,espn_schedule_2026
+womens,Kansas Jayhawks,Lawrence,KS,"Lawrence, KS",38.9719137,-95.2359403,espn_schedule_2026
+womens,Kansas State Wildcats,Manhattan,KS,"Manhattan, KS",39.1836082,-96.5716694,espn_schedule_2026
+womens,Kennesaw State Owls,Kennesaw,GA,"Kennesaw, GA",34.0234337,-84.6154897,espn_schedule_2026
+womens,Kent State Golden Flashes,Kent,OH,"Kent, OH",41.1513108,-81.3578047,espn_schedule_2026
+womens,Kentucky Wildcats,Lexington,KY,"Lexington, KY",38.0464066,-84.4970393,espn_schedule_2026
+womens,LSU Tigers,Baton Rouge,LA,"Baton Rouge, LA",30.4494155,-91.1869659,espn_schedule_2026
+womens,La Salle Explorers,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,espn_schedule_2026
+womens,Lafayette Leopards,Easton,PA,"Easton, PA",40.6916081,-75.2099866,espn_schedule_2026
+womens,Lamar Cardinals,Beaumont,TX,"Beaumont, TX",30.0829344,-94.0984277,espn_schedule_2026
+womens,Le Moyne Dolphins,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,espn_schedule_2026
+womens,Lehigh Mountain Hawks,Bethlehem,PA,"Bethlehem, PA",40.6178915,-75.3786521,espn_schedule_2026
+womens,Liberty Flames,Lynchburg,VA,"Lynchburg, VA",37.4137536,-79.1422464,espn_schedule_2026
+womens,Lindenwood Lions,Saint Charles,MO,"Saint Charles, MO",38.783855,-90.481677,espn_schedule_2026
+womens,Lipscomb Bisons,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,espn_schedule_2026
+womens,Little Rock Trojans,Little Rock,AR,"Little Rock, AR",34.7465071,-92.2896267,espn_schedule_2026
+womens,Long Beach State Beach,Long Beach,CA,"Long Beach, CA",33.7690164,-118.191604,espn_schedule_2026
+womens,Long Island University Sharks,Brooklyn,NY,"Brooklyn, NY",40.6526006,-73.9497211,espn_schedule_2026
+womens,Longwood Lancers,Farmville,VA,"Farmville, VA",37.3024713,-78.3923813,espn_schedule_2026
+womens,Louisiana Ragin' Cajuns,Lafayette,LA,"Lafayette, LA",30.2262187,-92.0178202,espn_schedule_2026
+womens,Louisiana Tech Lady Techsters,Ruston,LA,"Ruston, LA",32.5297498,-92.6386604,espn_schedule_2026
+womens,Louisville Cardinals,Louisville,KY,"Louisville, KY",38.2542376,-85.759407,espn_schedule_2026
+womens,Loyola Chicago Ramblers,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,espn_schedule_2026
+womens,Loyola Maryland Greyhounds,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,espn_schedule_2026
+womens,Loyola Marymount Lions,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,espn_schedule_2026
+womens,Maine Black Bears,Orono,ME,"Orono, ME",44.883607,-68.672791,espn_schedule_2026
+womens,Manhattan Jaspers,Riverdale,NY,"Riverdale, NY",40.90056,-73.90639,espn_schedule_2026
+womens,Marist Red Foxes,Poughkeepsie,NY,"Poughkeepsie, NY",41.7065539,-73.9283672,espn_schedule_2026
+womens,Marquette Golden Eagles,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,espn_schedule_2026
+womens,Marshall Thundering Herd,Huntington,WV,"Huntington, WV",38.4192496,-82.445154,espn_schedule_2026
+womens,Maryland Eastern Shore Hawks,Princess Anne,MD,"Princess Anne, MD",38.2028428,-75.6920008,espn_schedule_2026
+womens,Maryland Terrapins,College Park,MD,"College Park, MD",38.980666,-76.9369189,espn_schedule_2026
+womens,Massachusetts Minutewomen,Amherst,MA,"Amherst, MA",42.3731948,-72.5198761,espn_schedule_2026
+womens,McNeese Cowgirls,Lake Charles,LA,"Lake Charles, LA",30.2305095,-93.2169807,espn_schedule_2026
+womens,Memphis Tigers,Memphis,TN,"Memphis, TN",35.1460249,-90.0517638,espn_schedule_2026
+womens,Mercer Bears,Macon,GA,"Macon, GA",32.8406946,-83.6324022,espn_schedule_2026
+womens,Merrimack Warriors,North Andover,MA,"North Andover, MA",42.7029687,-71.1309117,espn_schedule_2026
+womens,Miami (OH) RedHawks,Oxford,OH,"Oxford, OH",39.5103048,-84.7420519,espn_schedule_2026
+womens,Miami Hurricanes,Coral Gables,FL,"Coral Gables, FL",25.7331105,-80.2585107,espn_schedule_2026
+womens,Michigan State Spartans,East Lansing,MI,"East Lansing, MI",42.7320307,-84.4721678,espn_schedule_2026
+womens,Michigan Wolverines,Ann Arbor,MI,"Ann Arbor, MI",42.2813722,-83.7484616,espn_schedule_2026
+womens,Middle Tennessee Blue Raiders,Murfreesboro,TN,"Murfreesboro, TN",35.8460396,-86.3921096,espn_schedule_2026
+womens,Milwaukee Panthers,Milwaukee,WI,"Milwaukee, WI",43.0386475,-87.9090751,espn_schedule_2026
+womens,Minnesota Golden Gophers,Minneapolis,MN,"Minneapolis, MN",44.9772995,-93.2654692,espn_schedule_2026
+womens,Mississippi State Bulldogs,Starkville,MS,"Starkville, MS",33.4638745,-88.8152074,espn_schedule_2026
+womens,Mississippi Valley State Devilettes,Itta Bena,MS,"Itta Bena, MS",33.4951269,-90.3229458,espn_schedule_2026
+womens,Missouri State Bears,Springfield,MO,"Springfield, MO",37.2081729,-93.2922715,espn_schedule_2026
+womens,Missouri Tigers,Columbia,MO,"Columbia, MO",38.951883,-92.3337366,espn_schedule_2026
+womens,Monmouth Hawks,West Long Branch,NJ,"West Long Branch, NJ",40.2904235,-74.0172558,espn_schedule_2026
+womens,Montana Lady Griz,Missoula,MT,"Missoula, MT",46.8701049,-113.995267,espn_schedule_2026
+womens,Montana State Bobcats,Bozeman,MT,"Bozeman, MT",45.6794293,-111.044047,espn_schedule_2026
+womens,Morehead State Eagles,Morehead,KY,"Morehead, KY",38.1839705,-83.4326841,espn_schedule_2026
+womens,Morgan State Lady Bears,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,espn_schedule_2026
+womens,Mount St. Mary's Mountaineers,Emmitsburg,MD,"Emmitsburg, MD",39.7045417,-77.3269307,espn_schedule_2026
+womens,Murray State Racers,Murray,KY,"Murray, KY",36.6106122,-88.3021092,espn_schedule_2026
+womens,NC State Wolfpack,Raleigh,NC,"Raleigh, NC",35.7803977,-78.6390989,espn_schedule_2026
+womens,NJIT Highlanders,Newark,NJ,"Newark, NJ",40.735657,-74.1723667,espn_schedule_2026
+womens,Navy Midshipmen,Annapolis,MD,"Annapolis, MD",38.9786401,-76.492786,espn_schedule_2026
+womens,Nebraska Cornhuskers,Lincoln,NE,"Lincoln, NE",40.8088861,-96.7077751,espn_schedule_2026
+womens,Nevada Wolf Pack,Reno,NV,"Reno, NV",39.5261788,-119.812658,espn_schedule_2026
+womens,New Hampshire Wildcats,Durham,NH,"Durham, NH",43.134564,-70.927048,espn_schedule_2026
+womens,New Haven Chargers,West Haven,CT,"West Haven, CT",41.2706527,-72.9470471,espn_schedule_2026
+womens,New Mexico Lobos,Albuquerque,NM,"Albuquerque, NM",35.0841034,-106.650985,espn_schedule_2026
+womens,New Mexico State Aggies,Las Cruces,NM,"Las Cruces, NM",32.3140354,-106.779807,espn_schedule_2026
+womens,New Orleans Privateers,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,espn_schedule_2026
+womens,Niagara Purple Eagles,Niagara Falls,NY,"Niagara Falls, NY",43.084841,-79.0701786,espn_schedule_2026
+womens,Nicholls Colonels,Thibodaux,LA,"Thibodaux, LA",29.7957633,-90.822871,espn_schedule_2026
+womens,Norfolk State Spartans,Norfolk,VA,"Norfolk, VA",36.8493695,-76.2899539,espn_schedule_2026
+womens,North Alabama Lions,Florence,AL,"Florence, AL",34.79981,-87.677251,espn_schedule_2026
+womens,North Carolina A&T Aggies,Greensboro,NC,"Greensboro, NC",36.0726355,-79.7919754,espn_schedule_2026
+womens,North Carolina Central Eagles,Durham,NC,"Durham, NC",35.996653,-78.9018053,espn_schedule_2026
+womens,North Carolina Tar Heels,Chapel Hill,NC,"Chapel Hill, NC",35.9131542,-79.05578,espn_schedule_2026
+womens,North Dakota Fighting Hawks,Grand Forks,ND,"Grand Forks, ND",47.9252104,-97.0306325,espn_schedule_2026
+womens,North Dakota State Bison,Fargo,ND,"Fargo, ND",46.877229,-96.789821,espn_schedule_2026
+womens,North Florida Ospreys,Jacksonville,FL,"Jacksonville, FL",30.3262247,-81.6579179,espn_schedule_2026
+womens,North Texas Mean Green,Denton,TX,"Denton, TX",33.1838787,-97.1413417,espn_schedule_2026
+womens,Northeastern Huskies,Boston,MA,"Boston, MA",42.3588336,-71.0578303,espn_schedule_2026
+womens,Northern Arizona Lumberjacks,Flagstaff,AZ,"Flagstaff, AZ",35.1987522,-111.651822,espn_schedule_2026
+womens,Northern Colorado Bears,Greeley,CO,"Greeley, CO",40.4233142,-104.7091322,espn_schedule_2026
+womens,Northern Illinois Huskies,Dekalb,IL,"Dekalb, IL",41.8903447,-88.7713953,espn_schedule_2026
+womens,Northern Iowa Panthers,Cedar Falls,IA,"Cedar Falls, IA",42.5361805,-92.447758,espn_schedule_2026
+womens,Northern Kentucky Norse,Highland Heights,KY,"Highland Heights, KY",39.0330902,-84.4521512,espn_schedule_2026
+womens,Northwestern State Lady Demons,Natchitoches,LA,"Natchitoches, LA",31.7606732,-93.0860209,espn_schedule_2026
+womens,Northwestern Wildcats,Evanston,IL,"Evanston, IL",42.0470043,-87.6846053,espn_schedule_2026
+womens,Notre Dame Fighting Irish,South Bend,IN,"South Bend, IN",41.6833813,-86.2500066,espn_schedule_2026
+womens,Oakland Golden Grizzlies,Rochester,MI,"Rochester, MI",42.680588,-83.1338214,espn_schedule_2026
+womens,Ohio Bobcats,Athens,OH,"Athens, OH",39.3575616,-82.0609557,espn_schedule_2026
+womens,Ohio State Buckeyes,Columbus,OH,"Columbus, OH",39.9622601,-83.0007065,espn_schedule_2026
+womens,Oklahoma Sooners,Norman,OK,"Norman, OK",35.2225717,-97.4394816,espn_schedule_2026
+womens,Oklahoma State Cowgirls,Stillwater,OK,"Stillwater, OK",36.1156306,-97.0585717,espn_schedule_2026
+womens,Old Dominion Monarchs,Norfolk,VA,"Norfolk, VA",36.8493695,-76.2899539,espn_schedule_2026
+womens,Ole Miss Rebels,Oxford,MS,"Oxford, MS",34.3663773,-89.5187664,espn_schedule_2026
+womens,Omaha Mavericks,Omaha,NE,"Omaha, NE",41.2587459,-95.9383758,espn_schedule_2026
+womens,Oral Roberts Golden Eagles,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,espn_schedule_2026
+womens,Oregon Ducks,Eugene,OR,"Eugene, OR",44.0505054,-123.0950506,espn_schedule_2026
+womens,Oregon State Beavers,Corvallis,OR,"Corvallis, OR",44.5645659,-123.2620435,espn_schedule_2026
+womens,Pacific Tigers,Stockton,CA,"Stockton, CA",37.9577016,-121.290779,espn_schedule_2026
+womens,Penn State Lady Lions,University Park,PA,"University Park, PA",40.8128971,-77.8710571,espn_schedule_2026
+womens,Pennsylvania Quakers,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,espn_schedule_2026
+womens,Pepperdine Waves,Malibu,CA,"Malibu, CA",34.035591,-118.689423,espn_schedule_2026
+womens,Pittsburgh Panthers,Pittsburgh,PA,"Pittsburgh, PA",40.4406968,-80.0025666,espn_schedule_2026
+womens,Portland Pilots,Portland,OR,"Portland, OR",45.5202471,-122.674194,espn_schedule_2026
+womens,Portland State Vikings,Portland,OR,"Portland, OR",45.5202471,-122.674194,espn_schedule_2026
+womens,Prairie View A&M Lady Panthers,Prairie View,TX,"Prairie View, TX",30.0857916,-95.9907058,espn_schedule_2026
+womens,Presbyterian Blue Hose,Clinton,SC,"Clinton, SC",34.4726277,-81.8806562,espn_schedule_2026
+womens,Princeton Tigers,Princeton,NJ,"Princeton, NJ",40.3496953,-74.6597376,espn_schedule_2026
+womens,Providence Friars,Providence,RI,"Providence, RI",41.8239891,-71.4128343,espn_schedule_2026
+womens,Purdue Boilermakers,West Lafayette,IN,"West Lafayette, IN",40.4258686,-86.9080655,espn_schedule_2026
+womens,Purdue Fort Wayne Mastodons,Fort Wayne,IN,"Fort Wayne, IN",41.0799898,-85.1386015,espn_schedule_2026
+womens,Queens University Royals,Charlotte,NC,"Charlotte, NC",35.2272086,-80.8430827,espn_schedule_2026
+womens,Quinnipiac Bobcats,Hamden,CT,"Hamden, CT",41.3836233,-72.9020069,espn_schedule_2026
+womens,Radford Highlanders,Radford,VA,"Radford, VA",37.1343148,-80.5749169,espn_schedule_2026
+womens,Rhode Island Rams,Kingston,RI,"Kingston, RI",41.4729285,-71.5223479,espn_schedule_2026
+womens,Rice Owls,Houston,TX,"Houston, TX",29.7589382,-95.3676974,espn_schedule_2026
+womens,Richmond Spiders,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,espn_schedule_2026
+womens,Rider Broncs,Lawrenceville,NJ,"Lawrenceville, NJ",40.3009876,-74.7373728,espn_schedule_2026
+womens,Robert Morris Colonials,Moon Township,PA,"Moon Township, PA",40.5061,-80.2082,espn_schedule_2026
+womens,Rutgers Scarlet Knights,Piscataway,NJ,"Piscataway, NJ",40.5464326,-74.4660542,espn_schedule_2026
+womens,SE Louisiana Lady Lions,Hammond,LA,"Hammond, LA",30.5043583,-90.4611995,espn_schedule_2026
+womens,SIU Edwardsville Cougars,Edwardsville,IL,"Edwardsville, IL",38.8114364,-89.953157,espn_schedule_2026
+womens,SMU Mustangs,Dallas,TX,"Dallas, TX",32.7762719,-96.7968559,espn_schedule_2026
+womens,Sacramento State Hornets,Sacramento,CA,"Sacramento, CA",38.5810606,-121.493895,espn_schedule_2026
+womens,Sacred Heart Pioneers,Fairfield,CT,"Fairfield, CT",41.1412078,-73.2637258,espn_schedule_2026
+womens,Saint Francis Red Flash,Loretto,PA,"Loretto, PA",40.5029161,-78.6314019,espn_schedule_2026
+womens,Saint Joseph's Hawks,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,espn_schedule_2026
+womens,Saint Louis Billikens,St. Louis,MO,"St. Louis, MO",38.6254063,-90.190009,espn_schedule_2026
+womens,Saint Mary's Gaels,Moraga,CA,"Moraga, CA",37.834897,-122.12883,espn_schedule_2026
+womens,Saint Peter's Peacocks,Jersey City,NJ,"Jersey City, NJ",40.7215682,-74.047455,espn_schedule_2026
+womens,Sam Houston Bearkats,Huntsville,TX,"Huntsville, TX",30.7235263,-95.5507771,espn_schedule_2026
+womens,Samford Bulldogs,Homewood,AL,"Homewood, AL",33.4737098,-86.8084509,espn_schedule_2026
+womens,San Diego State Aztecs,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,espn_schedule_2026
+womens,San Diego Toreros,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,espn_schedule_2026
+womens,San Francisco Dons,San Francisco,CA,"San Francisco, CA",37.7879363,-122.4075201,espn_schedule_2026
+womens,San José State Spartans,San Jose,CA,"San Jose, CA",37.3361663,-121.890591,espn_schedule_2026
+womens,Santa Clara Broncos,Santa Clara,CA,"Santa Clara, CA",37.3541132,-121.955174,espn_schedule_2026
+womens,Seattle U Redhawks,Seattle,WA,"Seattle, WA",47.6038321,-122.330062,espn_schedule_2026
+womens,Seton Hall Pirates,South Orange,NJ,"South Orange, NJ",40.7474966,-74.2635376,espn_schedule_2026
+womens,Siena Saints,Loudonville,NY,"Loudonville, NY",43.0,-75.0,espn_schedule_2026
+womens,South Alabama Jaguars,Mobile,AL,"Mobile, AL",30.6913462,-88.0437509,espn_schedule_2026
+womens,South Carolina Gamecocks,Columbia,SC,"Columbia, SC",34.000754,-81.0352313,espn_schedule_2026
+womens,South Carolina State Lady Bulldogs,Orangeburg,SC,"Orangeburg, SC",33.4054944,-80.778429,espn_schedule_2026
+womens,South Carolina Upstate Spartans,Spartanburg,SC,"Spartanburg, SC",34.9498007,-81.9320157,espn_schedule_2026
+womens,South Dakota Coyotes,Vermillion,SD,"Vermillion, SD",42.7795273,-96.929101,espn_schedule_2026
+womens,South Dakota State Jackrabbits,Brookings,SD,"Brookings, SD",44.311461,-96.79844,espn_schedule_2026
+womens,South Florida Bulls,Tampa,FL,"Tampa, FL",27.9449854,-82.4583107,espn_schedule_2026
+womens,Southeast Missouri State Redhawks,Cape Girardeau,MO,"Cape Girardeau, MO",37.304731,-89.5176418,espn_schedule_2026
+womens,Southern Illinois Salukis,Carbondale,IL,"Carbondale, IL",37.7274692,-89.216655,espn_schedule_2026
+womens,Southern Indiana Screaming Eagles,Evansville,IN,"Evansville, IN",37.970495,-87.5715641,espn_schedule_2026
+womens,Southern Jaguars,Baton Rouge,LA,"Baton Rouge, LA",30.4494155,-91.1869659,espn_schedule_2026
+womens,Southern Miss Lady Eagles,Hattiesburg,MS,"Hattiesburg, MS",31.3271189,-89.2903392,espn_schedule_2026
+womens,Southern Utah Thunderbirds,Cedar City,UT,"Cedar City, UT",37.6774238,-113.061827,espn_schedule_2026
+womens,St. Bonaventure Bonnies,Saint Bonaventure,NY,"Saint Bonaventure, NY",42.08047,-78.4772369,espn_schedule_2026
+womens,St. John's Red Storm,Queens,NY,"Queens, NY",40.7135078,-73.8283132,espn_schedule_2026
+womens,St. Thomas-Minnesota Tommies,Saint Paul,MN,"Saint Paul, MN",44.9497487,-93.0931028,espn_schedule_2026
+womens,Stanford Cardinal,Stanford,CA,"Stanford, CA",37.4265407,-122.1703055,espn_schedule_2026
+womens,Stephen F. Austin Ladyjacks,Nacogdoches,TX,"Nacogdoches, TX",31.5970503,-94.5927451,espn_schedule_2026
+womens,Stetson Hatters,DeLand,FL,"DeLand, FL",29.0281051,-81.3034183,espn_schedule_2026
+womens,Stonehill Skyhawks,South Easton,MA,"South Easton, MA",42.0473222,-71.0814358,espn_schedule_2026
+womens,Stony Brook Seawolves,Stony Brook,NY,"Stony Brook, NY",40.908482,-73.1325471,espn_schedule_2026
+womens,Syracuse Orange,Syracuse,NY,"Syracuse, NY",43.0481221,-76.1474244,espn_schedule_2026
+womens,TCU Horned Frogs,Fort Worth,TX,"Fort Worth, TX",32.753177,-97.3327459,espn_schedule_2026
+womens,Tarleton State Texans,Stephenville,TX,"Stephenville, TX",32.2201387,-98.2045388,espn_schedule_2026
+womens,Temple Owls,Philadelphia,PA,"Philadelphia, PA",39.9527237,-75.1635262,espn_schedule_2026
+womens,Tennessee Lady Volunteers,Knoxville,TN,"Knoxville, TN",35.9603948,-83.9210261,espn_schedule_2026
+womens,Tennessee State Lady Tigers,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,espn_schedule_2026
+womens,Tennessee Tech Golden Eagles,Cookeville,TN,"Cookeville, TN",36.1623886,-85.4997057,espn_schedule_2026
+womens,Texas A&M Aggies,College Station,TX,"College Station, TX",30.6183939,-96.3455991,espn_schedule_2026
+womens,Texas A&M-Corpus Christi Islanders,Corpus Christi,TX,"Corpus Christi, TX",27.7635302,-97.4033191,espn_schedule_2026
+womens,Texas Longhorns,Austin,TX,"Austin, TX",30.2711286,-97.7436995,espn_schedule_2026
+womens,Texas Southern Tigers,Houston,TX,"Houston, TX",29.7589382,-95.3676974,espn_schedule_2026
+womens,Texas State Bobcats,San Marcos,TX,"San Marcos, TX",29.8826436,-97.9405828,espn_schedule_2026
+womens,Texas Tech Lady Raiders,Lubbock,TX,"Lubbock, TX",33.5855677,-101.8470215,espn_schedule_2026
+womens,Toledo Rockets,Toledo,OH,"Toledo, OH",41.6529143,-83.5378173,espn_schedule_2026
+womens,Towson Tigers,Towson,MD,"Towson, MD",39.3964591,-76.6148148,espn_schedule_2026
+womens,Troy Trojans,Troy,AL,"Troy, AL",31.8087678,-85.969951,espn_schedule_2026
+womens,Tulane Green Wave,New Orleans,LA,"New Orleans, LA",29.9561422,-90.0733934,espn_schedule_2026
+womens,Tulsa Golden Hurricane,Tulsa,OK,"Tulsa, OK",36.1563122,-95.9927516,espn_schedule_2026
+womens,UAB Blazers,Birmingham,AL,"Birmingham, AL",33.5206824,-86.8024326,espn_schedule_2026
+womens,UAlbany Great Danes,Albany,NY,"Albany, NY",42.6511674,-73.754968,espn_schedule_2026
+womens,UC Davis Aggies,Davis,CA,"Davis, CA",38.5435526,-121.739005,espn_schedule_2026
+womens,UC Irvine Anteaters,Irvine,CA,"Irvine, CA",33.6856969,-117.825981,espn_schedule_2026
+womens,UC Riverside Highlanders,Riverside,CA,"Riverside, CA",33.9824949,-117.374238,espn_schedule_2026
+womens,UC San Diego Tritons,San Diego,CA,"San Diego, CA",32.7174202,-117.162772,espn_schedule_2026
+womens,UC Santa Barbara Gauchos,Santa Barbara,CA,"Santa Barbara, CA",34.4221319,-119.702667,espn_schedule_2026
+womens,UCF Knights,Orlando,FL,"Orlando, FL",28.5421218,-81.379045,espn_schedule_2026
+womens,UCLA Bruins,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,espn_schedule_2026
+womens,UConn Huskies,Storrs,CT,"Storrs, CT",41.8085955,-72.2512807,espn_schedule_2026
+womens,UIC Flames,Chicago,IL,"Chicago, IL",41.8755616,-87.6244212,espn_schedule_2026
+womens,UL Monroe Warhawks,Monroe,LA,"Monroe, LA",32.5025471,-92.116219,espn_schedule_2026
+womens,UMBC Retrievers,Baltimore,MD,"Baltimore, MD",39.2908816,-76.610759,espn_schedule_2026
+womens,UMass Lowell River Hawks,Lowell,MA,"Lowell, MA",42.6414437,-71.3085329,espn_schedule_2026
+womens,UNC Asheville Bulldogs,Asheville,NC,"Asheville, NC",35.595363,-82.5508407,espn_schedule_2026
+womens,UNC Greensboro Spartans,Greensboro,NC,"Greensboro, NC",36.0726355,-79.7919754,espn_schedule_2026
+womens,UNC Wilmington Seahawks,Wilmington,NC,"Wilmington, NC",34.2352853,-77.9487284,espn_schedule_2026
+womens,UNLV Lady Rebels,Las Vegas,NV,"Las Vegas, NV",36.1674263,-115.1484131,espn_schedule_2026
+womens,USC Trojans,Los Angeles,CA,"Los Angeles, CA",34.0536909,-118.242766,espn_schedule_2026
+womens,UT Arlington Mavericks,Arlington,TX,"Arlington, TX",32.7355816,-97.1071186,espn_schedule_2026
+womens,UT Martin Skyhawks,Martin,TN,"Martin, TN",36.3432777,-88.8503514,espn_schedule_2026
+womens,UT Rio Grande Valley Vaqueros,Edinburg,TX,"Edinburg, TX",26.3013982,-98.1624501,espn_schedule_2026
+womens,UTEP Miners,El Paso,TX,"El Paso, TX",31.7601001,-106.4870476,espn_schedule_2026
+womens,UTSA Roadrunners,San Antonio,TX,"San Antonio, TX",29.4246002,-98.4951405,espn_schedule_2026
+womens,Utah State Aggies,Logan,UT,"Logan, UT",41.7313063,-111.834914,espn_schedule_2026
+womens,Utah Tech Trailblazers,St. George,UT,"St. George, UT",37.1098772,-113.5832063,espn_schedule_2026
+womens,Utah Utes,Salt Lake City,UT,"Salt Lake City, UT",40.7596198,-111.886797,espn_schedule_2026
+womens,Utah Valley Wolverines,Orem,UT,"Orem, UT",40.2981599,-111.6944313,espn_schedule_2026
+womens,VCU Rams,Richmond,VA,"Richmond, VA",37.5385087,-77.43428,espn_schedule_2026
+womens,Valparaiso Beacons,Valparaiso,IN,"Valparaiso, IN",41.4672552,-87.0604487,espn_schedule_2026
+womens,Vanderbilt Commodores,Nashville,TN,"Nashville, TN",36.1622767,-86.7742984,espn_schedule_2026
+womens,Vermont Catamounts,Burlington,VT,"Burlington, VT",44.4761601,-73.212906,espn_schedule_2026
+womens,Villanova Wildcats,Villanova,PA,"Villanova, PA",40.0373323,-75.3490769,espn_schedule_2026
+womens,Virginia Cavaliers,Charlottesville,VA,"Charlottesville, VA",38.029306,-78.4766781,espn_schedule_2026
+womens,Virginia Tech Hokies,Blacksburg,VA,"Blacksburg, VA",37.2296566,-80.4136767,espn_schedule_2026
+womens,Wagner Seahawks,Staten Island,NY,"Staten Island, NY",40.5834557,-74.1496048,espn_schedule_2026
+womens,Wake Forest Demon Deacons,Winston-Salem,NC,"Winston-Salem, NC",36.0998131,-80.2440518,espn_schedule_2026
+womens,Washington Huskies,Seattle,WA,"Seattle, WA",47.6038321,-122.330062,espn_schedule_2026
+womens,Washington State Cougars,Pullman,WA,"Pullman, WA",46.7295818,-117.1799363,espn_schedule_2026
+womens,Weber State Wildcats,Ogden,UT,"Ogden, UT",41.2230048,-111.9738429,espn_schedule_2026
+womens,West Virginia Mountaineers,Morgantown,WV,"Morgantown, WV",39.6296809,-79.9559437,espn_schedule_2026
+womens,Western Carolina Catamounts,Cullowhee,NC,"Cullowhee, NC",35.3137739,-83.1765814,espn_schedule_2026
+womens,Western Illinois Leathernecks,Macomb,IL,"Macomb, IL",40.4588934,-90.6713939,espn_schedule_2026
+womens,Western Kentucky Lady Toppers,Bowling Green,KY,"Bowling Green, KY",36.9929203,-86.4428677,espn_schedule_2026
+womens,Western Michigan Broncos,Kalamazoo,MI,"Kalamazoo, MI",42.291707,-85.5872286,espn_schedule_2026
+womens,Wichita State Shockers,Wichita,KS,"Wichita, KS",37.6922361,-97.3375448,espn_schedule_2026
+womens,William & Mary Tribe,Williamsburg,VA,"Williamsburg, VA",37.2708788,-76.7074042,espn_schedule_2026
+womens,Winthrop Eagles,Rock Hill,SC,"Rock Hill, SC",34.9248667,-81.0250784,espn_schedule_2026
+womens,Wisconsin Badgers,Madison,WI,"Madison, WI",43.07469,-89.3841663,espn_schedule_2026
+womens,Wofford Terriers,Spartanburg,SC,"Spartanburg, SC",34.9498007,-81.9320157,espn_schedule_2026
+womens,Wright State Raiders,Dayton,OH,"Dayton, OH",39.7589478,-84.1916069,espn_schedule_2026
+womens,Wyoming Cowgirls,Laramie,WY,"Laramie, WY",41.3116442,-105.5917876,espn_schedule_2026
+womens,Xavier Musketeers,Cincinnati,OH,"Cincinnati, OH",39.1014537,-84.5124602,espn_schedule_2026
+womens,Yale Bulldogs,New Haven,CT,"New Haven, CT",41.3082138,-72.9250518,espn_schedule_2026
+womens,Youngstown State Penguins,Youngstown,OH,"Youngstown, OH",41.1035786,-80.6520161,espn_schedule_2026

@@ -1,4 +1,4 @@
-"""Tests for model.py: cover_prob_at_spread and load_model."""
+"""Tests for model.py: temporal split helpers, cover_prob_at_spread, and load_model."""
 
 import math
 import tempfile
@@ -6,8 +6,113 @@ import os
 import pytest
 import joblib
 import numpy as np
+import pandas as pd
 
-from model import cover_prob_at_spread, load_model
+from model import (
+    FEATURES,
+    TimeAwareCalibratedGBM,
+    cover_prob_at_spread,
+    load_model,
+    prepare_time_ordered_training_frame,
+    time_series_train_test_split,
+)
+
+
+def test_production_features_keep_neutral_drop_distance():
+    assert "is_neutral" in FEATURES
+    assert "distance_advantage" not in FEATURES
+
+
+def test_calibrated_gbm_pickles_under_model_module():
+    assert TimeAwareCalibratedGBM.__module__ == "model"
+
+
+def test_calibrated_gbm_exposes_feature_names_after_fit():
+    X = pd.DataFrame({"a": [0.0, 1.0, 0.0, 1.0], "b": [1.0, 0.0, 1.0, 0.0]})
+    y = [0, 1, 0, 1]
+    clf = TimeAwareCalibratedGBM(min_calibration_rows=9999)
+    clf.fit(X, y)
+    assert clf.feature_names_in_.tolist() == ["a", "b"]
+    assert clf.n_features_in_ == 2
+
+
+class TestTimeAwareTrainingSplit:
+    def test_prepare_frame_sorts_by_date_not_input_order(self):
+        df = pd.DataFrame(
+            {
+                "date": ["2026-01-03", "2026-01-01", "2026-01-02"],
+                "team": ["A", "A", "A"],
+                "opponent": ["B", "B", "B"],
+                "is_home": [1, 1, 1],
+                "is_neutral": [0, 0, 0],
+                "distance_advantage": [0.1, 0.2, 0.3],
+                "spread": [1.0, 2.0, 3.0],
+                "rest_days": [2, 2, 2],
+                "diff_eFG": [0.0, 0.0, 0.0],
+                "diff_Rebound": [0.0, 0.0, 0.0],
+                "diff_TO": [0.0, 0.0, 0.0],
+                "momentum_gap": [0.0, 0.0, 0.0],
+                "roll5_cover_margin": [0.0, 0.0, 0.0],
+                "prev_games_played": [1, 1, 1],
+                "opp_win_pct": [0.5, 0.5, 0.5],
+                "prev_blowout_rate": [0.0, 0.0, 0.0],
+                "prev_roll5_margin": [0.0, 0.0, 0.0],
+                "prev_volatility": [1.0, 1.0, 1.0],
+                "spread_abs": [1.0, 2.0, 3.0],
+                "spread_squared": [1.0, 4.0, 9.0],
+                "ats_win": [1, 0, 1],
+            }
+        )
+        result = prepare_time_ordered_training_frame(df, ["is_home", "is_neutral", "distance_advantage", "spread", "rest_days", "diff_eFG", "diff_Rebound", "diff_TO", "momentum_gap", "roll5_cover_margin", "prev_games_played", "opp_win_pct", "prev_blowout_rate", "prev_roll5_margin", "prev_volatility", "spread_abs", "spread_squared"], "ats_win")
+        assert result["date"].tolist() == ["2026-01-01", "2026-01-02", "2026-01-03"]
+
+    def test_time_series_split_keeps_latest_rows_in_test_set(self):
+        df = pd.DataFrame(
+            {
+                "date": pd.to_datetime(
+                    [
+                        "2026-01-01", "2026-01-01",
+                        "2026-01-02", "2026-01-02",
+                        "2026-01-03", "2026-01-03",
+                        "2026-01-04", "2026-01-04",
+                    ]
+                ),
+                "team": ["A", "B", "C", "D", "E", "F", "G", "H"],
+                "opponent": ["B", "A", "D", "C", "F", "E", "H", "G"],
+                "is_home": [1, 0, 1, 0, 1, 0, 1, 0],
+                "is_neutral": [0] * 8,
+                "distance_advantage": np.linspace(0, 1, 8),
+                "spread": np.arange(8, dtype=float),
+                "rest_days": [2] * 8,
+                "diff_eFG": [0.0] * 8,
+                "diff_Rebound": [0.0] * 8,
+                "diff_TO": [0.0] * 8,
+                "momentum_gap": [0.0] * 8,
+                "roll5_cover_margin": [0.0] * 8,
+                "prev_games_played": np.arange(8),
+                "opp_win_pct": [0.5] * 8,
+                "prev_blowout_rate": [0.0] * 8,
+                "prev_roll5_margin": [0.0] * 8,
+                "prev_volatility": [1.0] * 8,
+                "spread_abs": np.arange(8, dtype=float),
+                "spread_squared": np.arange(8, dtype=float) ** 2,
+                "ats_win": [1, 0, 0, 1, 1, 0, 0, 1],
+            }
+        )
+        features = ["is_home", "is_neutral", "distance_advantage", "spread", "rest_days", "diff_eFG", "diff_Rebound", "diff_TO", "momentum_gap", "roll5_cover_margin", "prev_games_played", "opp_win_pct", "prev_blowout_rate", "prev_roll5_margin", "prev_volatility", "spread_abs", "spread_squared"]
+        prepared = prepare_time_ordered_training_frame(df, features, "ats_win")
+        X_train, X_test, y_train, y_test = time_series_train_test_split(
+            prepared, features, "ats_win", test_size=0.25, bet_level_test=True
+        )
+        assert len(X_train) == 6  # first 3 games, both rows
+        assert len(X_test) == 1   # latest game, home row only
+        assert X_test["spread"].tolist() == [6.0]
+        assert y_test.tolist() == [0]
+
+    def test_prepare_frame_requires_date_column(self):
+        df = pd.DataFrame({"ats_win": [1], "is_home": [1]})
+        with pytest.raises(ValueError):
+            prepare_time_ordered_training_frame(df, ["is_home"], "ats_win")
 
 
 class TestCoverProbAtSpread:

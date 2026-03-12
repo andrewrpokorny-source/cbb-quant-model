@@ -23,9 +23,18 @@ from betting import calculate_edge, get_rating, recommended_units, EdgeRating, S
 from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
+from kalshi_game_archive import append_archive_records as append_kalshi_game_archive_records
+from kalshi_game_archive import build_game_archive_record
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
+from odds_archive import append_archive_records, build_archive_record
+from venue import (
+    build_team_home_locations,
+    compute_distance_advantage,
+    load_geocode_cache,
+    save_geocode_cache,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,6 +53,13 @@ _latest_game_predictions = {}
 # Games that need manual spread entry (no ESPN spread available)
 _games_needing_spreads = {}
 _RUNTIME_LOCK = threading.Lock()
+
+GAME_STRONG_MIN_PROB = 0.55
+GAME_STRONG_MIN_PRICE = 10
+GAME_STRONG_MAX_PRICE = 90
+GAME_GOOD_MIN_PROB = 0.52
+GAME_GOOD_MIN_PRICE = 15
+GAME_GOOD_MAX_PRICE = 85
 
 # --- TEAM MAP (loaded from config file) ---
 TEAM_MAP_FILE = os.path.join(BASE_DIR, "team_map.json")
@@ -182,6 +198,11 @@ def fetch_schedule():
                     print(f"         Could not parse spread from: {details!r}")
                     spread_val = 0.0
 
+                # Neutral site + venue
+                is_neutral = int(comp.get('neutralSite', False))
+                venue = comp.get('venue', {})
+                venue_addr = venue.get('address', {})
+
                 game_id = event['id']
                 if not any(g['id'] == game_id for g in games):
                     games.append({
@@ -191,7 +212,10 @@ def fetch_schedule():
                         'spread': spread_val,  # May be 0 if ESPN doesn't have it
                         'date': game_date,
                         'raw_odds': raw_odds,
-                        'has_espn_spread': spread_val != 0.0
+                        'has_espn_spread': spread_val != 0.0,
+                        'is_neutral': is_neutral,
+                        'venue_city': venue_addr.get('city', ''),
+                        'venue_state': venue_addr.get('state', '')
                     })
                     
         except requests.RequestException as e:
@@ -259,7 +283,11 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         if not spread_markets:
             return None, None
 
-        # Get the first spread market and extract info
+        if len(spread_markets) > 1:
+            # Multiple spread contracts (alt lines) -- can't reliably
+            # identify the main line without volume data, so decline.
+            return None, None
+
         market = spread_markets[0]
         floor_strike = market.get("floor_strike", 0)
         title = market.get("title", "").lower()
@@ -482,6 +510,32 @@ def _infer_yes_team_from_game_market(market, home_team, away_team):
     return None
 
 
+def get_kalshi_game_live_rating(edge, side_prob, price_cents):
+    """Apply live GAME filters so edge alone cannot promote tail punts."""
+    if edge is None or side_prob is None or price_cents is None:
+        return EdgeRating.PASS.value
+
+    edge = float(edge)
+    side_prob = float(side_prob)
+    price_cents = float(price_cents)
+
+    if (
+        edge >= 0.08
+        and side_prob >= GAME_STRONG_MIN_PROB
+        and GAME_STRONG_MIN_PRICE <= price_cents <= GAME_STRONG_MAX_PRICE
+    ):
+        return EdgeRating.STRONG.value
+
+    if (
+        edge >= 0.04
+        and side_prob >= GAME_GOOD_MIN_PROB
+        and GAME_GOOD_MIN_PRICE <= price_cents <= GAME_GOOD_MAX_PRICE
+    ):
+        return EdgeRating.GOOD.value
+
+    return EdgeRating.PASS.value
+
+
 def get_kalshi_game_edge(
     client,
     mapper,
@@ -582,8 +636,16 @@ def get_kalshi_game_edge(
         if best_choice is None:
             return result
 
-        rating = get_rating(best_choice["edge"])
-        units = recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
+        rating = get_kalshi_game_live_rating(
+            best_choice["edge"],
+            best_choice["prob"],
+            best_choice["price"],
+        )
+        units = (
+            recommended_units(best_choice["edge"], kalshi_implied_prob(best_choice["price"]))
+            if rating in VALUE_RATINGS
+            else 0.0
+        )
         return {
             "Kalshi_Yes": best_choice["yes_price"],
             "Kalshi_No": best_choice["no_price"],
@@ -591,7 +653,7 @@ def get_kalshi_game_edge(
             "Kalshi_Fee": round(kalshi_fee_cents(best_choice["price"]), 1),
             "Edge": best_choice["edge"],
             "Edge_Pct": f"{best_choice['edge'] * 100:+.1f}%",
-            "Rating": rating.value,
+            "Rating": rating,
             "Units": units,
             "Kalshi_Ticker": best_choice["ticker"],
             "Kalshi_Side": best_choice["side"],
@@ -716,8 +778,6 @@ def main(spread_overrides=None, league="mens"):
     if spread_overrides is None:
         spread_overrides = {}
 
-    print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, 15 features) ---")
-
     # Get current Eastern time for dated file naming
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
@@ -725,6 +785,11 @@ def main(spread_overrides=None, league="mens"):
     # Load model + sigma
     try:
         model, sigma = load_model(league=ACTIVE_LEAGUE)
+        feature_count = len(getattr(model, "feature_names_in_", [])) or "unknown"
+        print(
+            f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, "
+            f"{feature_count} features) ---"
+        )
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -766,6 +831,12 @@ def main(spread_overrides=None, league="mens"):
     except (FileNotFoundError, EOFError, IOError, ValueError) as e:
         print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
+    # Build venue lookups for neutral-site / distance features
+    _geo_cache = load_geocode_cache()
+    _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
+    if _team_homes:
+        print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
+
     # Fetch Kalshi markets
     kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
 
@@ -773,6 +844,9 @@ def main(spread_overrides=None, league="mens"):
     game_predictions = []
     skipped = []
     games_needing_spreads = []
+    odds_archive_records = []
+    kalshi_game_archive_records = []
+    _distance_stats = {"total": 0, "nonzero": 0, "neutral": 0}
 
     for g in schedule:
         matchup_key = f"{g['away_raw']} @ {g['home_raw']}"
@@ -821,6 +895,19 @@ def main(spread_overrides=None, league="mens"):
                     })
                     skipped.append(f"{matchup_key} (No spread -- spread pick skipped)")
 
+        archive_spread = resolved_spread if has_spread_for_spread_model else None
+        odds_archive_records.append(
+            build_archive_record(
+                league=ACTIVE_LEAGUE,
+                game_date=g["date"],
+                home_team=g["home_raw"],
+                away_team=g["away_raw"],
+                spread=archive_spread,
+                spread_source=spread_source if has_spread_for_spread_model else None,
+                raw_line=spread_source,
+            )
+        )
+
         h_stats = team_stats[home_matched]
         a_stats = team_stats[away_matched]
 
@@ -832,6 +919,20 @@ def main(spread_overrides=None, league="mens"):
 
         # Build common feature row (for both spread and game models)
         row = {'is_home': 1, 'spread': resolved_spread}
+        row['is_neutral'] = g.get('is_neutral', 0)
+        # Not in FEATURES yet -- computed for monitoring and future use
+        row['distance_advantage'] = compute_distance_advantage(
+            _team_homes.get(home_matched),
+            _team_homes.get(away_matched),
+            g.get('venue_city', ''),
+            g.get('venue_state', ''),
+            _geo_cache,
+        )
+        _distance_stats["total"] += 1
+        if row['distance_advantage'] != 0:
+            _distance_stats["nonzero"] += 1
+        if row['is_neutral']:
+            _distance_stats["neutral"] += 1
         row['rest_days'] = min(home_actual_rest, 7)
         row = calculate_production_features(row, h_stats, a_stats)
 
@@ -860,35 +961,68 @@ def main(spread_overrides=None, league="mens"):
                     side = game_kalshi.get("Kalshi_Side", "YES")
                     side_prob = yes_prob if side == "YES" else (1.0 - yes_prob)
                     pick_line = f"{yes_team} ML {side}"
-                    game_predictions.append({
-                        "Bet_Type": "game",
-                        "Date/Time": time_str,
-                        "Matchup": matchup_key,
-                        "Spread": resolved_spread if has_spread_for_spread_model else np.nan,
-                        "Pick": pick_line,
-                        "Conf": side_prob,
-                        "Raw Odds": "Kalshi GAME",
-                        "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
-                        "Kalshi_Side": side,
-                        "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
-                        "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
-                        "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
-                        "Edge": game_kalshi.get("Edge"),
-                        "Edge_Pct": game_kalshi.get("Edge_Pct"),
-                        "Rating": game_kalshi.get("Rating"),
-                        "Units": game_kalshi.get("Units"),
-                        "Home_Matched": home_matched,
-                        "Away_Matched": away_matched,
-                        "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
-                        "Kalshi_Yes_Team": yes_team,
-                        "Win_Model_Home_Prob": home_win_prob,
-                        "Win_Model_Variant": win_variant,
-                        "Std_Edge": 0.0,
-                        "Std_Edge_Pct": "",
-                        "Std_Rating": "PASS",
-                        "Std_Units": 0.0,
-                        "Breakeven_Spread": np.nan,
-                    })
+                    edge = game_kalshi.get("Edge")
+
+                    # Archive all candidates for backtest analysis
+                    kalshi_game_archive_records.append(
+                        build_game_archive_record(
+                            league=ACTIVE_LEAGUE,
+                            game_datetime=g["date"],
+                            home_team=g["home_raw"],
+                            away_team=g["away_raw"],
+                            matchup=matchup_key,
+                            pick=pick_line,
+                            picked_team=game_kalshi.get("Picked_Team"),
+                            kalshi_side=side,
+                            kalshi_ticker=game_kalshi.get("Kalshi_Ticker"),
+                            kalshi_title=game_kalshi.get("Kalshi_Title"),
+                            kalshi_yes_team=yes_team,
+                            kalshi_yes_price=game_kalshi.get("Kalshi_Yes"),
+                            kalshi_no_price=game_kalshi.get("Kalshi_No"),
+                            kalshi_price=game_kalshi.get("Kalshi_Price"),
+                            kalshi_fee=game_kalshi.get("Kalshi_Fee"),
+                            win_model_home_prob=home_win_prob,
+                            conf=side_prob,
+                            edge=edge,
+                            edge_pct=(edge * 100.0) if edge is not None else None,
+                            rating=game_kalshi.get("Rating"),
+                            units=game_kalshi.get("Units"),
+                        )
+                    )
+
+                    if game_kalshi.get("Rating") in VALUE_RATINGS:
+                        game_predictions.append({
+                            "Bet_Type": "game",
+                            "Date/Time": time_str,
+                            "Matchup": matchup_key,
+                            "Spread": resolved_spread if has_spread_for_spread_model else np.nan,
+                            "Pick": pick_line,
+                            "Conf": side_prob,
+                            "Raw Odds": "Kalshi GAME",
+                            "Rest": home_actual_rest if game_kalshi.get("Picked_Team") == g['home_raw'] else away_actual_rest,
+                            "Kalshi_Side": side,
+                            "Kalshi_Yes": game_kalshi.get("Kalshi_Yes"),
+                            "Kalshi_No": game_kalshi.get("Kalshi_No"),
+                            "Kalshi_Price": game_kalshi.get("Kalshi_Price"),
+                            "Kalshi_Fee": game_kalshi.get("Kalshi_Fee"),
+                            "Kalshi_Title": game_kalshi.get("Kalshi_Title"),
+                            "Edge": edge,
+                            "Edge_Pct": game_kalshi.get("Edge_Pct"),
+                            "Rating": game_kalshi.get("Rating"),
+                            "Units": min(game_kalshi.get("Units", 0), 0.5),
+                            "Home_Matched": home_matched,
+                            "Away_Matched": away_matched,
+                            "Kalshi_Ticker": game_kalshi.get("Kalshi_Ticker"),
+                            "Kalshi_Yes_Team": yes_team,
+                            "Picked_Team": game_kalshi.get("Picked_Team"),
+                            "Win_Model_Home_Prob": home_win_prob,
+                            "Win_Model_Variant": win_variant,
+                            "Std_Edge": 0.0,
+                            "Std_Edge_Pct": "",
+                            "Std_Rating": "PASS",
+                            "Std_Units": 0.0,
+                            "Breakeven_Spread": np.nan,
+                        })
             except (KeyError, TypeError, ValueError) as e:
                 print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
 
@@ -910,7 +1044,8 @@ def main(spread_overrides=None, league="mens"):
             'momentum_gap': 0, 'roll5_cover_margin': 0,
             'prev_games_played': 10, 'opp_win_pct': 0.5,
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
-            'prev_volatility': 10, 'is_home': 1, 'spread': 0, 'rest_days': 3,
+            'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
+            'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
             'spread_abs': 0, 'spread_squared': 0,
         }).fillna(0)
 
@@ -998,6 +1133,18 @@ def main(spread_overrides=None, league="mens"):
         pd.DataFrame(spread_predictions).sort_values(by="Conf", ascending=False)
         if spread_predictions else pd.DataFrame()
     )
+    added_archive_rows = append_archive_records(
+        odds_archive_records,
+        get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)["odds_archive_file"],
+    )
+    if added_archive_rows:
+        print(f"   -> Archived {added_archive_rows} market line snapshot(s)")
+    added_game_archive_rows = append_kalshi_game_archive_records(
+        kalshi_game_archive_records,
+        get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)["kalshi_game_archive_file"],
+    )
+    if added_game_archive_rows:
+        print(f"   -> Archived {added_game_archive_rows} Kalshi GAME snapshot(s)")
     game_df = (
         pd.DataFrame(game_predictions).sort_values(by="Conf", ascending=False)
         if game_predictions else pd.DataFrame()
@@ -1066,11 +1213,28 @@ def main(spread_overrides=None, league="mens"):
     else:
         print("\nNo predictions generated.")
     
+    # Distance feature guardrail
+    dt = _distance_stats
+    if dt["total"] > 0:
+        pct = dt["nonzero"] / dt["total"]
+        level = "WARNING" if pct < 0.5 else "INFO"
+        print(
+            f"\n   [{level}] distance coverage monitor: "
+            f"{dt['nonzero']}/{dt['total']} games non-zero ({pct:.0%}), "
+            f"{dt['neutral']} neutral-site"
+        )
+        if pct < 0.5:
+            print(f"   [{level}] Low distance coverage -- check venue data and geocode cache")
+
     # Show skipped games
     if skipped:
         print(f"\nSkipped {len(skipped)} games:")
         for s in skipped[:5]:
             print(f"   - {s}")
+
+    # Persist any newly geocoded venues
+    if _geo_cache:
+        save_geocode_cache(_geo_cache)
 
     # Store games that still need manual spreads
     _games_needing_spreads[ACTIVE_LEAGUE] = games_needing_spreads

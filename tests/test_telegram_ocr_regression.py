@@ -566,6 +566,105 @@ def test_returned_with_refund_is_void() -> None:
 # PLACED date validation test
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Women's (W) suffix parsing tests
+# ---------------------------------------------------------------------------
+
+
+def test_fanduel_womens_pending_spread_parsing() -> None:
+    """FanDuel pending bets with (W) suffix should parse spread and detect league."""
+    text = _read_fixture("fanduel_womens_pending.txt")
+    bets = BOT._parse_fd_blocks(text)
+
+    assert len(bets) == 3
+
+    # Villanova (W) -7.5
+    b0 = bets[0]
+    assert b0["platform"] == "FanDuel"
+    assert b0["line"] == "Villanova -7.5"
+    assert b0["odds"] == "-114"
+    assert b0["wager"] == 3.0
+    assert b0["league"] == "womens"
+    assert b0["game"] == "Seton Hall vs Villanova"
+
+    # Chattanooga (W) -6.5
+    b1 = bets[1]
+    assert b1["line"] == "Chattanooga -6.5"
+    assert b1["odds"] == "-112"
+    assert b1["wager"] == 3.0
+    assert b1["league"] == "womens"
+    assert b1["game"] == "Samford vs Chattanooga"
+
+    # Colgate -1.5 (men's, no (W) suffix)
+    b2 = bets[2]
+    assert b2["line"] == "Colgate -1.5"
+    assert b2["odds"] == "-115"
+    assert b2["wager"] == 1.5
+    assert b2["league"] == ""
+    assert b2["game"] == "Colgate vs Lehigh"
+
+
+def test_fanduel_womens_settled_parsing() -> None:
+    """FanDuel settled screenshot with (W) suffix should parse all cards."""
+    raw = _read_fixture("fanduel_womens_settled.txt")
+    all_bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(all_bets)
+
+    by_id = {b["bet_id"]: b for b in actual if b.get("bet_id")}
+
+    # Villanova (W) -7.5: won
+    assert "0/0084650/0000207" in by_id
+    v = by_id["0/0084650/0000207"]
+    assert v["line"] == "Villanova -7.5"
+    assert v["result"] == "win"
+    assert v["wager"] == 3.0
+    assert v["payout"] == 5.63
+    assert v["profit"] == 2.63
+    assert v["league"] == "womens"
+
+    # Colgate -1.5: loss (men's)
+    assert "0/0084650/0000205" in by_id
+    c = by_id["0/0084650/0000205"]
+    assert c["line"] == "Colgate -1.5"
+    assert c["result"] == "loss"
+    assert c["wager"] == 1.5
+    assert c["league"] == ""
+
+    # Chattanooga (W) -6.5: loss
+    assert "0/0084650/0000206" in by_id
+    ch = by_id["0/0084650/0000206"]
+    assert ch["line"] == "Chattanooga -6.5"
+    assert ch["result"] == "loss"
+    assert ch["wager"] == 3.0
+    assert ch["league"] == "womens"
+
+
+def test_fanduel_womens_league_from_matchup_only() -> None:
+    """league should be detected from matchup (W) even if spread line lacks it."""
+    # Simulate OCR dropping (W) from spread line but keeping it on matchup
+    text = (
+        "Villanova -7.5\n"
+        "-114\n"
+        "Seton Hall (W) @ Villanova (W)\n"
+        "$3.00\n"
+    )
+    bets = BOT._parse_fd_blocks(text)
+    assert len(bets) == 1
+    assert bets[0]["league"] == "womens"
+    assert bets[0]["line"] == "Villanova -7.5"
+    assert bets[0]["game"] == "Seton Hall vs Villanova"
+
+
+def test_fanduel_womens_w_stripped_from_game_name() -> None:
+    """(W) suffix should be stripped from game names in both paths."""
+    text = _read_fixture("fanduel_womens_pending.txt")
+    bets = BOT._parse_fd_blocks(text)
+
+    for b in bets:
+        assert "(W)" not in b.get("game", "")
+        assert "(W)" not in b.get("line", "")
+
+
 def test_placed_date_validation_rejects_out_of_range() -> None:
     """Out-of-range PLACED date (month 13, day 99) should produce no game_date."""
     card_text = "\n".join([

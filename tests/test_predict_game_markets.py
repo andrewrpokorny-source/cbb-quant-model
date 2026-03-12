@@ -5,7 +5,11 @@ from datetime import datetime
 import pytest
 
 from betting import calculate_edge
-from predict import _infer_yes_team_from_game_market, get_kalshi_game_edge
+from predict import (
+    _infer_yes_team_from_game_market,
+    get_kalshi_game_edge,
+    get_kalshi_game_live_rating,
+)
 
 
 class _StubMapper:
@@ -147,4 +151,20 @@ def test_get_kalshi_game_edge_selects_best_side():
     assert result["Picked_Team"] == "Providence Friars"
     assert result["Edge"] == pytest.approx(calculate_edge(0.6, 0.3147))
     assert result["Kalshi_Yes_Team"] == "UConn Huskies"
+    assert result["Rating"] == "STRONG"
 
+
+def test_get_kalshi_game_live_rating_rejects_extreme_tail_longshot():
+    rating = get_kalshi_game_live_rating(
+        edge=calculate_edge(0.2862247836, 0.010693),
+        side_prob=0.2862247836,
+        price_cents=1,
+    )
+    assert rating == "PASS"
+
+
+def test_get_kalshi_game_live_rating_requires_probability_and_price_bands():
+    assert get_kalshi_game_live_rating(edge=0.09, side_prob=0.56, price_cents=55) == "STRONG"
+    assert get_kalshi_game_live_rating(edge=0.05, side_prob=0.53, price_cents=60) == "GOOD"
+    assert get_kalshi_game_live_rating(edge=0.09, side_prob=0.54, price_cents=55) == "GOOD"
+    assert get_kalshi_game_live_rating(edge=0.05, side_prob=0.53, price_cents=10) == "PASS"

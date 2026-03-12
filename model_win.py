@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, brier_score_loss
 
 from league_config import get_league_artifact_paths, normalize_league
+from model import TimeAwareCalibratedGBM
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -140,7 +140,12 @@ def _train_variant(frame: pd.DataFrame, features: list[str], name: str):
     uncal_probs = uncal.predict_proba(X_test)[:, 1]
     uncal_preds = (uncal_probs >= 0.5).astype(int)
 
-    cal = CalibratedClassifierCV(_base_estimator(), method="sigmoid", cv=5)
+    cal = TimeAwareCalibratedGBM(
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
+    )
     cal.fit(X_train, y_train)
     cal_probs = cal.predict_proba(X_test)[:, 1]
     cal_preds = (cal_probs >= 0.5).astype(int)

@@ -12,9 +12,11 @@ import os
 import re
 import sys
 import csv
+import glob
 import json
 import errno
 import fcntl
+import asyncio
 import base64
 import shutil
 import tempfile
@@ -53,6 +55,9 @@ PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Guard against concurrent /settle invocations (e.g. double-tap)
+_settle_lock = asyncio.Lock()
 
 # User authorization: comma-separated list of allowed Telegram user IDs
 _allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USERS", "")
@@ -938,8 +943,9 @@ def _parse_fd_blocks(text: str) -> list[dict]:
         $X.XX           <- payout
     """
     # FD spread lines have NO odds on the same line: "Team +/-X.X" alone
+    # Parens allow FanDuel's "(W)" women's league suffix
     spread_line_re = re.compile(
-        r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$", re.MULTILINE
+        r"^([A-Za-z][A-Za-z &'.()\-]+?)\s+([+-]\d+\.?\d*)\s*$", re.MULTILINE
     )
     matches = list(spread_line_re.finditer(text))
     if not matches:
@@ -950,6 +956,12 @@ def _parse_fd_blocks(text: str) -> list[dict]:
         team = match.group(1).strip()
         spread = match.group(2)
 
+        # Detect women's league from FanDuel "(W)" suffix
+        league = ""
+        if re.search(r"\(W\)\s*$", team):
+            league = "womens"
+            team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
+
         # Block of text between this spread line and the next
         block_start = match.end()
         block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
@@ -957,11 +969,17 @@ def _parse_fd_blocks(text: str) -> list[dict]:
 
         # Matchup: "Team1 @ Team2"
         matchup_match = re.search(
-            r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)",
+            r"([A-Za-z][A-Za-z &'.()\-]+?)\s+@\s+([A-Za-z][A-Za-z &'.()\-]+)",
             block,
         )
         if matchup_match:
-            game = f"{matchup_match.group(1).strip()} vs {matchup_match.group(2).strip()}"
+            raw_g1 = matchup_match.group(1).strip()
+            raw_g2 = matchup_match.group(2).strip()
+            if not league and ("(W)" in raw_g1 or "(W)" in raw_g2):
+                league = "womens"
+            g1 = re.sub(r"\s*\(W\)\s*$", "", raw_g1)
+            g2 = re.sub(r"\s*\(W\)\s*$", "", raw_g2)
+            game = f"{g1} vs {g2}"
         else:
             game = ""
 
@@ -985,6 +1003,7 @@ def _parse_fd_blocks(text: str) -> list[dict]:
             "line": f"{team} {spread}",
             "odds": odds,
             "wager": wager,
+            "league": league,
         })
 
     return bets
@@ -1050,13 +1069,17 @@ def _resolve_game_date(team_name: str) -> str:
     for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "daily_predictions_wbb.csv")]:
         if os.path.exists(base):
             pred_files.append(base)
-    for days_back in range(14):
-        dt = now - timedelta(days=days_back)
-        date_str = dt.strftime('%Y%m%d')
-        for pattern in [f"predictions_{date_str}.csv", f"predictions_wbb_{date_str}.csv"]:
-            fname = os.path.join(BASE_DIR, pattern)
-            if os.path.exists(fname) and fname not in pred_files:
-                pred_files.append(fname)
+    archive_files = []
+    for pattern in ("predictions_*.csv", "predictions_wbb_*.csv"):
+        archive_files.extend(glob.glob(os.path.join(BASE_DIR, pattern)))
+
+    def _archive_sort_key(path: str) -> str:
+        match = re.search(r"(\d{8})", os.path.basename(path))
+        return match.group(1) if match else ""
+
+    for fname in sorted(archive_files, key=_archive_sort_key, reverse=True):
+        if fname not in pred_files:
+            pred_files.append(fname)
 
     for fpath in pred_files:
         try:
@@ -1211,12 +1234,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     lines = card_text.split("\n")
     cleaned = _clean_ocr_text(lines)
 
-    spread_re = re.compile(r"^([A-Za-z][A-Za-z &'.\-]+?)\s+([+-]\d+\.?\d*)\s*$")
-    matchup_re = re.compile(r"([A-Za-z][A-Za-z &'.]+?)\s+@\s+([A-Za-z][A-Za-z &'.]+)")
+    # Parens allow FanDuel's "(W)" women's league suffix
+    spread_re = re.compile(r"^([A-Za-z][A-Za-z &'.()\-]+?)\s+([+-]\d+\.?\d*)\s*$")
+    matchup_re = re.compile(r"([A-Za-z][A-Za-z &'.()\-]+?)\s+@\s+([A-Za-z][A-Za-z &'.()\-]+)")
 
     team = ""
     spread = ""
     game = ""
+    league = ""
     wager = 0.0
     odds = "n/a"
 
@@ -1227,11 +1252,21 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             if sm:
                 team = sm.group(1).strip()
                 spread = sm.group(2)
+                # Detect women's league from FanDuel "(W)" suffix
+                if re.search(r"\(W\)\s*$", team):
+                    league = "womens"
+                    team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
                 continue
         if not game:
             mm = matchup_re.search(cl)
             if mm:
-                game = f"{mm.group(1).strip()} vs {mm.group(2).strip()}"
+                raw_g1 = mm.group(1).strip()
+                raw_g2 = mm.group(2).strip()
+                if not league and ("(W)" in raw_g1 or "(W)" in raw_g2):
+                    league = "womens"
+                g1 = re.sub(r"\s*\(W\)\s*$", "", raw_g1)
+                g2 = re.sub(r"\s*\(W\)\s*$", "", raw_g2)
+                game = f"{g1} vs {g2}"
                 continue
 
     # Fallback game detection: in the FanDuel "Finished" format, team names
@@ -1260,7 +1295,12 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 ):
                     game_teams.append(stripped)
         if len(game_teams) >= 2:
-            game = f"{game_teams[0]} vs {game_teams[1]}"
+            # Detect women's league from "(W)" in team names
+            if not league and any("(W)" in t for t in game_teams):
+                league = "womens"
+            gt0 = re.sub(r"\s*\(W\)\s*$", "", game_teams[0]).strip()
+            gt1 = re.sub(r"\s*\(W\)\s*$", "", game_teams[1]).strip()
+            game = f"{gt0} vs {gt1}"
 
     # Wager: first dollar amount in range from cleaned text
     for cl in cleaned:
@@ -1354,6 +1394,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         "payout": payout,
         "profit": profit,
         "bet_id": bet_id,
+        "league": league,
         "_settled": True,
     }
 
@@ -1914,46 +1955,51 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @authorized_only
 async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Settle all pending bets and import Kalshi settlements."""
-    await update.message.reply_text("Settling bets...")
+    if _settle_lock.locked():
+        await update.message.reply_text("Settlement already in progress.")
+        return
 
-    # 1) Settle pending (FanDuel etc.) bets via score lookup
-    summary = settle_pending_bets()
+    async with _settle_lock:
+        await update.message.reply_text("Settling bets...")
 
-    msg_parts = [
-        f"Pending settled: {summary['settled']}",
-        f"Still pending: {summary['still_pending']}",
-    ]
-    if summary["details"]:
-        msg_parts.append("")
-        msg_parts.extend(summary["details"][:20])
+        # 1) Settle pending (FanDuel etc.) bets via score lookup
+        summary = settle_pending_bets()
 
-    # 2) Import settled Kalshi positions (uses persisted sync cursor)
-    try:
-        kalshi_result = settle_to_csv()
-        logged = kalshi_result["logged"]
-        kalshi_settled = kalshi_result["settled"]
-        skipped = kalshi_result["skipped"]
-        if kalshi_result["error"]:
-            msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
-        elif logged or kalshi_settled:
-            parts = []
-            if logged:
-                profit = sum(float(r["profit"]) for r in logged)
-                wins = sum(1 for r in logged if r["result"] == "win")
-                losses = sum(1 for r in logged if r["result"] == "loss")
-                parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
-            if kalshi_settled:
-                parts.append(f"{kalshi_settled} pending settled")
-            msg_parts.append(f"\nKalshi: {', '.join(parts)}")
-        elif skipped:
-            msg_parts.append(f"\nKalshi: all {skipped} already logged")
-        else:
-            msg_parts.append("\nKalshi: no recent settlements")
-    except Exception:
-        logger.exception("Kalshi settlement fetch failed")
-        msg_parts.append("\nKalshi: fetch failed")
+        msg_parts = [
+            f"Pending settled: {summary['settled']}",
+            f"Still pending: {summary['still_pending']}",
+        ]
+        if summary["details"]:
+            msg_parts.append("")
+            msg_parts.extend(summary["details"][:20])
 
-    await update.message.reply_text("\n".join(msg_parts))
+        # 2) Import settled Kalshi positions (uses persisted sync cursor)
+        try:
+            kalshi_result = settle_to_csv()
+            logged = kalshi_result["logged"]
+            kalshi_settled = kalshi_result["settled"]
+            skipped = kalshi_result["skipped"]
+            if kalshi_result["error"]:
+                msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+            elif logged or kalshi_settled:
+                parts = []
+                if logged:
+                    profit = sum(float(r["profit"]) for r in logged)
+                    wins = sum(1 for r in logged if r["result"] == "win")
+                    losses = sum(1 for r in logged if r["result"] == "loss")
+                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+                if kalshi_settled:
+                    parts.append(f"{kalshi_settled} pending settled")
+                msg_parts.append(f"\nKalshi: {', '.join(parts)}")
+            elif skipped:
+                msg_parts.append(f"\nKalshi: all {skipped} already logged")
+            else:
+                msg_parts.append("\nKalshi: no recent settlements")
+        except Exception:
+            logger.exception("Kalshi settlement fetch failed")
+            msg_parts.append("\nKalshi: fetch failed")
+
+        await update.message.reply_text("\n".join(msg_parts))
 
 
 @authorized_only
