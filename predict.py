@@ -283,8 +283,8 @@ def get_kalshi_spread(mapper, home_team, away_team, game_date):
         if not spread_markets:
             return None, None
 
-        # Get the first spread market and extract info
-        market = spread_markets[0]
+        # Pick the market with the smallest floor_strike (most likely the main line)
+        market = min(spread_markets, key=lambda m: abs(m.get("floor_strike", 0)))
         floor_strike = market.get("floor_strike", 0)
         title = market.get("title", "").lower()
 
