@@ -215,7 +215,9 @@ def load_prediction_game_archives(base_dir: str, league: str) -> pd.DataFrame:
             errors="coerce",
         )
         # If game date is before the file date, it's a new-year rollover
-        needs_bump = game_time < captured_at - pd.Timedelta(days=1)
+        # (game_time is tz-naive here; compare against naive file date)
+        file_date_naive = captured_at.tz_localize(None)
+        needs_bump = game_time < file_date_naive - pd.Timedelta(days=1)
         if needs_bump.any():
             game_time = game_time.where(
                 ~needs_bump,
