@@ -283,8 +283,8 @@ def _parse_settlement(s: dict) -> list[dict]:
     and NO were filled, returns two entries with revenue assigned by market
     outcome: the winning side receives $1/contract and the losing side $0.
     """
-    yes_count = s.get("yes_count", 0) or 0
-    no_count = s.get("no_count", 0) or 0
+    yes_count = int(float(s.get("yes_count_fp") or s.get("yes_count") or 0))
+    no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
     yes_cost = s.get("yes_total_cost", 0) or 0
     no_cost = s.get("no_total_cost", 0) or 0
     revenue = s.get("revenue", 0) or 0
