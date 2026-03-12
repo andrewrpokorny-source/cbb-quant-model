@@ -208,11 +208,25 @@ def load_prediction_game_archives(base_dir: str, league: str) -> pd.DataFrame:
         matchup_split = game_df["Matchup"].fillna("").str.split(" @ ", n=1, expand=True)
         away_team = matchup_split[0].fillna("")
         home_team = matchup_split[1].fillna("")
+        file_year = captured_at.year
         game_time = pd.to_datetime(
-            captured_at.strftime("%Y") + "/" + game_df["Date/Time"].fillna(""),
+            str(file_year) + "/" + game_df["Date/Time"].fillna(""),
             format="%Y/%m/%d %I:%M %p",
             errors="coerce",
         )
+        # If game date is before the file date, it's a new-year rollover
+        # (game_time is tz-naive here; compare against naive file date)
+        file_date_naive = captured_at.tz_localize(None)
+        needs_bump = game_time < file_date_naive - pd.Timedelta(days=1)
+        if needs_bump.any():
+            game_time = game_time.where(
+                ~needs_bump,
+                pd.to_datetime(
+                    str(file_year + 1) + "/" + game_df["Date/Time"].fillna(""),
+                    format="%Y/%m/%d %I:%M %p",
+                    errors="coerce",
+                ),
+            )
         standardized = pd.DataFrame(
             {
                 "captured_at": captured_at,

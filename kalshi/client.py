@@ -112,41 +112,42 @@ class KalshiClient:
             print(f"      Kalshi API error: {e}")
             return {}
 
-    def _price_to_cents(self, value):
-        """Normalize cents- or dollars-denominated Kalshi prices to cents."""
+    @staticmethod
+    def _to_float(value):
+        """Convert a value to float, returning None on failure."""
         if value is None:
             return None
-
         try:
-            numeric = float(value)
+            return float(value)
         except (TypeError, ValueError):
             return None
-
-        # Recent API responses may use *_dollars fields on a 0-1 scale.
-        if 0.0 <= numeric <= 1.0:
-            return round(numeric * 100.0, 4)
-        return round(numeric, 4)
 
     def _extract_market_prices(self, market: dict) -> dict:
         """Extract fee-model prices from a market payload across old/new formats."""
         if not market:
             return {"yes_price": None, "no_price": None, "last_price": None}
 
-        yes_price = self._price_to_cents(
-            market.get("yes_ask_dollars")
-            if market.get("yes_ask_dollars") is not None
-            else market.get("yes_ask")
-        )
-        no_price = self._price_to_cents(
-            market.get("no_ask_dollars")
-            if market.get("no_ask_dollars") is not None
-            else market.get("no_ask")
-        )
-        last_price = self._price_to_cents(
-            market.get("last_price_dollars")
-            if market.get("last_price_dollars") is not None
-            else market.get("last_price")
-        )
+        # Prefer *_dollars fields (0-1 scale) and convert to cents;
+        # fall back to legacy cent-denominated fields used as-is.
+        yes_dollars = self._to_float(market.get("yes_ask_dollars"))
+        no_dollars = self._to_float(market.get("no_ask_dollars"))
+        last_dollars = self._to_float(market.get("last_price_dollars"))
+
+        if yes_dollars is not None:
+            yes_price = round(yes_dollars * 100.0, 4)
+        else:
+            yes_price = self._to_float(market.get("yes_ask"))
+
+        if no_dollars is not None:
+            no_price = round(no_dollars * 100.0, 4)
+        else:
+            no_price = self._to_float(market.get("no_ask"))
+
+        if last_dollars is not None:
+            last_price = round(last_dollars * 100.0, 4)
+        else:
+            last_price = self._to_float(market.get("last_price"))
+
 
         if yes_price is None:
             yes_price = last_price
