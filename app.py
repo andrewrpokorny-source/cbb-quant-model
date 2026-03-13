@@ -487,6 +487,22 @@ def _esc(val) -> str:
     return html_mod.escape(str(val)) if val is not None else ""
 
 
+def _filter_not_started(df):
+    """Drop rows whose game time has already passed (in-progress games)."""
+    if df.empty or 'Date/Time' not in df.columns:
+        return df
+    eastern = pytz.timezone('US/Eastern')
+    now = datetime.now(eastern)
+    year = now.year
+    parsed = pd.to_datetime(
+        str(year) + "/" + df["Date/Time"].astype(str),
+        format="%Y/%m/%d %I:%M %p",
+        errors="coerce",
+    )
+    parsed = parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
+    return df[parsed.isna() | (parsed > now)].copy()
+
+
 def _parse_edge(series):
     """Parse edge percentage strings like '+5.2%' into floats."""
     cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
@@ -545,6 +561,9 @@ for lg in LEAGUES:
     else:
         spread_df = pd.DataFrame()
         game_df = pd.DataFrame()
+
+    spread_df = _filter_not_started(spread_df)
+    game_df = _filter_not_started(game_df)
 
     league_data[lg] = {
         "settings": settings,
