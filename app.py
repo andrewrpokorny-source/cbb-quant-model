@@ -672,16 +672,27 @@ CBB_GAME_PREFIXES = ("KXNCAAMBGAME", "KXNCAAWBGAME")
 
 @st.cache_data(ttl=120)
 def _fetch_kalshi_positions():
-    """Fetch unsettled Kalshi positions, filtered to CBB game markets."""
+    """Fetch unsettled Kalshi positions + fills for CBB game markets."""
     try:
         from kalshi.client import KalshiClient
         client = KalshiClient()
         if not client.api_key:
-            return []
+            return [], {}
         positions = client.get_positions(settlement_status="unsettled")
-        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
+        cbb_positions = [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
+        if not cbb_positions:
+            return [], {}
+
+        # Fetch fills for each position ticker to get actual fees
+        fees_by_ticker = {}
+        for pos in cbb_positions:
+            ticker = pos.get("ticker", "")
+            fills = client.get_fills(ticker=ticker)
+            total_fee = sum(f.get("fee", 0) for f in fills)
+            fees_by_ticker[ticker] = total_fee  # in cents
+        return cbb_positions, fees_by_ticker
     except Exception:
-        return []
+        return [], {}
 
 
 @st.cache_data(ttl=60)
@@ -739,7 +750,7 @@ def _fetch_live_espn_games():
     return games_by_abbr
 
 
-def _build_live_positions(positions, live_games):
+def _build_live_positions(positions, live_games, fees_by_ticker):
     """Match Kalshi positions to live ESPN games."""
     results = []
     for pos in positions:
@@ -761,22 +772,24 @@ def _build_live_positions(positions, live_games):
             side_team = yes_abbr
         elif position_fp < 0:
             side = "NO"
-            # NO = the other team
             side_team = game["away_abbr"] if yes_abbr == game["home_abbr"] else game["home_abbr"]
         else:
             continue
 
-        # Exposure in dollars (Kalshi returns cents for some fields)
-        market_exposure = pos.get("market_exposure", 0)
-        # market_exposure is in cents
-        exposure_dollars = abs(market_exposure) / 100.0 if market_exposure else abs(position_fp) * 0.01
+        contracts = abs(position_fp)
+        market_exposure = pos.get("market_exposure", 0) or 0
+        cost_cents = abs(market_exposure)
+        fee_cents = fees_by_ticker.get(ticker, 0)
+        net_cost_cents = cost_cents + fee_cents
 
         results.append({
             "ticker": ticker,
             "side": side,
             "side_team": side_team,
-            "contracts": abs(position_fp),
-            "exposure": exposure_dollars,
+            "contracts": contracts,
+            "cost_cents": cost_cents,
+            "fee_cents": fee_cents,
+            "net_cost_cents": net_cost_cents,
             "game": game,
         })
     return results
@@ -1140,9 +1153,9 @@ def _render_game_bets(col, lg):
 # LIVE KALSHI POSITIONS (in-progress games)
 # ==========================================
 try:
-    _kalshi_positions = _fetch_kalshi_positions()
+    _kalshi_positions, _kalshi_fees = _fetch_kalshi_positions()
     _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
-    _live_positions = _build_live_positions(_kalshi_positions, _live_games) if _kalshi_positions else []
+    _live_positions = _build_live_positions(_kalshi_positions, _live_games, _kalshi_fees) if _kalshi_positions else []
 except Exception:
     _live_positions = []
 
@@ -1177,8 +1190,16 @@ if _live_positions:
                         <span class="stat-value">{lp["contracts"]} {contract_label}</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Exposure</span>
-                        <span class="stat-value">${lp["exposure"]:.2f}</span>
+                        <span class="stat-label">Cost</span>
+                        <span class="stat-value">{lp["cost_cents"]:.1f}&#162;</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Fee</span>
+                        <span class="stat-value fee-value">{lp["fee_cents"]:.1f}&#162;</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Net Cost</span>
+                        <span class="stat-value fee-value">{lp["net_cost_cents"]:.1f}&#162;</span>
                     </div>
                 </div>
             </div>
