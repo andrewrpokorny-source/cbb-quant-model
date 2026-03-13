@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 import numpy as np
 import os
@@ -1161,6 +1162,24 @@ except Exception:
 
 if _live_positions:
     st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
+
+    # Refresh controls
+    if "live_auto_refresh" not in st.session_state:
+        st.session_state.live_auto_refresh = True
+
+    ctrl_cols = st.columns([1, 1, 6])
+    with ctrl_cols[0]:
+        if st.button("Refresh now", key="live_refresh_btn"):
+            _fetch_kalshi_positions.clear()
+            _fetch_live_espn_games.clear()
+            st.rerun()
+    with ctrl_cols[1]:
+        auto_on = st.toggle("Auto-refresh", value=st.session_state.live_auto_refresh, key="live_auto_toggle")
+        st.session_state.live_auto_refresh = auto_on
+
+    if st.session_state.live_auto_refresh:
+        st_autorefresh(interval=60_000, key="live_autorefresh")
+
     live_cols = st.columns(min(len(_live_positions), 3))
     for i, lp in enumerate(_live_positions):
         g = lp["game"]
