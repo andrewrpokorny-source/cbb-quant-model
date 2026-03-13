@@ -1,0 +1,738 @@
+team,hasla_team,match_source,match_score,needs_review
+Abilene Christian,Abil. Christian,normalized_exact,1.0,False
+Abilene Christian Wildcats,Abil. Christian,alias_exact,1.0,False
+Air Force,Air Force,normalized_exact,1.0,False
+Air Force Falcons,Air Force,alias_exact,1.0,False
+Akron,Akron,normalized_exact,1.0,False
+Akron Zips,Akron,alias_exact,1.0,False
+Alabama,Alabama,normalized_exact,1.0,False
+Alabama A&M,Alabama A&M,normalized_exact,1.0,False
+Alabama A&M Bulldogs,Alabama A&M,alias_exact,1.0,False
+Alabama Crimson Tide,Alabama,alias_exact,1.0,False
+Alabama St.,Alabama State,normalized_exact,1.0,False
+Alabama State Hornets,Alabama State,alias_exact,1.0,False
+Albany,Albany,normalized_exact,1.0,False
+Alcorn St.,Alcorn State,normalized_exact,1.0,False
+Alcorn State Braves,Alcorn State,alias_exact,1.0,False
+American,American,normalized_exact,1.0,False
+American University Eagles,American,alias_exact,1.0,False
+App State Mountaineers,Appalachian St.,alias_exact,1.0,False
+Appalachian St.,Appalachian St.,normalized_exact,1.0,False
+Arizona,Arizona,normalized_exact,1.0,False
+Arizona St.,Arizona State,normalized_exact,1.0,False
+Arizona State Sun Devils,Arizona State,alias_exact,1.0,False
+Arizona Wildcats,Arizona,alias_exact,1.0,False
+Arkansas,Arkansas,normalized_exact,1.0,False
+Arkansas Pine Bluff,AR-Pine Bluff,normalized_exact,1.0,False
+Arkansas Razorbacks,Arkansas,alias_exact,1.0,False
+Arkansas St.,Arkansas State,normalized_exact,1.0,False
+Arkansas State Red Wolves,Arkansas State,alias_exact,1.0,False
+Arkansas-Pine Bluff Golden Lions,AR-Pine Bluff,alias_exact,1.0,False
+Army,Army,normalized_exact,1.0,False
+Army Black Knights,Army,alias_exact,1.0,False
+Auburn,Auburn,normalized_exact,1.0,False
+Auburn Tigers,Auburn,alias_exact,1.0,False
+Austin Peay,Austin Peay,normalized_exact,1.0,False
+Austin Peay Governors,Austin Peay,alias_exact,1.0,False
+BYU,BYU,normalized_exact,1.0,False
+BYU Cougars,BYU,alias_exact,1.0,False
+Ball St.,Ball State,normalized_exact,1.0,False
+Ball State Cardinals,Ball State,alias_exact,1.0,False
+Baylor,Baylor,normalized_exact,1.0,False
+Baylor Bears,Baylor,alias_exact,1.0,False
+Bellarmine,Bellarmine,normalized_exact,1.0,False
+Bellarmine Knights,Bellarmine,alias_exact,1.0,False
+Belmont,Belmont,normalized_exact,1.0,False
+Belmont Bruins,Belmont,alias_exact,1.0,False
+Bethesda University Flames,,unmatched,0.0,True
+Bethune Cookman,Bethune-Cookman,normalized_exact,1.0,False
+Bethune-Cookman Wildcats,Bethune-Cookman,alias_exact,1.0,False
+Binghamton,Binghamton,normalized_exact,1.0,False
+Binghamton Bearcats,Binghamton,alias_exact,1.0,False
+Blackburn Beavers,,unmatched,0.0,True
+Boise St.,Boise State,normalized_exact,1.0,False
+Boise State Broncos,Boise State,alias_exact,1.0,False
+Boston College,Boston College,normalized_exact,1.0,False
+Boston College Eagles,Boston College,alias_exact,1.0,False
+Boston University,Boston U,normalized_exact,1.0,False
+Boston University Terriers,Boston U,alias_exact,1.0,False
+Bowling Green,Bowling Green,normalized_exact,1.0,False
+Bowling Green Falcons,Bowling Green,alias_exact,1.0,False
+Bradley,Bradley,normalized_exact,1.0,False
+Bradley Braves,Bradley,alias_exact,1.0,False
+Brown,Brown,normalized_exact,1.0,False
+Brown Bears,Brown,alias_exact,1.0,False
+Bryant,Bryant,normalized_exact,1.0,False
+Bryant & Stratton (Ohio) Bobcats,,unmatched,0.0,True
+Bryant Bulldogs,Bryant,alias_exact,1.0,False
+Bucknell,Bucknell,normalized_exact,1.0,False
+Bucknell Bison,Bucknell,alias_exact,1.0,False
+Buffalo,Buffalo,normalized_exact,1.0,False
+Buffalo Bulls,Buffalo,alias_exact,1.0,False
+Butler,Butler,normalized_exact,1.0,False
+Butler Bulldogs,Butler,alias_exact,1.0,False
+Cal Baptist,Cal Baptist,normalized_exact,1.0,False
+Cal Poly,Cal Poly,normalized_exact,1.0,False
+Cal Poly Mustangs,Cal Poly,alias_exact,1.0,False
+Cal St. Bakersfield,CSU Bakersfield,normalized_exact,1.0,False
+Cal St. Fullerton,CSU Fullerton,normalized_exact,1.0,False
+Cal St. Northridge,CSU Northridge,normalized_exact,1.0,False
+Cal State Bakersfield Roadrunners,CSU Bakersfield,alias_exact,1.0,False
+Cal State Fullerton Titans,CSU Fullerton,alias_exact,1.0,False
+Cal State Northridge Matadors,CSU Northridge,alias_exact,1.0,False
+California,California,normalized_exact,1.0,False
+California Baptist Lancers,California,alias_exact,1.0,False
+California Golden Bears,California,alias_exact,1.0,False
+Campbell,Campbell,normalized_exact,1.0,False
+Campbell Fighting Camels,Campbell,alias_exact,1.0,False
+Canisius,Canisius,normalized_exact,1.0,False
+Canisius Golden Griffins,Canisius,alias_exact,1.0,False
+Central Arkansas,Cent. Arkansas,normalized_exact,1.0,False
+Central Arkansas Bears,Cent. Arkansas,alias_exact,1.0,False
+Central Connecticut,Cent. Conn. St.,normalized_exact,1.0,False
+Central Connecticut Blue Devils,Cent. Conn. St.,alias_exact,1.0,False
+Central Michigan,Cent. Michigan,normalized_exact,1.0,False
+Central Michigan Chippewas,Cent. Michigan,alias_exact,1.0,False
+Charleston,Charleston,normalized_exact,1.0,False
+Charleston Cougars,Charleston,alias_exact,1.0,False
+Charleston Southern,Charleston,alias_exact,1.0,False
+Charleston Southern Buccaneers,Charleston,alias_exact,1.0,False
+Charlotte,Charlotte,normalized_exact,1.0,False
+Charlotte 49ers,Charlotte,alias_exact,1.0,False
+Chattanooga,Chattanooga,normalized_exact,1.0,False
+Chattanooga Mocs,Chattanooga,alias_exact,1.0,False
+Chicago St.,Chicago State,normalized_exact,1.0,False
+Chicago State Cougars,Chicago State,alias_exact,1.0,False
+Cincinnati,Cincinnati,normalized_exact,1.0,False
+Cincinnati Bearcats,Cincinnati,alias_exact,1.0,False
+Clemson,Clemson,normalized_exact,1.0,False
+Clemson Tigers,Clemson,alias_exact,1.0,False
+Cleveland St.,Cleveland State,normalized_exact,1.0,False
+Cleveland State Vikings,Cleveland State,alias_exact,1.0,False
+Coastal Carolina,Coast. Carolina,fuzzy,0.9333,False
+Coastal Carolina Chanticleers,Coast. Carolina,alias_fuzzy,0.9333,False
+Colgate,Colgate,normalized_exact,1.0,False
+Colgate Raiders,Colgate,alias_exact,1.0,False
+Colorado,Colorado,normalized_exact,1.0,False
+Colorado Buffaloes,Colorado,alias_exact,1.0,False
+Colorado St.,Colorado State,normalized_exact,1.0,False
+Colorado State Rams,Colorado State,alias_exact,1.0,False
+Columbia,Columbia,normalized_exact,1.0,False
+Columbia Lions,Columbia,alias_exact,1.0,False
+Connecticut,UConn,normalized_exact,1.0,False
+Coppin St.,Coppin State,normalized_exact,1.0,False
+Coppin State Eagles,Coppin State,alias_exact,1.0,False
+Cornell,Cornell,normalized_exact,1.0,False
+Cornell Big Red,Cornell,alias_exact,1.0,False
+Creighton,Creighton,normalized_exact,1.0,False
+Creighton Bluejays,Creighton,alias_exact,1.0,False
+Dartmouth,Dartmouth,normalized_exact,1.0,False
+Dartmouth Big Green,Dartmouth,alias_exact,1.0,False
+Davidson,Davidson,normalized_exact,1.0,False
+Davidson Wildcats,Davidson,alias_exact,1.0,False
+Dayton,Dayton,normalized_exact,1.0,False
+Dayton Flyers,Dayton,alias_exact,1.0,False
+DePaul,DePaul,normalized_exact,1.0,False
+DePaul Blue Demons,DePaul,alias_exact,1.0,False
+Delaware,Delaware,normalized_exact,1.0,False
+Delaware Blue Hens,Delaware,alias_exact,1.0,False
+Delaware St.,Delaware State,normalized_exact,1.0,False
+Delaware State Hornets,Delaware State,alias_exact,1.0,False
+Denver,Denver,normalized_exact,1.0,False
+Denver Pioneers,Denver,alias_exact,1.0,False
+Detroit Mercy,Detroit Mercy,normalized_exact,1.0,False
+Detroit Mercy Titans,Detroit Mercy,alias_exact,1.0,False
+Drake,Drake,normalized_exact,1.0,False
+Drake Bulldogs,Drake,alias_exact,1.0,False
+Drexel,Drexel,normalized_exact,1.0,False
+Drexel Dragons,Drexel,alias_exact,1.0,False
+Duke,Duke,normalized_exact,1.0,False
+Duke Blue Devils,Duke,alias_exact,1.0,False
+Duquesne,Duquesne,normalized_exact,1.0,False
+Duquesne Dukes,Duquesne,alias_exact,1.0,False
+East Carolina,ECU,normalized_exact,1.0,False
+East Carolina Pirates,ECU,alias_exact,1.0,False
+East Tennessee St.,ETSU,normalized_exact,1.0,False
+East Tennessee State Buccaneers,ETSU,alias_exact,1.0,False
+East Texas A&M,East Texas A&M,normalized_exact,1.0,False
+East Texas A&M Lions,East Texas A&M,alias_exact,1.0,False
+Eastern Illinois,E. Illinois,normalized_exact,1.0,False
+Eastern Illinois Panthers,E. Illinois,alias_exact,1.0,False
+Eastern Kentucky,E. Kentucky,normalized_exact,1.0,False
+Eastern Kentucky Colonels,E. Kentucky,alias_exact,1.0,False
+Eastern Michigan,E. Michigan,normalized_exact,1.0,False
+Eastern Michigan Eagles,E. Michigan,alias_exact,1.0,False
+Eastern Washington,E. Washington,normalized_exact,1.0,False
+Eastern Washington Eagles,E. Washington,alias_exact,1.0,False
+Elizabeth City State Vikings,,unmatched,0.0,True
+Elon,Elon,normalized_exact,1.0,False
+Elon Phoenix,Elon,alias_exact,1.0,False
+Evansville,Evansville,normalized_exact,1.0,False
+Evansville Purple Aces,Evansville,alias_exact,1.0,False
+FIU,FIU,normalized_exact,1.0,False
+Fairfield,Fairfield,normalized_exact,1.0,False
+Fairfield Stags,Fairfield,alias_exact,1.0,False
+Fairleigh Dickinson,Fair. Dickinson,normalized_exact,1.0,False
+Fairleigh Dickinson Knights,Fair. Dickinson,alias_exact,1.0,False
+Florida,Florida,normalized_exact,1.0,False
+Florida A&M,Florida A&M,normalized_exact,1.0,False
+Florida A&M Rattlers,Florida A&M,alias_exact,1.0,False
+Florida Atlantic,FAU,normalized_exact,1.0,False
+Florida Atlantic Owls,FAU,alias_exact,1.0,False
+Florida Gators,Florida,alias_exact,1.0,False
+Florida Gulf Coast,Florida,alias_exact,1.0,False
+Florida Gulf Coast Eagles,FGCU,alias_exact,1.0,False
+Florida International Panthers,Florida,alias_exact,1.0,False
+Florida St.,Florida State,normalized_exact,1.0,False
+Florida State Seminoles,Florida State,alias_exact,1.0,False
+Fordham,Fordham,normalized_exact,1.0,False
+Fordham Rams,Fordham,alias_exact,1.0,False
+Fresno St.,Fresno State,normalized_exact,1.0,False
+Fresno State Bulldogs,Fresno State,alias_exact,1.0,False
+Furman,Furman,normalized_exact,1.0,False
+Furman Paladins,Furman,alias_exact,1.0,False
+Gardner Webb,Gardner-Webb,normalized_exact,1.0,False
+Gardner-Webb Runnin' Bulldogs,Gardner-Webb,alias_exact,1.0,False
+George Mason,George Mason,normalized_exact,1.0,False
+George Mason Patriots,George Mason,alias_exact,1.0,False
+George Washington,G. Washington,normalized_exact,1.0,False
+George Washington Revolutionaries,G. Washington,alias_exact,1.0,False
+Georgetown,Georgetown,normalized_exact,1.0,False
+Georgetown Hoyas,Georgetown,alias_exact,1.0,False
+Georgia,Georgia,normalized_exact,1.0,False
+Georgia Bulldogs,Georgia,alias_exact,1.0,False
+Georgia Southern,Georgia,alias_exact,1.0,False
+Georgia Southern Eagles,Georgia,alias_exact,1.0,False
+Georgia St.,Georgia State,normalized_exact,1.0,False
+Georgia State Panthers,Georgia State,alias_exact,1.0,False
+Georgia Tech,Georgia Tech,normalized_exact,1.0,False
+Georgia Tech Yellow Jackets,Georgia Tech,alias_exact,1.0,False
+Gonzaga,Gonzaga,normalized_exact,1.0,False
+Gonzaga Bulldogs,Gonzaga,alias_exact,1.0,False
+Grambling St.,Grambling State,normalized_exact,1.0,False
+Grambling Tigers,Grambling State,normalized_exact,1.0,False
+Grand Canyon,Grand Canyon,normalized_exact,1.0,False
+Grand Canyon Lopes,Grand Canyon,alias_exact,1.0,False
+Green Bay,Green Bay,normalized_exact,1.0,False
+Green Bay Phoenix,Green Bay,alias_exact,1.0,False
+Hampton,Hampton,normalized_exact,1.0,False
+Hampton Pirates,Hampton,alias_exact,1.0,False
+Harvard,Harvard,normalized_exact,1.0,False
+Harvard Crimson,Harvard,alias_exact,1.0,False
+Hawai'i Rainbow Warriors,Hawaii,alias_exact,1.0,False
+Hawaii,Hawaii,normalized_exact,1.0,False
+High Point,High Point,normalized_exact,1.0,False
+High Point Panthers,High Point,alias_exact,1.0,False
+Hofstra,Hofstra,normalized_exact,1.0,False
+Hofstra Pride,Hofstra,alias_exact,1.0,False
+Holy Cross,Holy Cross,normalized_exact,1.0,False
+Holy Cross Crusaders,Holy Cross,alias_exact,1.0,False
+Houston,Houston,normalized_exact,1.0,False
+Houston Christian,Houston Christian,normalized_exact,1.0,False
+Houston Christian Huskies,Houston Christian,alias_exact,1.0,False
+Houston Cougars,Houston,alias_exact,1.0,False
+Howard,Howard,normalized_exact,1.0,False
+Howard Bison,Howard,alias_exact,1.0,False
+IU Indianapolis Jaguars,IU Indianapolis,alias_exact,1.0,False
+IU Indy,IU Indianapolis,normalized_exact,1.0,False
+Idaho,Idaho,normalized_exact,1.0,False
+Idaho St.,Idaho State,normalized_exact,1.0,False
+Idaho State Bengals,Idaho State,alias_exact,1.0,False
+Idaho Vandals,Idaho,alias_exact,1.0,False
+Illinois,Illinois,normalized_exact,1.0,False
+Illinois Chicago,Illinois,alias_exact,1.0,False
+Illinois Fighting Illini,Illinois,alias_exact,1.0,False
+Illinois St.,Illinois State,normalized_exact,1.0,False
+Illinois State Redbirds,Illinois State,alias_exact,1.0,False
+Incarnate Word,Incarnate Word,normalized_exact,1.0,False
+Incarnate Word Cardinals,Incarnate Word,alias_exact,1.0,False
+Indiana,Indiana,normalized_exact,1.0,False
+Indiana Hoosiers,Indiana,alias_exact,1.0,False
+Indiana St.,Indiana State,normalized_exact,1.0,False
+Indiana State Sycamores,Indiana State,alias_exact,1.0,False
+Iona,Iona,normalized_exact,1.0,False
+Iona Gaels,Iona,alias_exact,1.0,False
+Iowa,Iowa,normalized_exact,1.0,False
+Iowa Hawkeyes,Iowa,alias_exact,1.0,False
+Iowa St.,Iowa State,normalized_exact,1.0,False
+Iowa State Cyclones,Iowa State,alias_exact,1.0,False
+Jackson St.,Jackson State,normalized_exact,1.0,False
+Jackson State Tigers,Jackson State,alias_exact,1.0,False
+Jacksonville,Jacksonville,normalized_exact,1.0,False
+Jacksonville Dolphins,Jacksonville,alias_exact,1.0,False
+Jacksonville St.,Jacksonville St.,normalized_exact,1.0,False
+Jacksonville State Gamecocks,Jacksonville St.,alias_exact,1.0,False
+James Madison,JMU,normalized_exact,1.0,False
+James Madison Dukes,JMU,alias_exact,1.0,False
+Kansas,Kansas,normalized_exact,1.0,False
+Kansas City Roos,Kansas City,alias_exact,1.0,False
+Kansas Jayhawks,Kansas,alias_exact,1.0,False
+Kansas St.,Kansas State,normalized_exact,1.0,False
+Kansas State Wildcats,Kansas State,alias_exact,1.0,False
+Kennesaw St.,Kennesaw State,normalized_exact,1.0,False
+Kennesaw State Owls,Kennesaw State,alias_exact,1.0,False
+Kent St.,Kent State,normalized_exact,1.0,False
+Kent State Golden Flashes,Kent State,alias_exact,1.0,False
+Kentucky,Kentucky,normalized_exact,1.0,False
+Kentucky Wildcats,Kentucky,alias_exact,1.0,False
+LIU,Long Island,normalized_exact,1.0,False
+LSU,LSU,normalized_exact,1.0,False
+LSU Tigers,LSU,alias_exact,1.0,False
+La Salle,La Salle,normalized_exact,1.0,False
+La Salle Explorers,La Salle,alias_exact,1.0,False
+Lafayette,Lafayette,normalized_exact,1.0,False
+Lafayette Leopards,Lafayette,alias_exact,1.0,False
+Lamar,Lamar,normalized_exact,1.0,False
+Lamar Cardinals,Lamar,alias_exact,1.0,False
+Le Moyne,Le Moyne,normalized_exact,1.0,False
+Le Moyne Dolphins,Le Moyne,alias_exact,1.0,False
+Lehigh,Lehigh,normalized_exact,1.0,False
+Lehigh Mountain Hawks,Lehigh,alias_exact,1.0,False
+Liberty,Liberty,normalized_exact,1.0,False
+Liberty Flames,Liberty,alias_exact,1.0,False
+Lindenwood,Lindenwood,normalized_exact,1.0,False
+Lindenwood Lions,Lindenwood,alias_exact,1.0,False
+Lipscomb,Lipscomb,normalized_exact,1.0,False
+Lipscomb Bisons,Lipscomb,alias_exact,1.0,False
+Little Rock,Little Rock,normalized_exact,1.0,False
+Little Rock Trojans,Little Rock,alias_exact,1.0,False
+Long Beach St.,Long Beach St.,normalized_exact,1.0,False
+Long Beach State Beach,Long Beach St.,alias_exact,1.0,False
+Long Island University Sharks,Long Island,alias_exact,1.0,False
+Longwood,Longwood,normalized_exact,1.0,False
+Longwood Lancers,Longwood,alias_exact,1.0,False
+Louisiana,Louisiana,normalized_exact,1.0,False
+Louisiana Monroe,Louisiana,alias_exact,1.0,False
+Louisiana Ragin' Cajuns,Louisiana,alias_exact,1.0,False
+Louisiana Tech,Louisiana,alias_exact,1.0,False
+Louisiana Tech Bulldogs,Louisiana,alias_exact,1.0,False
+Louisville,Louisville,normalized_exact,1.0,False
+Louisville Cardinals,Louisville,alias_exact,1.0,False
+Loyola Chicago,Loyola-Chicago,normalized_exact,1.0,False
+Loyola Chicago Ramblers,Loyola-Chicago,alias_exact,1.0,False
+Loyola MD,Loyola (MD),normalized_exact,1.0,False
+Loyola Maryland Greyhounds,Loyola (MD),alias_exact,1.0,False
+Loyola Marymount,Loyola Marymount,normalized_exact,1.0,False
+Loyola Marymount Lions,Loyola Marymount,alias_exact,1.0,False
+Maine,Maine,normalized_exact,1.0,False
+Maine Black Bears,Maine,alias_exact,1.0,False
+Manhattan,Manhattan,normalized_exact,1.0,False
+Manhattan Jaspers,Manhattan,alias_exact,1.0,False
+Marist,Marist,normalized_exact,1.0,False
+Marist Red Foxes,Marist,alias_exact,1.0,False
+Marquette,Marquette,normalized_exact,1.0,False
+Marquette Golden Eagles,Marquette,alias_exact,1.0,False
+Marshall,Marshall,normalized_exact,1.0,False
+Marshall Thundering Herd,Marshall,alias_exact,1.0,False
+Maryland,Maryland,normalized_exact,1.0,False
+Maryland Eastern Shore,Maryland,alias_exact,1.0,False
+Maryland Eastern Shore Hawks,UMES,alias_exact,1.0,False
+Maryland Terrapins,Maryland,alias_exact,1.0,False
+Massachusetts,UMass,normalized_exact,1.0,False
+Massachusetts Minutemen,UMass,alias_exact,1.0,False
+McNeese Cowboys,McNeese,alias_exact,1.0,False
+McNeese St.,McNeese,alias_exact,1.0,False
+Memphis,Memphis,normalized_exact,1.0,False
+Memphis Tigers,Memphis,alias_exact,1.0,False
+Mercer,Mercer,normalized_exact,1.0,False
+Mercer Bears,Mercer,alias_exact,1.0,False
+Mercyhurst,Mercyhurst,normalized_exact,1.0,False
+Mercyhurst Lakers,Mercyhurst,alias_exact,1.0,False
+Merrimack,Merrimack,normalized_exact,1.0,False
+Merrimack Warriors,Merrimack,alias_exact,1.0,False
+Miami (OH) RedHawks,Miami (OH),alias_exact,1.0,False
+Miami FL,Miami,alias_exact,1.0,False
+Miami Hurricanes,Miami,alias_exact,1.0,False
+Miami OH,Miami (OH),normalized_exact,1.0,False
+Michigan,Michigan,normalized_exact,1.0,False
+Michigan St.,Michigan State,normalized_exact,1.0,False
+Michigan State Spartans,Michigan State,alias_exact,1.0,False
+Michigan Wolverines,Michigan,alias_exact,1.0,False
+Mid-Atlantic Christian Mustangs,,unmatched,0.0,True
+Middle Tennessee,MTSU,normalized_exact,1.0,False
+Middle Tennessee Blue Raiders,MTSU,alias_exact,1.0,False
+Milwaukee,Milwaukee,normalized_exact,1.0,False
+Milwaukee Panthers,Milwaukee,alias_exact,1.0,False
+Minnesota,Minnesota,normalized_exact,1.0,False
+Minnesota Golden Gophers,Minnesota,alias_exact,1.0,False
+Mississippi,Ole Miss,normalized_exact,1.0,False
+Mississippi St.,Mississippi St.,normalized_exact,1.0,False
+Mississippi State Bulldogs,Mississippi St.,alias_exact,1.0,False
+Mississippi Valley St.,Ole Miss,alias_exact,1.0,False
+Mississippi Valley State Delta Devils,Miss. Valley St.,alias_exact,1.0,False
+Missouri,Missouri,normalized_exact,1.0,False
+Missouri St.,Missouri State,normalized_exact,1.0,False
+Missouri State Bears,Missouri State,alias_exact,1.0,False
+Missouri Tigers,Missouri,alias_exact,1.0,False
+Monmouth,Monmouth,normalized_exact,1.0,False
+Monmouth Hawks,Monmouth,alias_exact,1.0,False
+Montana,Montana,normalized_exact,1.0,False
+Montana Grizzlies,Montana,alias_exact,1.0,False
+Montana St.,Montana State,normalized_exact,1.0,False
+Montana State Bobcats,Montana State,alias_exact,1.0,False
+Morehead St.,Morehead State,normalized_exact,1.0,False
+Morehead State Eagles,Morehead State,alias_exact,1.0,False
+Morehouse Maroon Tigers,,unmatched,0.0,True
+Morgan St.,Morgan State,normalized_exact,1.0,False
+Morgan State Bears,Morgan State,alias_exact,1.0,False
+Mount St. Mary's,Mt. St. Mary's,normalized_exact,1.0,False
+Mount St. Mary's Mountaineers,Mt. St. Mary's,alias_exact,1.0,False
+Murray St.,Murray State,normalized_exact,1.0,False
+Murray State Racers,Murray State,alias_exact,1.0,False
+N.C. State,NC State,fuzzy,0.9091,False
+NC State Wolfpack,NC State,alias_exact,1.0,False
+NJIT,NJIT,normalized_exact,1.0,False
+NJIT Highlanders,NJIT,alias_exact,1.0,False
+Navy,Navy,normalized_exact,1.0,False
+Navy Midshipmen,Navy,alias_exact,1.0,False
+Nebraska,Nebraska,normalized_exact,1.0,False
+Nebraska Cornhuskers,Nebraska,alias_exact,1.0,False
+Nebraska Omaha,Nebraska,alias_exact,1.0,False
+Nevada,Nevada,normalized_exact,1.0,False
+Nevada Wolf Pack,Nevada,alias_exact,1.0,False
+New Hampshire,UNH,normalized_exact,1.0,False
+New Hampshire Wildcats,UNH,alias_exact,1.0,False
+New Haven,New Haven,normalized_exact,1.0,False
+New Haven Chargers,New Haven,alias_exact,1.0,False
+New Mexico,New Mexico,normalized_exact,1.0,False
+New Mexico Lobos,New Mexico,alias_exact,1.0,False
+New Mexico St.,New Mexico St.,normalized_exact,1.0,False
+New Mexico State Aggies,New Mexico St.,alias_exact,1.0,False
+New Orleans,New Orleans,normalized_exact,1.0,False
+New Orleans Privateers,New Orleans,alias_exact,1.0,False
+Niagara,Niagara,normalized_exact,1.0,False
+Niagara Purple Eagles,Niagara,alias_exact,1.0,False
+Nicholls Colonels,Nicholls,alias_exact,1.0,False
+Nicholls St.,Nicholls,alias_exact,1.0,False
+Norfolk St.,Norfolk State,normalized_exact,1.0,False
+Norfolk State Spartans,Norfolk State,alias_exact,1.0,False
+North Alabama,North Alabama,normalized_exact,1.0,False
+North Alabama Lions,North Alabama,alias_exact,1.0,False
+North Carolina,North Carolina,normalized_exact,1.0,False
+North Carolina A&T,North Carolina,alias_exact,1.0,False
+North Carolina A&T Aggies,North Carolina,alias_exact,1.0,False
+North Carolina Central,North Carolina,alias_exact,1.0,False
+North Carolina Central Eagles,North Carolina,alias_exact,1.0,False
+North Carolina Tar Heels,North Carolina,alias_exact,1.0,False
+North Dakota,North Dakota,normalized_exact,1.0,False
+North Dakota Fighting Hawks,North Dakota,alias_exact,1.0,False
+North Dakota St.,North Dakota St.,normalized_exact,1.0,False
+North Dakota State Bison,North Dakota St.,alias_exact,1.0,False
+North Florida,North Florida,normalized_exact,1.0,False
+North Florida Ospreys,North Florida,alias_exact,1.0,False
+North Texas,North Texas,normalized_exact,1.0,False
+North Texas Mean Green,North Texas,alias_exact,1.0,False
+Northeastern,Northeastern,normalized_exact,1.0,False
+Northeastern Huskies,Northeastern,alias_exact,1.0,False
+Northern Arizona,N. Arizona,normalized_exact,1.0,False
+Northern Arizona Lumberjacks,N. Arizona,alias_exact,1.0,False
+Northern Colorado,N. Colorado,normalized_exact,1.0,False
+Northern Colorado Bears,N. Colorado,alias_exact,1.0,False
+Northern Illinois,N. Illinois,normalized_exact,1.0,False
+Northern Illinois Huskies,N. Illinois,alias_exact,1.0,False
+Northern Iowa,Northern Iowa,normalized_exact,1.0,False
+Northern Iowa Panthers,Northern Iowa,alias_exact,1.0,False
+Northern Kentucky,N. Kentucky,normalized_exact,1.0,False
+Northern Kentucky Norse,N. Kentucky,alias_exact,1.0,False
+Northwestern,Northwestern,normalized_exact,1.0,False
+Northwestern St.,Northwestern St.,normalized_exact,1.0,False
+Northwestern State Demons,Northwestern St.,alias_exact,1.0,False
+Northwestern Wildcats,Northwestern,alias_exact,1.0,False
+Notre Dame,Notre Dame,normalized_exact,1.0,False
+Notre Dame Fighting Irish,Notre Dame,alias_exact,1.0,False
+Oakland,Oakland,normalized_exact,1.0,False
+Oakland Golden Grizzlies,Oakland,alias_exact,1.0,False
+Ohio,Ohio,normalized_exact,1.0,False
+Ohio Bobcats,Ohio,alias_exact,1.0,False
+Ohio St.,Ohio State,normalized_exact,1.0,False
+Ohio State Buckeyes,Ohio State,alias_exact,1.0,False
+Oklahoma,Oklahoma,normalized_exact,1.0,False
+Oklahoma Sooners,Oklahoma,alias_exact,1.0,False
+Oklahoma St.,Oklahoma State,normalized_exact,1.0,False
+Oklahoma State Cowboys,Oklahoma State,alias_exact,1.0,False
+Old Dominion,Old Dominion,normalized_exact,1.0,False
+Old Dominion Monarchs,Old Dominion,alias_exact,1.0,False
+Ole Miss Rebels,Ole Miss,alias_exact,1.0,False
+Omaha Mavericks,Omaha,alias_exact,1.0,False
+Oral Roberts,Oral Roberts,normalized_exact,1.0,False
+Oral Roberts Golden Eagles,Oral Roberts,alias_exact,1.0,False
+Oregon,Oregon,normalized_exact,1.0,False
+Oregon Ducks,Oregon,alias_exact,1.0,False
+Oregon St.,Oregon State,normalized_exact,1.0,False
+Oregon State Beavers,Oregon State,alias_exact,1.0,False
+Pacific,Pacific,normalized_exact,1.0,False
+Pacific Tigers,Pacific,alias_exact,1.0,False
+Penn,Penn,normalized_exact,1.0,False
+Penn St.,Penn State,normalized_exact,1.0,False
+Penn State Nittany Lions,Penn State,alias_exact,1.0,False
+Pennsylvania Quakers,Penn,alias_exact,1.0,False
+Pepperdine,Pepperdine,normalized_exact,1.0,False
+Pepperdine Waves,Pepperdine,alias_exact,1.0,False
+Pittsburgh,Pittsburgh,normalized_exact,1.0,False
+Pittsburgh Panthers,Pittsburgh,alias_exact,1.0,False
+Portland,Portland,normalized_exact,1.0,False
+Portland Pilots,Portland,alias_exact,1.0,False
+Portland St.,Portland State,normalized_exact,1.0,False
+Portland State Vikings,Portland State,alias_exact,1.0,False
+Prairie View A&M,PV A&M,normalized_exact,1.0,False
+Prairie View A&M Panthers,PV A&M,alias_exact,1.0,False
+Presbyterian,Presbyterian,normalized_exact,1.0,False
+Presbyterian Blue Hose,Presbyterian,alias_exact,1.0,False
+Princeton,Princeton,normalized_exact,1.0,False
+Princeton Tigers,Princeton,alias_exact,1.0,False
+Providence,Providence,normalized_exact,1.0,False
+Providence Friars,Providence,alias_exact,1.0,False
+Purdue,Purdue,normalized_exact,1.0,False
+Purdue Boilermakers,Purdue,alias_exact,1.0,False
+Purdue Fort Wayne,Purdue,alias_exact,1.0,False
+Purdue Fort Wayne Mastodons,Fort Wayne,alias_exact,1.0,False
+Queens,Queens,normalized_exact,1.0,False
+Queens University Royals,Queens,alias_exact,1.0,False
+Quinnipiac,Quinnipiac,normalized_exact,1.0,False
+Quinnipiac Bobcats,Quinnipiac,alias_exact,1.0,False
+Radford,Radford,normalized_exact,1.0,False
+Radford Highlanders,Radford,alias_exact,1.0,False
+Rhode Island,URI,normalized_exact,1.0,False
+Rhode Island Rams,URI,alias_exact,1.0,False
+Rice,Rice,normalized_exact,1.0,False
+Rice Owls,Rice,alias_exact,1.0,False
+Richmond,Richmond,normalized_exact,1.0,False
+Richmond Spiders,Richmond,alias_exact,1.0,False
+Rider,Rider,normalized_exact,1.0,False
+Rider Broncs,Rider,alias_exact,1.0,False
+Robert Morris,Robert Morris,normalized_exact,1.0,False
+Robert Morris Colonials,Robert Morris,alias_exact,1.0,False
+Rutgers,Rutgers,normalized_exact,1.0,False
+Rutgers Scarlet Knights,Rutgers,alias_exact,1.0,False
+SE Louisiana Lions,SE Louisiana,alias_exact,1.0,False
+SIU Edwardsville,SIUE,normalized_exact,1.0,False
+SIU Edwardsville Cougars,SIUE,alias_exact,1.0,False
+SMU,SMU,normalized_exact,1.0,False
+SMU Mustangs,SMU,alias_exact,1.0,False
+Sacramento St.,Sacramento St.,normalized_exact,1.0,False
+Sacramento State Hornets,Sacramento St.,alias_exact,1.0,False
+Sacred Heart,Sacred Heart,normalized_exact,1.0,False
+Sacred Heart Pioneers,Sacred Heart,alias_exact,1.0,False
+Saint Francis,St. Francis (PA),normalized_exact,1.0,False
+Saint Francis Red Flash,St. Francis (PA),alias_exact,1.0,False
+Saint Joseph's,Saint Joe's,normalized_exact,1.0,False
+Saint Joseph's Hawks,Saint Joe's,alias_exact,1.0,False
+Saint Louis,Saint Louis,normalized_exact,1.0,False
+Saint Louis Billikens,Saint Louis,alias_exact,1.0,False
+Saint Mary's,Saint Mary's,normalized_exact,1.0,False
+Saint Mary's Gaels,Saint Mary's,alias_exact,1.0,False
+Saint Peter's,St. Peter's,normalized_exact,1.0,False
+Saint Peter's Peacocks,St. Peter's,alias_exact,1.0,False
+Sam Houston Bearkats,Sam Houston,alias_exact,1.0,False
+Sam Houston St.,Sam Houston,alias_exact,1.0,False
+Samford,Samford,normalized_exact,1.0,False
+Samford Bulldogs,Samford,alias_exact,1.0,False
+San Diego,San Diego,normalized_exact,1.0,False
+San Diego St.,San Diego State,normalized_exact,1.0,False
+San Diego State Aztecs,San Diego State,alias_exact,1.0,False
+San Diego Toreros,San Diego,alias_exact,1.0,False
+San Francisco,San Francisco,normalized_exact,1.0,False
+San Francisco Dons,San Francisco,alias_exact,1.0,False
+San Jose St.,San Jose State,normalized_exact,1.0,False
+San José State Spartans,San Jose State,alias_fuzzy,0.9091,False
+Santa Clara,Santa Clara,normalized_exact,1.0,False
+Santa Clara Broncos,Santa Clara,alias_exact,1.0,False
+Seattle,Seattle,normalized_exact,1.0,False
+Seattle U Redhawks,Seattle,alias_exact,1.0,False
+Seton Hall,Seton Hall,normalized_exact,1.0,False
+Seton Hall Pirates,Seton Hall,alias_exact,1.0,False
+Siena,Siena,normalized_exact,1.0,False
+Siena Saints,Siena,alias_exact,1.0,False
+South Alabama,South Alabama,normalized_exact,1.0,False
+South Alabama Jaguars,South Alabama,alias_exact,1.0,False
+South Carolina,South Carolina,normalized_exact,1.0,False
+South Carolina Gamecocks,South Carolina,alias_exact,1.0,False
+South Carolina St.,South Carolina,alias_exact,1.0,False
+South Carolina State Bulldogs,South Carolina,alias_exact,1.0,False
+South Carolina Upstate Spartans,South Carolina,alias_exact,1.0,False
+South Dakota,South Dakota,normalized_exact,1.0,False
+South Dakota Coyotes,South Dakota,alias_exact,1.0,False
+South Dakota St.,South Dakota St.,normalized_exact,1.0,False
+South Dakota State Jackrabbits,South Dakota St.,alias_exact,1.0,False
+South Florida,USF,normalized_exact,1.0,False
+South Florida Bulls,USF,alias_exact,1.0,False
+Southeast Missouri St.,SE Missouri St.,normalized_exact,1.0,False
+Southeast Missouri State Redhawks,SE Missouri St.,alias_exact,1.0,False
+Southeastern Louisiana,SE Louisiana,normalized_exact,1.0,False
+Southern,Southern,normalized_exact,1.0,False
+Southern Illinois,Southern,alias_exact,1.0,False
+Southern Illinois Salukis,Southern,alias_exact,1.0,False
+Southern Indiana,Southern,alias_exact,1.0,False
+Southern Indiana Screaming Eagles,S. Indiana,alias_exact,1.0,False
+Southern Jaguars,Southern,alias_exact,1.0,False
+Southern Miss,Southern Miss,normalized_exact,1.0,False
+Southern Miss Golden Eagles,Southern Miss,alias_exact,1.0,False
+Southern Utah,Southern Utah,normalized_exact,1.0,False
+Southern Utah Thunderbirds,Southern Utah,alias_exact,1.0,False
+St. Bonaventure,St. Bonaventure,normalized_exact,1.0,False
+St. Bonaventure Bonnies,St. Bonaventure,alias_exact,1.0,False
+St. John's,St. John's,normalized_exact,1.0,False
+St. John's Red Storm,St. John's,alias_exact,1.0,False
+St. Thomas,St. Thomas,normalized_exact,1.0,False
+St. Thomas-Minnesota Tommies,St. Thomas,alias_exact,1.0,False
+Stanford,Stanford,normalized_exact,1.0,False
+Stanford Cardinal,Stanford,alias_exact,1.0,False
+Stephen F. Austin,Stephen F. Austin,normalized_exact,1.0,False
+Stephen F. Austin Lumberjacks,Stephen F. Austin,alias_exact,1.0,False
+Stetson,Stetson,normalized_exact,1.0,False
+Stetson Hatters,Stetson,alias_exact,1.0,False
+Stonehill,Stonehill,normalized_exact,1.0,False
+Stonehill Skyhawks,Stonehill,alias_exact,1.0,False
+Stony Brook,Stony Brook,normalized_exact,1.0,False
+Stony Brook Seawolves,Stony Brook,alias_exact,1.0,False
+Syracuse,Syracuse,normalized_exact,1.0,False
+Syracuse Orange,Syracuse,alias_exact,1.0,False
+TCU,TCU,normalized_exact,1.0,False
+TCU Horned Frogs,TCU,alias_exact,1.0,False
+Tarleton St.,Tarleton,alias_exact,1.0,False
+Tarleton State Texans,Tarleton,alias_exact,1.0,False
+Temple,Temple,normalized_exact,1.0,False
+Temple Owls,Temple,alias_exact,1.0,False
+Tennessee,Tennessee,normalized_exact,1.0,False
+Tennessee Martin,UT Martin,normalized_exact,1.0,False
+Tennessee St.,Tennessee St.,normalized_exact,1.0,False
+Tennessee State Tigers,Tennessee St.,alias_exact,1.0,False
+Tennessee Tech,Tennessee,alias_exact,1.0,False
+Tennessee Tech Golden Eagles,Tenn. Tech,alias_exact,1.0,False
+Tennessee Volunteers,Tennessee,alias_exact,1.0,False
+Texas,Texas,normalized_exact,1.0,False
+Texas A&M,Texas A&M,normalized_exact,1.0,False
+Texas A&M Aggies,Texas A&M,alias_exact,1.0,False
+Texas A&M Corpus Chris,Texas A&M,alias_exact,1.0,False
+Texas A&M-Corpus Christi Islanders,Texas A&M-CC,alias_exact,1.0,False
+Texas Longhorns,Texas,alias_exact,1.0,False
+Texas Southern,Texas Southern,normalized_exact,1.0,False
+Texas Southern Tigers,Texas Southern,alias_exact,1.0,False
+Texas St.,Texas State,normalized_exact,1.0,False
+Texas State Bobcats,Texas State,alias_exact,1.0,False
+Texas Tech,Texas Tech,normalized_exact,1.0,False
+Texas Tech Red Raiders,Texas Tech,alias_exact,1.0,False
+The Citadel,The Citadel,normalized_exact,1.0,False
+The Citadel Bulldogs,The Citadel,alias_exact,1.0,False
+Toledo,Toledo,normalized_exact,1.0,False
+Toledo Rockets,Toledo,alias_exact,1.0,False
+Towson,Towson,normalized_exact,1.0,False
+Towson Tigers,Towson,alias_exact,1.0,False
+Troy,Troy,normalized_exact,1.0,False
+Troy Trojans,Troy,alias_exact,1.0,False
+Tulane,Tulane,normalized_exact,1.0,False
+Tulane Green Wave,Tulane,alias_exact,1.0,False
+Tulsa,Tulsa,normalized_exact,1.0,False
+Tulsa Golden Hurricane,Tulsa,alias_exact,1.0,False
+UAB,UAB,normalized_exact,1.0,False
+UAB Blazers,UAB,alias_exact,1.0,False
+UAlbany Great Danes,Albany,alias_fuzzy,0.9231,False
+UC Davis,UC Davis,normalized_exact,1.0,False
+UC Davis Aggies,UC Davis,alias_exact,1.0,False
+UC Irvine,UC Irvine,normalized_exact,1.0,False
+UC Irvine Anteaters,UC Irvine,alias_exact,1.0,False
+UC Riverside,UC Riverside,normalized_exact,1.0,False
+UC Riverside Highlanders,UC Riverside,alias_exact,1.0,False
+UC San Diego,UC San Diego,normalized_exact,1.0,False
+UC San Diego Tritons,UC San Diego,alias_exact,1.0,False
+UC Santa Barbara,UCSB,normalized_exact,1.0,False
+UC Santa Barbara Gauchos,UCSB,alias_exact,1.0,False
+UCF,UCF,normalized_exact,1.0,False
+UCF Knights,UCF,alias_exact,1.0,False
+UCLA,UCLA,normalized_exact,1.0,False
+UCLA Bruins,UCLA,alias_exact,1.0,False
+UConn Huskies,UConn,alias_exact,1.0,False
+UIC Flames,UIC,alias_exact,1.0,False
+UL Monroe Warhawks,UL Monroe,alias_exact,1.0,False
+UMBC,UMBC,normalized_exact,1.0,False
+UMBC Retrievers,UMBC,alias_exact,1.0,False
+UMKC,Kansas City,normalized_exact,1.0,False
+UMass Lowell,UMass Lowell,normalized_exact,1.0,False
+UMass Lowell River Hawks,UMass Lowell,alias_exact,1.0,False
+UNC Asheville,UNC Asheville,normalized_exact,1.0,False
+UNC Asheville Bulldogs,UNC Asheville,alias_exact,1.0,False
+UNC Greensboro,UNCG,normalized_exact,1.0,False
+UNC Greensboro Spartans,UNCG,alias_exact,1.0,False
+UNC Wilmington,UNC Wilmington,normalized_exact,1.0,False
+UNC Wilmington Seahawks,UNC Wilmington,alias_exact,1.0,False
+UNLV,UNLV,normalized_exact,1.0,False
+UNLV Rebels,UNLV,alias_exact,1.0,False
+USC,USC,normalized_exact,1.0,False
+USC Trojans,USC,alias_exact,1.0,False
+USC Upstate,USC Upstate,normalized_exact,1.0,False
+UT Arlington,UT Arlington,normalized_exact,1.0,False
+UT Arlington Mavericks,UT Arlington,alias_exact,1.0,False
+UT Martin Skyhawks,UT Martin,alias_exact,1.0,False
+UT Rio Grande Valley,UTRGV,normalized_exact,1.0,False
+UT Rio Grande Valley Vaqueros,UTRGV,alias_exact,1.0,False
+UTEP,UTEP,normalized_exact,1.0,False
+UTEP Miners,UTEP,alias_exact,1.0,False
+UTSA,UTSA,normalized_exact,1.0,False
+UTSA Roadrunners,UTSA,alias_exact,1.0,False
+Utah,Utah,normalized_exact,1.0,False
+Utah St.,Utah State,normalized_exact,1.0,False
+Utah State Aggies,Utah State,alias_exact,1.0,False
+Utah Tech,Utah Tech,normalized_exact,1.0,False
+Utah Tech Trailblazers,Utah Tech,alias_exact,1.0,False
+Utah Utes,Utah,alias_exact,1.0,False
+Utah Valley,Utah Valley,normalized_exact,1.0,False
+Utah Valley Wolverines,Utah Valley,alias_exact,1.0,False
+VCU,VCU,normalized_exact,1.0,False
+VCU Rams,VCU,alias_exact,1.0,False
+VMI,VMI,normalized_exact,1.0,False
+VMI Keydets,VMI,alias_exact,1.0,False
+Valparaiso,Valparaiso,normalized_exact,1.0,False
+Valparaiso Beacons,Valparaiso,alias_exact,1.0,False
+Vanderbilt,Vanderbilt,normalized_exact,1.0,False
+Vanderbilt Commodores,Vanderbilt,alias_exact,1.0,False
+Vermont,Vermont,normalized_exact,1.0,False
+Vermont Catamounts,Vermont,alias_exact,1.0,False
+Villanova,Villanova,normalized_exact,1.0,False
+Villanova Wildcats,Villanova,alias_exact,1.0,False
+Virginia,Virginia,normalized_exact,1.0,False
+Virginia Cavaliers,Virginia,alias_exact,1.0,False
+Virginia Tech,Virginia Tech,normalized_exact,1.0,False
+Virginia Tech Hokies,Virginia Tech,alias_exact,1.0,False
+Virginia-Lynchburg Dragons,,unmatched,0.0,True
+Wagner,Wagner,normalized_exact,1.0,False
+Wagner Seahawks,Wagner,alias_exact,1.0,False
+Wake Forest,Wake Forest,normalized_exact,1.0,False
+Wake Forest Demon Deacons,Wake Forest,alias_exact,1.0,False
+Washington,Washington,normalized_exact,1.0,False
+Washington Huskies,Washington,alias_exact,1.0,False
+Washington St.,Washington St.,normalized_exact,1.0,False
+Washington State Cougars,Washington St.,alias_exact,1.0,False
+Weber St.,Weber State,normalized_exact,1.0,False
+Weber State Wildcats,Weber State,alias_exact,1.0,False
+West Georgia,West Georgia,normalized_exact,1.0,False
+West Georgia Wolves,West Georgia,alias_exact,1.0,False
+West Virginia,West Virginia,normalized_exact,1.0,False
+West Virginia Mountaineers,West Virginia,alias_exact,1.0,False
+Western Carolina,W. Carolina,normalized_exact,1.0,False
+Western Carolina Catamounts,W. Carolina,alias_exact,1.0,False
+Western Illinois,W. Illinois,normalized_exact,1.0,False
+Western Illinois Leathernecks,W. Illinois,alias_exact,1.0,False
+Western Kentucky,W. Kentucky,normalized_exact,1.0,False
+Western Kentucky Hilltoppers,W. Kentucky,alias_exact,1.0,False
+Western Michigan,W. Michigan,normalized_exact,1.0,False
+Western Michigan Broncos,W. Michigan,alias_exact,1.0,False
+Wichita St.,Wichita State,normalized_exact,1.0,False
+Wichita State Shockers,Wichita State,alias_exact,1.0,False
+William & Mary,William & Mary,normalized_exact,1.0,False
+William & Mary Tribe,William & Mary,alias_exact,1.0,False
+Winthrop,Winthrop,normalized_exact,1.0,False
+Winthrop Eagles,Winthrop,alias_exact,1.0,False
+Wisconsin,Wisconsin,normalized_exact,1.0,False
+Wisconsin Badgers,Wisconsin,alias_exact,1.0,False
+Wofford,Wofford,normalized_exact,1.0,False
+Wofford Terriers,Wofford,alias_exact,1.0,False
+Wright St.,Wright State,normalized_exact,1.0,False
+Wright State Raiders,Wright State,alias_exact,1.0,False
+Wyoming,Wyoming,normalized_exact,1.0,False
+Wyoming Cowboys,Wyoming,alias_exact,1.0,False
+Xavier,Xavier,normalized_exact,1.0,False
+Xavier Musketeers,Xavier,alias_exact,1.0,False
+Yale,Yale,normalized_exact,1.0,False
+Yale Bulldogs,Yale,alias_exact,1.0,False
+Youngstown St.,Youngstown St.,normalized_exact,1.0,False
+Youngstown State Penguins,Youngstown St.,alias_exact,1.0,False

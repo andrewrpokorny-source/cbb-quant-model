@@ -4,6 +4,7 @@ import pytest
 
 from league_config import (
     get_league_artifact_paths,
+    get_season_start_date,
     get_scoreboard_base_url,
     normalize_league,
 )
@@ -25,6 +26,15 @@ def test_artifact_paths_include_womens_files(tmp_path):
     assert paths["win_model_file"].endswith("womens_cbb_win_model_v1.pkl")
     assert paths["odds_archive_file"].endswith("odds_history.csv")
     assert paths["predictions_archive_prefix"] == "predictions_wbb"
+    assert paths["torvik_snapshot_file"] is None
+
+
+def test_artifact_paths_include_torvik_files_for_mens(tmp_path):
+    paths = get_league_artifact_paths(str(tmp_path), "mens")
+    assert paths["torvik_snapshot_file"].endswith("torvik_ratings_snapshots.csv")
+    assert paths["torvik_map_file"].endswith("torvik_team_map.csv")
+    assert paths["hasla_snapshot_file"].endswith("hasla_rank_snapshots.csv")
+    assert paths["hasla_map_file"].endswith("hasla_team_map.csv")
 
 
 def test_scoreboard_base_url_uses_league_path():
@@ -32,3 +42,8 @@ def test_scoreboard_base_url_uses_league_path():
     womens_url = get_scoreboard_base_url("womens")
     assert "mens-college-basketball" in mens_url
     assert "womens-college-basketball" in womens_url
+
+
+def test_season_start_date_is_configured_per_league():
+    assert get_season_start_date("mens") == "2025-11-04"
+    assert get_season_start_date("womens") == "2025-11-05"

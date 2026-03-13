@@ -35,6 +35,20 @@ FEATURES_NO_LINE = [
     "opp_season_off_rating",
     "off_rating_gap",
 ]
+MENS_FEATURES_NO_LINE = [
+    "is_neutral",
+    "rest_days",
+    "roll5_cover_margin",
+    "prev_games_played",
+    "opp_win_pct",
+    "prev_blowout_rate",
+    "prev_roll5_margin",
+    "prev_volatility",
+]
+WIN_FEATURES_NO_LINE_BY_LEAGUE = {
+    "mens": MENS_FEATURES_NO_LINE,
+    "womens": FEATURES_NO_LINE,
+}
 
 # Adds market context where available.
 FEATURES_WITH_LINE = FEATURES_NO_LINE + [
@@ -42,9 +56,19 @@ FEATURES_WITH_LINE = FEATURES_NO_LINE + [
     "spread_abs",
     "spread_squared",
 ]
+MENS_FEATURES_WITH_LINE = MENS_FEATURES_NO_LINE + [
+    "spread",
+    "spread_abs",
+    "spread_squared",
+]
+WIN_FEATURES_WITH_LINE_BY_LEAGUE = {
+    "mens": MENS_FEATURES_WITH_LINE,
+    "womens": FEATURES_WITH_LINE,
+}
 
 
 DEFAULT_FILL = {
+    "is_neutral": 0.0,
     "rest_days": 3.0,
     "diff_eFG": 0.0,
     "diff_Rebound": 0.0,
@@ -97,8 +121,8 @@ def _prepare_home_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     # Derived quality differential.
     frame["off_rating_gap"] = (
-        pd.to_numeric(frame.get("prev_season_off_rating"), errors="coerce").fillna(100.0)
-        - pd.to_numeric(frame.get("opp_season_off_rating"), errors="coerce").fillna(100.0)
+        _numeric_series(frame, "prev_season_off_rating", 100.0)
+        - _numeric_series(frame, "opp_season_off_rating", 100.0)
     )
 
     return frame
@@ -112,6 +136,13 @@ def _build_features(frame: pd.DataFrame, features: list[str]) -> pd.DataFrame:
     for col in features:
         X[col] = pd.to_numeric(X[col], errors="coerce")
     return X.fillna({k: DEFAULT_FILL[k] for k in features}).fillna(0.0)
+
+
+def _numeric_series(frame: pd.DataFrame, column: str, default: float) -> pd.Series:
+    """Return a numeric series for a column or a default-filled fallback."""
+    if column not in frame.columns:
+        return pd.Series(default, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(default)
 
 
 def _train_variant(frame: pd.DataFrame, features: list[str], name: str):
@@ -184,11 +215,14 @@ def train_win_models(league: str = "mens"):
     home_rows = _prepare_home_rows(df)
     print(f"Home-game rows available: {len(home_rows)}")
 
-    no_line = _train_variant(home_rows, FEATURES_NO_LINE, "no_line")
+    no_line_features = get_win_feature_list(league, with_line=False)
+    with_line_features = get_win_feature_list(league, with_line=True)
+
+    no_line = _train_variant(home_rows, no_line_features, "no_line")
 
     with_line_rows = home_rows[home_rows["spread"].abs() > 0].copy()
     print(f"Rows with non-zero spread: {len(with_line_rows)}")
-    with_line = _train_variant(with_line_rows, FEATURES_WITH_LINE, "with_line")
+    with_line = _train_variant(with_line_rows, with_line_features, "with_line")
 
     if no_line is None and with_line is None:
         print("No P(win) variant could be trained.")
@@ -198,10 +232,10 @@ def train_win_models(league: str = "mens"):
         "league": league,
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "model_no_line": no_line["model"] if no_line else None,
-        "features_no_line": no_line["features"] if no_line else FEATURES_NO_LINE,
+        "features_no_line": no_line["features"] if no_line else no_line_features,
         "metrics_no_line": no_line["metrics"] if no_line else None,
         "model_with_line": with_line["model"] if with_line else None,
-        "features_with_line": with_line["features"] if with_line else FEATURES_WITH_LINE,
+        "features_with_line": with_line["features"] if with_line else with_line_features,
         "metrics_with_line": with_line["metrics"] if with_line else None,
     }
     joblib.dump(payload, out_file)
@@ -231,12 +265,19 @@ def load_win_model_bundle(path: str | None = None, league: str = "mens") -> dict
     # Backward compatibility: raw model treated as no-line variant.
     return {
         "model_no_line": data,
-        "features_no_line": FEATURES_NO_LINE,
+        "features_no_line": get_win_feature_list(league, with_line=False),
         "metrics_no_line": None,
         "model_with_line": None,
-        "features_with_line": FEATURES_WITH_LINE,
+        "features_with_line": get_win_feature_list(league, with_line=True),
         "metrics_with_line": None,
     }
+
+
+def get_win_feature_list(league: str = "mens", *, with_line: bool = False) -> list[str]:
+    """Return the league-specific P(win) feature list."""
+    canonical = normalize_league(league)
+    mapping = WIN_FEATURES_WITH_LINE_BY_LEAGUE if with_line else WIN_FEATURES_NO_LINE_BY_LEAGUE
+    return list(mapping[canonical])
 
 
 def predict_home_win_prob(

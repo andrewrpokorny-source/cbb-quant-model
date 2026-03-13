@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import requests
 
 from league_config import (
     get_league_artifact_paths,
+    get_season_start_date,
     get_league_settings,
     get_scoreboard_base_url,
     normalize_league,
@@ -17,6 +19,20 @@ from league_config import (
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VENUE_METADATA_COLUMNS = ["is_neutral", "venue_city", "venue_state"]
+RAW_RATE_COLUMNS = [
+    "possessions",
+    "team_eFG",
+    "team_TO",
+    "team_ORB",
+    "team_FTR",
+    "team_3PR",
+    "opp_eFG",
+    "opp_TO",
+    "opp_ORB",
+    "opp_FTR",
+    "opp_3PR",
+]
+SUMMARY_FETCH_WORKERS = 8
 
 
 def ensure_venue_columns(df):
@@ -31,6 +47,14 @@ def ensure_venue_columns(df):
             df[col] = ""
         else:
             df[col] = df[col].fillna("").astype(str)
+    return df
+
+
+def ensure_raw_rate_columns(df):
+    """Ensure optional raw box-score rate columns exist."""
+    for col in RAW_RATE_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
     return df
 
 
@@ -66,6 +90,32 @@ def merge_venue_metadata(existing_df, metadata_df):
     return merged
 
 
+def merge_raw_rate_data(existing_df, rate_df):
+    """Backfill missing raw rate fields using date/team/opponent/is_home matches."""
+    if rate_df.empty:
+        return ensure_raw_rate_columns(existing_df)
+
+    existing_df = ensure_raw_rate_columns(existing_df.copy())
+    rate_df = ensure_raw_rate_columns(rate_df.copy())
+
+    merge_keys = ["date", "team", "opponent", "is_home"]
+    merged = existing_df.merge(
+        rate_df[merge_keys + RAW_RATE_COLUMNS].drop_duplicates(subset=merge_keys, keep="last"),
+        on=merge_keys,
+        how="left",
+        suffixes=("", "_new"),
+    )
+
+    for col in RAW_RATE_COLUMNS:
+        merged[col] = merged[col].where(
+            merged[col].notna(),
+            merged[f"{col}_new"],
+        )
+
+    drop_cols = [f"{col}_new" for col in RAW_RATE_COLUMNS]
+    return merged.drop(columns=drop_cols, errors="ignore")
+
+
 def backfill_venue_metadata(df, base_url):
     """Fetch and merge missing venue metadata for historical rows."""
     df = ensure_venue_columns(df.copy())
@@ -94,19 +144,43 @@ def backfill_venue_metadata(df, base_url):
     return merge_venue_metadata(df, fetched_df)
 
 
-def get_last_recorded_date(data_file):
+def backfill_boxscore_rates(df, base_url):
+    """Fetch and merge missing raw rate stats for historical rows."""
+    df = ensure_raw_rate_columns(df.copy())
+    missing_mask = df[RAW_RATE_COLUMNS].isna().any(axis=1)
+    target_dates = sorted(pd.to_datetime(df.loc[missing_mask, "date"]).dt.normalize().dropna().unique())
+    if not target_dates:
+        return df
+
+    print(f"📊 Backfilling box-score rates for {len(target_dates)} dates...")
+    fetched = []
+    for idx, ts in enumerate(target_dates, start=1):
+        fetched.extend(fetch_games_for_date(pd.Timestamp(ts).to_pydatetime(), base_url))
+        if idx % 14 == 0 or idx == len(target_dates):
+            print(f"   -> Box-score backfill {idx}/{len(target_dates)} dates")
+
+    if not fetched:
+        return df
+
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    fetched_df = pd.DataFrame(fetched)
+    fetched_df["date"] = pd.to_datetime(fetched_df["date"]).dt.strftime("%Y-%m-%d")
+    return merge_raw_rate_data(df, fetched_df)
+
+
+def get_last_recorded_date(data_file, season_start_date):
     if not os.path.exists(data_file):
-        return datetime(2025, 11, 4)
+        return season_start_date
     try:
         df = pd.read_csv(data_file)
         df['date'] = pd.to_datetime(df['date'])
         return df['date'].max().to_pydatetime()
     except (pd.errors.ParserError, pd.errors.EmptyDataError) as e:
         print(f"WARNING: Data file corrupted ({e}), will re-download from season start")
-        return datetime(2025, 11, 4)
+        return season_start_date
     except Exception as e:
         print(f"WARNING: Could not read last date from {data_file} ({type(e).__name__}: {e})")
-        return datetime(2025, 11, 4)
+        return season_start_date
 
 
 def fetch_games_for_date(target_date, base_url):
@@ -115,19 +189,34 @@ def fetch_games_for_date(target_date, base_url):
     
     url = f"{base_url}&dates={date_str_url}"
     try:
-        res = requests.get(url).json()
-    except Exception:
-        print(f"      ⚠️  Connection failed for {date_str_url}")
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        res = response.json()
+    except requests.RequestException as e:
+        print(f"      ⚠️  Connection failed for {date_str_url}: {e}")
+        return []
+    except ValueError as e:
+        print(f"      ⚠️  Invalid JSON for {date_str_url}: {e}")
         return []
 
+    events = [event for event in res.get('events', []) if event['status']['type']['state'] == 'post']
+    rate_by_event = {}
+    if events:
+        with ThreadPoolExecutor(max_workers=SUMMARY_FETCH_WORKERS) as executor:
+            future_map = {
+                executor.submit(fetch_boxscore_rates, base_url, event.get('id')): event.get('id')
+                for event in events
+            }
+            for future in as_completed(future_map):
+                rate_by_event[future_map[future]] = future.result()
+
     games = []
-    for event in res.get('events', []):
-        if event['status']['type']['state'] != 'post': continue 
-        
+    for event in events:
         try:
             comp = event['competitions'][0]
             home = comp['competitors'][0]
             away = comp['competitors'][1]
+            boxscore_rates = rate_by_event.get(event.get('id'), {})
             
             # NORMALIZE DATE (No Time)
             game_date_str = target_date.strftime("%Y-%m-%d")
@@ -167,7 +256,8 @@ def fetch_games_for_date(target_date, base_url):
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,
-                'ats_win': 0
+                'ats_win': 0,
+                **boxscore_rates.get('home', {}),
             }
             games.append(g)
 
@@ -183,7 +273,8 @@ def fetch_games_for_date(target_date, base_url):
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,
-                'ats_win': 0
+                'ats_win': 0,
+                **boxscore_rates.get('away', {}),
             }
             games.append(g_away)
         except (KeyError, TypeError, ValueError, IndexError) as e:
@@ -194,17 +285,125 @@ def fetch_games_for_date(target_date, base_url):
     return games
 
 
+def _parse_count_pair(value):
+    """Parse a made-attempted string like '24-53'."""
+    try:
+        made, attempted = str(value).split("-", 1)
+        return float(made), float(attempted)
+    except (TypeError, ValueError, AttributeError):
+        return None, None
+
+
+def _stat_map(team_entry):
+    return {item.get("name"): item.get("displayValue") for item in team_entry.get("statistics", [])}
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_rate_snapshot(team_stats, opp_stats):
+    """Convert ESPN team box-score totals into the raw rate fields used by the model."""
+    fgm, fga = _parse_count_pair(team_stats.get("fieldGoalsMade-fieldGoalsAttempted"))
+    tpm, tpa = _parse_count_pair(team_stats.get("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+    _, fta = _parse_count_pair(team_stats.get("freeThrowsMade-freeThrowsAttempted"))
+    opp_fgm, opp_fga = _parse_count_pair(opp_stats.get("fieldGoalsMade-fieldGoalsAttempted"))
+    opp_tpm, opp_tpa = _parse_count_pair(opp_stats.get("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+    _, opp_fta = _parse_count_pair(opp_stats.get("freeThrowsMade-freeThrowsAttempted"))
+
+    orb = _safe_float(team_stats.get("offensiveRebounds"))
+    opp_orb = _safe_float(opp_stats.get("offensiveRebounds"))
+    opp_drb = _safe_float(opp_stats.get("defensiveRebounds"))
+    team_drb = _safe_float(team_stats.get("defensiveRebounds"))
+    turnovers = _safe_float(team_stats.get("totalTurnovers") or team_stats.get("turnovers"))
+    opp_turnovers = _safe_float(opp_stats.get("totalTurnovers") or opp_stats.get("turnovers"))
+
+    snapshot = {col: pd.NA for col in RAW_RATE_COLUMNS}
+
+    if fga and fga > 0 and fgm is not None and tpm is not None:
+        snapshot["team_eFG"] = 100.0 * ((fgm + 0.5 * tpm) / fga)
+        snapshot["team_FTR"] = 100.0 * ((fta or 0.0) / fga)
+        snapshot["team_3PR"] = 100.0 * ((tpa or 0.0) / fga)
+
+    if opp_fga and opp_fga > 0 and opp_fgm is not None and opp_tpm is not None:
+        snapshot["opp_eFG"] = 100.0 * ((opp_fgm + 0.5 * opp_tpm) / opp_fga)
+        snapshot["opp_FTR"] = 100.0 * ((opp_fta or 0.0) / opp_fga)
+        snapshot["opp_3PR"] = 100.0 * ((opp_tpa or 0.0) / opp_fga)
+
+    if (
+        fga is not None and orb is not None and turnovers is not None and fta is not None
+    ):
+        possessions = fga - orb + turnovers + (0.475 * fta)
+        if possessions > 0:
+            snapshot["possessions"] = possessions
+            snapshot["team_TO"] = 100.0 * (turnovers / possessions)
+
+    if (
+        opp_fga is not None and opp_orb is not None and opp_turnovers is not None and opp_fta is not None
+    ):
+        opp_possessions = opp_fga - opp_orb + opp_turnovers + (0.475 * opp_fta)
+        if opp_possessions > 0:
+            snapshot["opp_TO"] = 100.0 * (opp_turnovers / opp_possessions)
+
+    if orb is not None and opp_drb is not None and (orb + opp_drb) > 0:
+        snapshot["team_ORB"] = 100.0 * (orb / (orb + opp_drb))
+    if opp_orb is not None and team_drb is not None and (opp_orb + team_drb) > 0:
+        snapshot["opp_ORB"] = 100.0 * (opp_orb / (opp_orb + team_drb))
+
+    return snapshot
+
+
+def fetch_boxscore_rates(base_url, event_id):
+    """Fetch ESPN summary box-score data for one event and return home/away rate snapshots."""
+    if not event_id:
+        return {}
+
+    summary_url = base_url.replace(
+        "scoreboard?groups=50&limit=1000",
+        f"summary?event={event_id}",
+    )
+    try:
+        response = requests.get(summary_url, timeout=10)
+        response.raise_for_status()
+        summary = response.json()
+    except (requests.RequestException, ValueError):
+        return {}
+
+    teams = summary.get("boxscore", {}).get("teams", [])
+    if len(teams) != 2:
+        return {}
+
+    entries = {}
+    for team_entry in teams:
+        side = team_entry.get("homeAway")
+        if side not in {"home", "away"}:
+            continue
+        entries[side] = _stat_map(team_entry)
+
+    if {"home", "away"} - set(entries):
+        return {}
+
+    return {
+        "home": _build_rate_snapshot(entries["home"], entries["away"]),
+        "away": _build_rate_snapshot(entries["away"], entries["home"]),
+    }
+
+
 def update_database(league="mens"):
     league = normalize_league(league)
     settings = get_league_settings(league)
     paths = get_league_artifact_paths(BASE_DIR, league)
     data_file = paths["data_file"]
     base_url = get_scoreboard_base_url(league)
+    season_start_date = pd.Timestamp(get_season_start_date(league)).to_pydatetime()
 
     print(f"--- 🔄 AUTO-HEALING UPDATER ({settings['label']}) ---")
     
     # 1. Determine Range
-    last_date = get_last_recorded_date(data_file)
+    last_date = get_last_recorded_date(data_file, season_start_date)
     # Start from the day AFTER the last record
     start_date = last_date + timedelta(days=1)
     
@@ -216,10 +415,11 @@ def update_database(league="mens"):
         print(f"✅ Data is up to date! (Last: {last_date.date()})")
         if os.path.exists(data_file):
             df_current = pd.read_csv(data_file)
-            df_backfilled = backfill_venue_metadata(df_current, base_url)
+            df_backfilled = backfill_boxscore_rates(df_current, base_url)
+            df_backfilled = backfill_venue_metadata(df_backfilled, base_url)
             if not df_backfilled.equals(df_current):
                 df_backfilled.to_csv(data_file, index=False)
-                print("✅ Venue metadata backfilled.")
+                print("✅ Box-score/venue metadata backfilled.")
         run_pipeline(league)
         return
 
@@ -238,8 +438,10 @@ def update_database(league="mens"):
         if os.path.exists(data_file):
             df_old = pd.read_csv(data_file)
             df_old = ensure_venue_columns(df_old)
+            df_old = ensure_raw_rate_columns(df_old)
             df_new = pd.DataFrame(new_games)
             df_new = ensure_venue_columns(df_new)
+            df_new = ensure_raw_rate_columns(df_new)
             
             # Combine
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
@@ -256,10 +458,11 @@ def update_database(league="mens"):
 
     if os.path.exists(data_file):
         df_current = pd.read_csv(data_file)
-        df_backfilled = backfill_venue_metadata(df_current, base_url)
+        df_backfilled = backfill_boxscore_rates(df_current, base_url)
+        df_backfilled = backfill_venue_metadata(df_backfilled, base_url)
         if not df_backfilled.equals(df_current):
             df_backfilled.to_csv(data_file, index=False)
-            print("✅ Venue metadata backfilled.")
+            print("✅ Box-score/venue metadata backfilled.")
 
     run_pipeline(league)
 
@@ -267,10 +470,10 @@ def update_database(league="mens"):
 def run_pipeline(league):
     print("\n--- 🚀 TRIGGERING PIPELINE ---")
     print("1️⃣  Calculating Efficiency Stats...")
-    subprocess.run([sys.executable, "features.py", "--league", league], check=False)
+    subprocess.run([sys.executable, "features.py", "--league", league], check=True)
 
     print("2️⃣  Grading History...")
-    subprocess.run([sys.executable, "backtest.py", "--league", league], check=False)
+    subprocess.run([sys.executable, "backtest.py", "--league", league], check=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update CBB data and run feature/backtest pipeline.")

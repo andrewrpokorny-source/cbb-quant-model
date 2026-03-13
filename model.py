@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from datetime import timedelta
 
 import joblib
 import numpy as np
@@ -15,6 +16,8 @@ from league_config import get_league_artifact_paths, normalize_league
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+VALIDATION_WEEKS_BACK = 4
+HIGH_CONF_THRESHOLD = 0.53
 
 if __name__ == "__main__":
     sys.modules.setdefault("model", sys.modules[__name__])
@@ -37,6 +40,36 @@ FEATURES = [
     'spread_abs',
     'spread_squared',
 ]
+MENS_FEATURES = [
+    'is_home',
+    'is_neutral',
+    'spread',
+    'rest_days',
+    'torvik_diff_adj_oe',
+    'torvik_diff_adj_de',
+    'torvik_diff_barthag',
+    'torvik_tempo_gap',
+    'torvik_diff_efg',
+    'torvik_diff_tor',
+    'torvik_diff_orb',
+    'torvik_diff_ftr',
+    'roll5_cover_margin',
+    'prev_games_played',
+    'opp_win_pct',
+    'prev_blowout_rate',
+    'prev_roll5_margin',
+    'prev_volatility',
+    'spread_abs',
+    'spread_squared',
+]
+FEATURES_BY_LEAGUE = {
+    'mens': MENS_FEATURES,
+    'womens': FEATURES,
+}
+CALIBRATION_BY_LEAGUE = {
+    'mens': False,
+    'womens': True,
+}
 
 
 class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
@@ -192,20 +225,162 @@ def time_series_train_test_split(df_model, features, target, test_size=0.2, bet_
     y_test = y.loc[test_mask].copy()
     return X_train, X_test, y_train, y_test
 
+
+def _prepare_training_data(df, features, target):
+    frame = df.dropna(subset=features + [target]).copy()
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame = frame.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+    return frame
+
+
+def _compute_validation_metrics(log_df):
+    if log_df is None or len(log_df) == 0:
+        return {
+            "accuracy": 0.0,
+            "brier": 1.0,
+            "high_conf_acc": 0.0,
+            "high_conf_bets": 0,
+            "roi_units": 0.0,
+            "total_bets": 0,
+        }
+
+    accuracy = float(log_df["pick_correct"].mean())
+    brier = float(brier_score_loss(log_df["ats_win"].astype(int), log_df["prob_home"].astype(float)))
+    high_conf = log_df[log_df["conf"] >= HIGH_CONF_THRESHOLD]
+    high_conf_bets = int(len(high_conf))
+    high_conf_acc = float(high_conf["pick_correct"].mean()) if high_conf_bets else 0.0
+    payout = 100.0 / 110.0
+    wins = float(high_conf["pick_correct"].sum())
+    losses = high_conf_bets - wins
+    roi_units = (wins * payout) - losses
+    return {
+        "accuracy": accuracy,
+        "brier": brier,
+        "high_conf_acc": high_conf_acc,
+        "high_conf_bets": high_conf_bets,
+        "roi_units": roi_units,
+        "total_bets": int(len(log_df)),
+    }
+
+
+def walk_forward_validate(df, features, target, estimator_factory, weeks_back=VALIDATION_WEEKS_BACK):
+    df_eval = _prepare_training_data(df, features, target)
+    if df_eval.empty:
+        return _compute_validation_metrics(None)
+
+    end_date = df_eval["date"].max() + timedelta(days=1)
+    start_date = end_date - timedelta(weeks=weeks_back)
+    current_date = start_date
+    logs = []
+
+    while current_date < end_date:
+        next_week = current_date + timedelta(days=7)
+        train_data = df_eval[df_eval["date"] < current_date].copy()
+        if len(train_data) < 50:
+            current_date = next_week
+            continue
+
+        week_mask = (
+            (df_eval["date"] >= current_date)
+            & (df_eval["date"] < next_week)
+            & (pd.to_numeric(df_eval.get("is_home"), errors="coerce").fillna(0).astype(int) == 1)
+        )
+        week_df = df_eval.loc[week_mask].copy()
+        if week_df.empty:
+            current_date = next_week
+            continue
+
+        estimator = estimator_factory()
+        estimator.fit(train_data[features].astype(float), train_data[target].astype(int))
+        probs = estimator.predict_proba(week_df[features].astype(float))[:, 1]
+        conf = np.maximum(probs, 1 - probs)
+        pick_correct = np.where(probs > 0.5, week_df[target].astype(int) == 1, week_df[target].astype(int) == 0)
+        logs.append(
+            pd.DataFrame(
+                {
+                    "date": week_df["date"].values,
+                    "prob_home": probs,
+                    "conf": conf,
+                    "pick_correct": pick_correct,
+                    "ats_win": week_df[target].astype(int).values,
+                }
+            )
+        )
+        current_date = next_week
+
+    full_log = pd.concat(logs, ignore_index=True) if logs else None
+    return _compute_validation_metrics(full_log)
+
+
+def _print_walk_forward_comparison(calibrated_metrics, uncalibrated_metrics):
+    print(f"\n=== WALK-FORWARD VALIDATION ({VALIDATION_WEEKS_BACK} WEEKS) ===")
+    print(f"{'Metric':<22} {'Uncalibrated':<15} {'Calibrated':<15} {'Preferred':<12}")
+    print(f"{'-'*70}")
+
+    comparisons = [
+        ("Accuracy", f"{uncalibrated_metrics['accuracy']:.1%}", f"{calibrated_metrics['accuracy']:.1%}", "higher"),
+        ("Brier Score", f"{uncalibrated_metrics['brier']:.4f}", f"{calibrated_metrics['brier']:.4f}", "lower"),
+        (
+            f"High Conf (>{HIGH_CONF_THRESHOLD:.0%})",
+            f"{uncalibrated_metrics['high_conf_acc']:.1%} ({uncalibrated_metrics['high_conf_bets']})",
+            f"{calibrated_metrics['high_conf_acc']:.1%} ({calibrated_metrics['high_conf_bets']})",
+            "higher",
+        ),
+        (
+            "ROI Units",
+            f"{uncalibrated_metrics['roi_units']:+.2f}U",
+            f"{calibrated_metrics['roi_units']:+.2f}U",
+            "higher",
+        ),
+    ]
+
+    for label, uncal_value, cal_value, preferred in comparisons:
+        print(f"{label:<22} {uncal_value:<15} {cal_value:<15} {preferred:<12}")
+
+
+def use_calibrated_spread_model(league="mens"):
+    """Return whether the production spread model should use trailing calibration."""
+    return bool(CALIBRATION_BY_LEAGUE[normalize_league(league)])
+
+
+def build_spread_estimator(league="mens", calibrated=None):
+    """Build the league-specific production spread estimator."""
+    league = normalize_league(league)
+    if calibrated is None:
+        calibrated = use_calibrated_spread_model(league)
+
+    if calibrated:
+        return TimeAwareCalibratedGBM(
+            n_estimators=150,
+            learning_rate=0.05,
+            max_depth=4,
+            random_state=42,
+        )
+
+    return GradientBoostingClassifier(
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
+    )
+
 def train_and_evaluate(league="mens"):
     league = normalize_league(league)
     paths = get_league_artifact_paths(BASE_DIR, league)
     data_file = paths["data_file"]
     model_file = paths["model_file"]
+    features = get_feature_list(league)
+    production_calibrated = use_calibrated_spread_model(league)
+    production_label = "GBM + Sigmoid Calibration" if production_calibrated else "GBM"
 
-    print(f"--- TRAINING CBB MODEL ({league}, GBM + Sigmoid Calibration, {len(FEATURES)} features) ---")
+    print(f"--- TRAINING CBB MODEL ({league}, {production_label}, {len(features)} features) ---")
 
     if not os.path.exists(data_file):
         print("No processed data found. Run features.py first.")
         return
 
     # 1. Load Data
-    df = pd.read_csv(data_file)
+    df = pd.read_csv(data_file, low_memory=False)
     print(f"Loaded {len(df)} rows.")
 
     # Compute derived spread features
@@ -213,7 +388,6 @@ def train_and_evaluate(league="mens"):
     df['spread_squared'] = df['spread'] ** 2
 
     # 2. Define Features
-    features = FEATURES
     target = 'ats_win'
 
     # 3. Validation: Ensure all columns exist
@@ -229,7 +403,7 @@ def train_and_evaluate(league="mens"):
     print(f"Training on {len(df_model)} clean games.")
     print(f"Features: {len(features)}")
 
-    # 5. Split data: train / test (time-series aware)
+    # 5. Split data: train / test (time-series aware diagnostic holdout)
     X_train, X_test, y_train, y_test = time_series_train_test_split(
         df_model, features, target, test_size=0.2, bet_level_test=True
     )
@@ -267,14 +441,30 @@ def train_and_evaluate(league="mens"):
     cal_acc = accuracy_score(y_test, cal_preds)
     cal_brier = brier_score_loss(y_test, cal_probs)
 
-    print(f"\n=== CALIBRATION COMPARISON ===")
+    # 10. Production-aligned walk-forward validation on the trailing weeks
+    calibrated_metrics = walk_forward_validate(
+        df,
+        features,
+        target,
+        estimator_factory=lambda: build_spread_estimator(league, calibrated=True),
+    )
+    uncalibrated_metrics = walk_forward_validate(
+        df,
+        features,
+        target,
+        estimator_factory=lambda: build_spread_estimator(league, calibrated=False),
+    )
+
+    _print_walk_forward_comparison(calibrated_metrics, uncalibrated_metrics)
+
+    print(f"\n=== HOLDOUT DIAGNOSTIC (SINGLE SPLIT) ===")
     print(f"{'Metric':<20} {'Uncalibrated':<15} {'Calibrated':<15} {'Change':<10}")
     print(f"{'-'*60}")
     print(f"{'Accuracy':<20} {uncal_acc:<15.1%} {cal_acc:<15.1%} {(cal_acc-uncal_acc)*100:+.1f}%")
     print(f"{'Brier Score':<20} {uncal_brier:<15.4f} {cal_brier:<15.4f} {cal_brier-uncal_brier:+.4f}")
 
-    # 10. Calibration analysis - compare predicted vs actual by confidence bucket
-    print(f"\n=== CALIBRATION BY CONFIDENCE BUCKET ===")
+    # 11. Calibration analysis - compare predicted vs actual by confidence bucket
+    print(f"\n=== HOLDOUT CALIBRATION BY CONFIDENCE BUCKET ===")
     print(f"{'Predicted':<15} {'Actual (uncal)':<18} {'Actual (cal)':<15}")
 
     for low, high in [(0.50, 0.53), (0.53, 0.55), (0.55, 0.57), (0.57, 0.60), (0.60, 0.65)]:
@@ -295,7 +485,7 @@ def train_and_evaluate(league="mens"):
         mid = (low + high) / 2
         print(f"{mid:.1%}             {uncal_actual:.1%} (n={uncal_mask.sum():<4})    {cal_actual:.1%} (n={cal_mask.sum()})")
 
-    # 11. High confidence accuracy
+    # 12. High confidence accuracy
     high_conf_mask = (cal_probs > 0.53) | (cal_probs < 0.47)
     if high_conf_mask.sum() > 0:
         high_conf_acc = accuracy_score(y_test[high_conf_mask], cal_preds[high_conf_mask])
@@ -306,7 +496,7 @@ def train_and_evaluate(league="mens"):
 
     print(f"\nHigh Confidence (>53%): {high_conf_acc:.1%} ({high_conf_count} bets)")
 
-    # 12. Feature importance (from base model)
+    # 13. Feature importance (from base model)
     print(f"\n=== TOP FEATURES ===")
     importance = pd.DataFrame({
         'feature': features,
@@ -316,25 +506,24 @@ def train_and_evaluate(league="mens"):
     for _, row in importance.head(5).iterrows():
         print(f"  {row['feature']:<20}: {row['importance']:.3f}")
 
-    # 13. Compute sigma for CDF-based line shopping
+    # 14. Compute sigma for CDF-based line shopping
     # sigma = std(actual_margin - vegas_predicted_margin) where vegas margin = -spread
     # This measures how much actual outcomes deviate from the spread, used to
     # project the classifier's probability at the market spread to other spreads
     # via norm.cdf curves.
     if 'margin' in df_model.columns:
-        train_indices = X_train.index
-        train_margins = df_model.loc[train_indices, 'margin'].values
-        train_spreads = df_model.loc[train_indices, 'spread'].values
-        residuals = train_margins - (-train_spreads)  # actual - vegas prediction
+        residuals = df_model['margin'].values - (-df_model['spread'].values)
         sigma = float(np.std(residuals))
         print(f"\nLine shopping sigma: {sigma:.2f} (std of margin vs spread)")
     else:
         sigma = 11.0  # Reasonable CBB default
         print(f"\nLine shopping sigma: {sigma:.2f} (default, margin column not found)")
 
-    # 14. Save calibrated model + sigma
-    joblib.dump({'model': calibrated_clf, 'sigma': sigma}, model_file)
-    print(f"Model + sigma saved to {model_file}")
+    # 15. Fit the production model on the full clean dataset, not just the holdout train split.
+    production_model = build_spread_estimator(league)
+    production_model.fit(df_model[features].astype(float), df_model[target].astype(int))
+    joblib.dump({'model': production_model, 'sigma': sigma}, model_file)
+    print(f"Production model + sigma saved to {model_file}")
 
 
 def load_model(path=None, league="mens"):
@@ -354,6 +543,11 @@ def load_model(path=None, league="mens"):
         return data['model'], float(sigma)
     # Old format: raw model without sigma
     return data, 11.0
+
+
+def get_feature_list(league="mens"):
+    """Return the league-specific spread model feature list."""
+    return list(FEATURES_BY_LEAGUE[normalize_league(league)])
 
 
 def cover_prob_at_spread(classifier_prob, market_spread, alt_spread, sigma):
