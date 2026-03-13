@@ -8,7 +8,7 @@ from sklearn.base import clone
 from sklearn.metrics import brier_score_loss
 
 from league_config import get_league_artifact_paths, normalize_league
-from model import FEATURES, TimeAwareCalibratedGBM
+from model import build_spread_estimator, get_feature_list, use_calibrated_spread_model
 
 # --- BULLETPROOF PATHS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,22 +18,18 @@ WEEKS_BACK = 4
 HIGH_CONF_THRESHOLD = 0.53
 
 
-def build_pipeline():
-    """Build the production GBM + trailing-window calibration pipeline."""
-    return TimeAwareCalibratedGBM(
-        n_estimators=150,
-        learning_rate=0.05,
-        max_depth=4,
-        random_state=42,
-    )
+def build_pipeline(league):
+    """Build the league-specific production spread estimator."""
+    return build_spread_estimator(league)
 
 
-def train_model_at_date(df, cutoff_date, pipeline):
+def train_model_at_date(df, cutoff_date, pipeline, league):
     """Train a model on all data before cutoff_date."""
     past_games = df[df['date'] < cutoff_date].copy()
+    features = get_feature_list(league)
 
-    valid_feats = [f for f in FEATURES if f in past_games.columns]
-    if len(valid_feats) != len(FEATURES):
+    valid_feats = [f for f in features if f in past_games.columns]
+    if len(valid_feats) != len(features):
         return None, None
 
     train_data = past_games.dropna(subset=valid_feats + ['ats_win'])
@@ -119,14 +115,16 @@ def run_backtest(league="mens"):
     paths = get_league_artifact_paths(BASE_DIR, league)
     data_file = paths["data_file"]
     output_file = paths["performance_file"]
+    features = get_feature_list(league)
+    model_label = "GBM + Sigmoid" if use_calibrated_spread_model(league) else "GBM"
 
-    print(f"--- WALK-FORWARD BACKTEST ({league}, GBM + Sigmoid, {len(FEATURES)} features) ---")
+    print(f"--- WALK-FORWARD BACKTEST ({league}, {model_label}, {len(features)} features) ---")
 
     if not os.path.exists(data_file):
         print("CRITICAL ERROR: Training data not found at", data_file)
         return
 
-    df = pd.read_csv(data_file)
+    df = pd.read_csv(data_file, low_memory=False)
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
 
@@ -145,10 +143,10 @@ def run_backtest(league="mens"):
 
     print(f"   Testing Range: {start_date.date()} to {end_date.date()}")
     print(f"   Weeks Back: {WEEKS_BACK}")
-    print(f"   Config: depth=4, sigmoid, {len(FEATURES)} features")
+    print(f"   Config: depth=4, {model_label.lower()}, {len(features)} features")
     print()
 
-    pipeline = build_pipeline()
+    pipeline = build_pipeline(league)
 
     current_date = start_date
     logs = []
@@ -157,7 +155,7 @@ def run_backtest(league="mens"):
         next_week = current_date + timedelta(days=7)
         week_label = current_date.date()
 
-        model, valid_feats = train_model_at_date(df, current_date, pipeline)
+        model, valid_feats = train_model_at_date(df, current_date, pipeline, league)
 
         if model is None:
             print(f"   [SKIP] Week of {week_label}: not enough history to train.")

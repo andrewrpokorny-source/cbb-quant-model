@@ -8,5 +8,4 @@ altair
 python-dotenv
 pytz
 cryptography
-cloudscraper
 xgboost
