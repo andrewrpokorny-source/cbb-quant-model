@@ -8,6 +8,7 @@ from main import (
     backfill_venue_metadata,
     ensure_venue_columns,
     ensure_raw_rate_columns,
+    fetch_games_for_date,
     get_last_recorded_date,
     merge_raw_rate_data,
     merge_venue_metadata,
@@ -196,3 +197,39 @@ def test_build_rate_snapshot_matches_expected_percentage_scales():
     assert result["team_TO"] == pytest.approx(21.9092, rel=1e-4)
     assert result["team_ORB"] == pytest.approx(17.2414, rel=1e-4)
     assert result["opp_ORB"] == pytest.approx(42.8571, rel=1e-4)
+
+
+def test_fetch_games_for_date_keeps_unparseable_spread_as_missing(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "events": [
+                    {
+                        "id": "evt-1",
+                        "status": {"type": {"state": "post"}},
+                        "competitions": [
+                            {
+                                "competitors": [
+                                    {"team": {"displayName": "Home Team", "abbreviation": "HOME"}, "score": "70"},
+                                    {"team": {"displayName": "Away Team", "abbreviation": "AWAY"}, "score": "65"},
+                                ],
+                                "odds": [{"details": "HOME not-a-number"}],
+                                "neutralSite": False,
+                                "venue": {"address": {"city": "Columbus", "state": "OH"}},
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("main.requests.get", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr("main.fetch_boxscore_rates", lambda *_args, **_kwargs: {})
+
+    games = fetch_games_for_date(datetime(2026, 1, 5), "http://example.com/scoreboard?groups=50&limit=1000")
+
+    assert len(games) == 2
+    assert pd.isna(games[0]["spread"])
+    assert pd.isna(games[1]["spread"])

@@ -3,6 +3,7 @@ import pytest
 
 from hasla import (
     HASLA_GAME_FEATURE_COLUMNS,
+    _rank_to_strength,
     add_hasla_features,
     build_team_map,
     ensure_hasla_feature_columns,
@@ -94,9 +95,19 @@ def test_add_hasla_features_uses_latest_snapshot_before_game_date():
 
     enriched = add_hasla_features(games, snapshots, team_map)
     home = enriched[enriched["team"] == "Michigan"].iloc[0]
-    assert home["hasla_diff_rank_strength"] > 0
-    assert home["hasla_diff_off_rank_strength"] > 0
-    assert home["hasla_diff_def_rank_strength"] > 0
+    assert home["hasla_diff_rank_strength"] == pytest.approx(30.0 / 364.0)
+    assert home["hasla_diff_off_rank_strength"] == pytest.approx(24.0 / 364.0)
+    assert home["hasla_diff_def_rank_strength"] == pytest.approx(30.0 / 364.0)
+
+
+def test_rank_to_strength_stays_bounded_for_expanded_rank_ranges():
+    values = pd.Series([1, 365, 400])
+    result = _rank_to_strength(values)
+
+    assert result.iloc[0] == pytest.approx(1.0)
+    assert result.iloc[0] > result.iloc[1] > result.iloc[2]
+    assert result.iloc[1] > 0.0
+    assert result.iloc[2] == pytest.approx(0.0)
 
 
 def test_matchup_features_for_game_defaults_to_zero_without_context():

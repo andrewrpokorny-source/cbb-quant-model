@@ -7,6 +7,7 @@ from torvik import (
     build_missing_snapshot_dates,
     build_team_map,
     ensure_torvik_feature_columns,
+    load_snapshot_file,
     matchup_features_for_game,
     parse_ratings_html,
 )
@@ -193,3 +194,24 @@ def test_build_missing_snapshot_dates_uses_previous_day():
     games = pd.DataFrame({"date": ["2026-02-15", "2026-02-16", "2026-02-16"]})
     result = build_missing_snapshot_dates(games)
     assert result == [pd.Timestamp("2026-02-14"), pd.Timestamp("2026-02-15")]
+
+
+def test_load_snapshot_file_backfills_missing_expected_columns(tmp_path):
+    path = tmp_path / "torvik_snapshots.csv"
+    pd.DataFrame(
+        [
+            {
+                "snapshot_date": "2026-02-14",
+                "team": "Michigan",
+                "adj_oe": 129.1,
+                "source_url": "x",
+            }
+        ]
+    ).to_csv(path, index=False)
+
+    loaded = load_snapshot_file(path)
+
+    assert "adj_de" in loaded.columns
+    assert "barthag" in loaded.columns
+    assert pd.isna(loaded.loc[0, "adj_de"])
+    assert loaded.loc[0, "team"] == "Michigan"

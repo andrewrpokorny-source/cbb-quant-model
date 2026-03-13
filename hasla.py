@@ -40,6 +40,7 @@ HASLA_GAME_FEATURE_COLUMNS = [
     "hasla_diff_def_rank_strength",
 ]
 HASLA_MAP_COLUMNS = ["team", "hasla_team", "match_source", "match_score", "needs_review"]
+MIN_EXPECTED_D1_TEAMS = 365.0
 HASLA_NAME_OVERRIDES = {
     "abilene christian": "abil christian",
     "appalachian st": "app state",
@@ -486,7 +487,10 @@ def _merge_side_snapshot(df, snapshots_df, left_team_col, prefix):
 
 def _rank_to_strength(series):
     numeric = pd.to_numeric(series, errors="coerce")
-    return 1.0 - ((numeric - 1.0) / 364.0)
+    max_rank = numeric.max(skipna=True)
+    scale_max = max(float(max_rank) if pd.notna(max_rank) else MIN_EXPECTED_D1_TEAMS, MIN_EXPECTED_D1_TEAMS)
+    clipped = numeric.clip(lower=1.0, upper=scale_max)
+    return 1.0 - ((clipped - 1.0) / max(scale_max - 1.0, 1.0))
 
 
 def add_hasla_features(df, snapshots_df, team_map_df):
@@ -566,26 +570,23 @@ def sync_from_processed_data(league="mens", timeout=20):
 
     games_df = pd.read_csv(data_file, low_memory=False)
     seasons = build_required_seasons(games_df, league)
-    existing = load_snapshot_file(snapshot_file)
-    existing_seasons = set(existing["season"].dropna().astype(int)) if not existing.empty else set()
+    combined = load_snapshot_file(snapshot_file)
+    existing_seasons = set(combined["season"].dropna().astype(int)) if not combined.empty else set()
 
     session = requests.Session()
-    fetched = []
     try:
         for season in seasons:
             if season in existing_seasons:
                 continue
             print(f"   -> Haslametrics season {season}")
             xml_text = fetch_hasla_season_xml(season, session=session, timeout=timeout)
-            fetched.append(parse_hasla_season_xml(xml_text, season))
+            fetched = parse_hasla_season_xml(xml_text, season)
+            combined = pd.concat([combined, fetched], ignore_index=True)
+            combined["snapshot_date"] = pd.to_datetime(combined["snapshot_date"]).dt.strftime("%Y-%m-%d")
+            combined = combined.drop_duplicates(subset=["snapshot_date", "team"], keep="last")
+            save_snapshot_file(combined, snapshot_file)
     finally:
         session.close()
-
-    combined = pd.concat([existing, *fetched], ignore_index=True) if fetched else existing
-    if not combined.empty:
-        combined["snapshot_date"] = pd.to_datetime(combined["snapshot_date"]).dt.strftime("%Y-%m-%d")
-        combined = combined.drop_duplicates(subset=["snapshot_date", "team"], keep="last")
-        save_snapshot_file(combined, snapshot_file)
 
     snapshots = load_snapshot_file(snapshot_file)
     team_map = load_team_map(map_file, pd.concat([games_df["team"], games_df["opponent"]]).dropna().unique())

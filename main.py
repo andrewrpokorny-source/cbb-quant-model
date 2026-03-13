@@ -152,7 +152,7 @@ def backfill_boxscore_rates(df, base_url):
     if not target_dates:
         return df
 
-    print(f"📊 Backfilling box-score rates for {len(target_dates)} dates...")
+    print(f"Backfilling box-score rates for {len(target_dates)} dates...")
     fetched = []
     for idx, ts in enumerate(target_dates, start=1):
         fetched.extend(fetch_games_for_date(pd.Timestamp(ts).to_pydatetime(), base_url))
@@ -185,7 +185,7 @@ def get_last_recorded_date(data_file, season_start_date):
 
 def fetch_games_for_date(target_date, base_url):
     date_str_url = target_date.strftime("%Y%m%d")
-    print(f"   -> 📥 Downloading {target_date.strftime('%Y-%m-%d')}...")
+    print(f"   -> Downloading {target_date.strftime('%Y-%m-%d')}...")
     
     url = f"{base_url}&dates={date_str_url}"
     try:
@@ -193,10 +193,10 @@ def fetch_games_for_date(target_date, base_url):
         response.raise_for_status()
         res = response.json()
     except requests.RequestException as e:
-        print(f"      ⚠️  Connection failed for {date_str_url}: {e}")
+        print(f"      WARNING: Connection failed for {date_str_url}: {e}")
         return []
     except ValueError as e:
-        print(f"      ⚠️  Invalid JSON for {date_str_url}: {e}")
+        print(f"      WARNING: Invalid JSON for {date_str_url}: {e}")
         return []
 
     events = [event for event in res.get('events', []) if event['status']['type']['state'] == 'post']
@@ -221,12 +221,14 @@ def fetch_games_for_date(target_date, base_url):
             # NORMALIZE DATE (No Time)
             game_date_str = target_date.strftime("%Y-%m-%d")
 
-            spread_val = 0.0
+            spread_val = float("nan")
             try:
                 if comp.get('odds'):
                     odds = comp['odds'][0]
-                    details = odds.get('details', '0')
-                    if details and details != '0' and details != 'EVEN':
+                    details = odds.get('details', '')
+                    if details == 'EVEN':
+                        spread_val = 0.0
+                    elif details and details != '0':
                         parts = details.split()
                         val = abs(float(parts[-1]))
                         fav = " ".join(parts[:-1])
@@ -234,8 +236,9 @@ def fetch_games_for_date(target_date, base_url):
                         home_name = home['team'].get('displayName', '')
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         spread_val = -val if is_home_fav else val
-            except (ValueError, IndexError, TypeError):
-                pass
+            except (ValueError, IndexError, TypeError) as e:
+                event_id = event.get('id', 'unknown')
+                print(f"      WARNING: Could not parse spread for event {event_id}: {type(e).__name__}: {e}")
 
             # Neutral site + venue info
             is_neutral = int(comp.get('neutralSite', False))
@@ -369,11 +372,16 @@ def fetch_boxscore_rates(base_url, event_id):
         response = requests.get(summary_url, timeout=10)
         response.raise_for_status()
         summary = response.json()
-    except (requests.RequestException, ValueError):
+    except requests.RequestException as e:
+        print(f"      WARNING: Failed to fetch box-score summary for event {event_id}: {e}")
+        return {}
+    except ValueError as e:
+        print(f"      WARNING: Invalid box-score JSON for event {event_id}: {e}")
         return {}
 
     teams = summary.get("boxscore", {}).get("teams", [])
     if len(teams) != 2:
+        print(f"      WARNING: Incomplete box-score teams for event {event_id}")
         return {}
 
     entries = {}
@@ -384,6 +392,7 @@ def fetch_boxscore_rates(base_url, event_id):
         entries[side] = _stat_map(team_entry)
 
     if {"home", "away"} - set(entries):
+        print(f"      WARNING: Missing home/away box-score split for event {event_id}")
         return {}
 
     return {
@@ -400,7 +409,7 @@ def update_database(league="mens"):
     base_url = get_scoreboard_base_url(league)
     season_start_date = pd.Timestamp(get_season_start_date(league)).to_pydatetime()
 
-    print(f"--- 🔄 AUTO-HEALING UPDATER ({settings['label']}) ---")
+    print(f"--- AUTO-HEALING UPDATER ({settings['label']}) ---")
     
     # 1. Determine Range
     last_date = get_last_recorded_date(data_file, season_start_date)
@@ -412,18 +421,18 @@ def update_database(league="mens"):
     
     # If the database is somehow ahead of reality (timezones), cap it
     if start_date.date() > end_date.date():
-        print(f"✅ Data is up to date! (Last: {last_date.date()})")
+        print(f"Data is up to date. Last recorded date: {last_date.date()}")
         if os.path.exists(data_file):
             df_current = pd.read_csv(data_file)
             df_backfilled = backfill_boxscore_rates(df_current, base_url)
             df_backfilled = backfill_venue_metadata(df_backfilled, base_url)
             if not df_backfilled.equals(df_current):
                 df_backfilled.to_csv(data_file, index=False)
-                print("✅ Box-score/venue metadata backfilled.")
+                print("Box-score and venue metadata backfilled.")
         run_pipeline(league)
         return
 
-    print(f"📉 Filling Gap: {start_date.date()} to {end_date.date()}")
+    print(f"Filling gap: {start_date.date()} to {end_date.date()}")
     
     new_games = []
     current_date = start_date
@@ -433,7 +442,7 @@ def update_database(league="mens"):
         current_date += timedelta(days=1)
         
     if new_games:
-        print(f"💾 Saving {len(new_games)} new games...")
+        print(f"Saving {len(new_games)} new games...")
         
         if os.path.exists(data_file):
             df_old = pd.read_csv(data_file)
@@ -452,7 +461,7 @@ def update_database(league="mens"):
             df_combined = df_combined.sort_values('date')
             
             df_combined.to_csv(data_file, index=False)
-            print("✅ Database updated.")
+            print("Database updated.")
         else:
             pd.DataFrame(new_games).pipe(ensure_venue_columns).to_csv(data_file, index=False)
 
@@ -462,17 +471,17 @@ def update_database(league="mens"):
         df_backfilled = backfill_venue_metadata(df_backfilled, base_url)
         if not df_backfilled.equals(df_current):
             df_backfilled.to_csv(data_file, index=False)
-            print("✅ Box-score/venue metadata backfilled.")
+            print("Box-score and venue metadata backfilled.")
 
     run_pipeline(league)
 
 
 def run_pipeline(league):
-    print("\n--- 🚀 TRIGGERING PIPELINE ---")
-    print("1️⃣  Calculating Efficiency Stats...")
+    print("\n--- TRIGGERING PIPELINE ---")
+    print("1. Calculating efficiency stats...")
     subprocess.run([sys.executable, "features.py", "--league", league], check=True)
 
-    print("2️⃣  Grading History...")
+    print("2. Grading history...")
     subprocess.run([sys.executable, "backtest.py", "--league", league], check=True)
 
 if __name__ == "__main__":

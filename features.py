@@ -48,7 +48,7 @@ STAT_SOURCE_COLUMNS = {
 }
 
 def clean_stale_data(df):
-    print("   -> 🧹 Cleaning stale columns...")
+    print("   -> Cleaning stale columns...")
     keep_cols = set(BASE_COLUMNS + RAW_RATE_COLUMNS)
     current_cols = df.columns.tolist()
     drop_list = [col for col in current_cols if col not in keep_cols]
@@ -247,7 +247,7 @@ def main(league="mens"):
     paths = get_league_artifact_paths(BASE_DIR, league)
     data_file = paths["data_file"]
 
-    print(f"--- 🧠 FEATURE ENGINEERING (HONEST MODE: FIXED, {league}) 🧠 ---")
+    print(f"--- FEATURE ENGINEERING (HONEST MODE: FIXED, {league}) ---")
     if not os.path.exists(data_file):
         print("❌ No data file found."); return
 
@@ -285,7 +285,7 @@ def main(league="mens"):
     else:
         df_final['distance_advantage'] = 0.0
 
-    print(f"✅ Saving processed data ({len(df_final)} rows)...")
+    print(f"Saving processed data ({len(df_final)} rows)...")
     df_final.to_csv(data_file, index=False)
 
 if __name__ == "__main__":

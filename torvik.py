@@ -421,8 +421,14 @@ def load_snapshot_file(path):
     df = pd.read_csv(path)
     if df.empty:
         return _empty_snapshot_frame()
+    for col in TORVIK_SNAPSHOT_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
     df["snapshot_date"] = pd.to_datetime(df["snapshot_date"]).dt.strftime("%Y-%m-%d")
-    return df[sorted(set(df.columns) | set(TORVIK_SNAPSHOT_COLUMNS))].copy()
+    ordered_columns = list(TORVIK_SNAPSHOT_COLUMNS) + [
+        col for col in df.columns if col not in TORVIK_SNAPSHOT_COLUMNS
+    ]
+    return df[ordered_columns].copy()
 
 
 def save_snapshot_file(df, path):
@@ -696,18 +702,18 @@ def update_snapshot_file_for_games(games_df, snapshot_path, timeout=20):
 
     session = requests.Session()
     session.headers.update(TORVIK_HEADERS)
-    fetched_frames = []
+    combined = existing.copy()
     try:
         for idx, snapshot_date in enumerate(target_dates, start=1):
             print(f"   -> Torvik snapshot {idx}/{len(target_dates)}: {snapshot_date.date()}")
-            fetched_frames.append(fetch_ratings_snapshot(snapshot_date, session=session, timeout=timeout))
+            fetched = fetch_ratings_snapshot(snapshot_date, session=session, timeout=timeout)
+            combined = pd.concat([combined, fetched], ignore_index=True)
+            combined["snapshot_date"] = pd.to_datetime(combined["snapshot_date"]).dt.strftime("%Y-%m-%d")
+            combined = combined.drop_duplicates(subset=["snapshot_date", "team"], keep="last")
+            save_snapshot_file(combined, snapshot_path)
     finally:
         session.close()
 
-    combined = pd.concat([existing, *fetched_frames], ignore_index=True) if fetched_frames else existing
-    combined["snapshot_date"] = pd.to_datetime(combined["snapshot_date"]).dt.strftime("%Y-%m-%d")
-    combined = combined.drop_duplicates(subset=["snapshot_date", "team"], keep="last")
-    save_snapshot_file(combined, snapshot_path)
     return combined
 
 
