@@ -11,8 +11,9 @@ import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
+import requests as _requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
-from league_config import get_league_artifact_paths, get_league_settings, normalize_league
+from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +49,7 @@ st.markdown("""
     --neutral-200: #e0dfd8;
     --neutral-100: #eeeee8;
     --neutral-50: #f7f6f2;
+    --live: #b5342a;
     --surface: #ffffff;
     --bg: #faf9f5;
     --font-display: 'Newsreader', Georgia, serif;
@@ -454,6 +456,137 @@ hr {
     border-radius: 10px;
     overflow: hidden;
 }
+
+/* Live position cards */
+.live-card {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-left: 4px solid var(--live);
+    border-radius: 10px;
+    padding: 1rem 1.1rem 0.9rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.live-card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.07);
+    transform: translateY(-1px);
+}
+
+.live-card.womens-card {
+    border-left-color: var(--purple-700);
+}
+
+.live-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--live);
+    border-radius: 50%;
+    margin-right: 5px;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.womens-card .live-dot {
+    background: var(--purple-700);
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.live-badge {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--live);
+    display: inline-flex;
+    align-items: center;
+}
+
+.womens-card .live-badge {
+    color: var(--purple-700);
+}
+
+.live-clock {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--live);
+}
+
+.womens-card .live-clock {
+    color: var(--purple-700);
+}
+
+.live-score-row {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 8px 0;
+}
+
+.live-team {
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--green-900);
+    flex: 1;
+}
+
+.live-team.away { text-align: right; }
+.live-team.home { text-align: left; }
+
+.live-score {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--green-900);
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+}
+
+.live-bet-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--neutral-100);
+}
+
+.live-bet-stats .stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.live-bet-stats .stat-label {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--neutral-400);
+}
+
+.live-bet-stats .stat-value {
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--green-900);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -528,6 +661,125 @@ def _parse_edge(series):
     """Parse edge percentage strings like '+5.2%' into floats."""
     cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
     return pd.to_numeric(cleaned, errors='coerce').fillna(0)
+
+
+# ==========================================
+# LIVE KALSHI POSITIONS
+# ==========================================
+
+CBB_GAME_PREFIXES = ("KXNCAAMBGAME", "KXNCAAWBGAME")
+
+
+@st.cache_data(ttl=120)
+def _fetch_kalshi_positions():
+    """Fetch unsettled Kalshi positions, filtered to CBB game markets."""
+    try:
+        from kalshi.client import KalshiClient
+        client = KalshiClient()
+        if not client.api_key:
+            return []
+        positions = client.get_positions(settlement_status="unsettled")
+        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60)
+def _fetch_live_espn_games():
+    """Fetch in-progress ESPN games for both leagues, keyed by team abbreviation."""
+    games_by_abbr = {}
+    for lg in LEAGUES:
+        try:
+            url = get_scoreboard_base_url(lg)
+            resp = _requests.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            continue
+        for event in data.get("events", []):
+            status = event.get("status", {})
+            state = status.get("type", {}).get("state", "")
+            if state != "in":
+                continue
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp = competitions[0]
+            competitors = comp.get("competitors", [])
+            if len(competitors) < 2:
+                continue
+
+            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[0])
+            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[1])
+
+            clock = status.get("displayClock", "")
+            period = status.get("period", 0)
+            desc = status.get("type", {}).get("description", "")
+
+            if "halftime" in desc.lower():
+                clock_display = "HALF"
+            elif period > 2:
+                clock_display = f"{clock} OT" if clock else "OT"
+            else:
+                half_label = f"{period}H" if period else ""
+                clock_display = f"{clock} {half_label}".strip()
+
+            game_info = {
+                "away_abbr": away.get("team", {}).get("abbreviation", ""),
+                "away_name": away.get("team", {}).get("shortDisplayName", ""),
+                "away_score": away.get("score", "0"),
+                "home_abbr": home.get("team", {}).get("abbreviation", ""),
+                "home_name": home.get("team", {}).get("shortDisplayName", ""),
+                "home_score": home.get("score", "0"),
+                "clock": clock_display,
+                "league": lg,
+            }
+            games_by_abbr[away["team"]["abbreviation"]] = game_info
+            games_by_abbr[home["team"]["abbreviation"]] = game_info
+    return games_by_abbr
+
+
+def _build_live_positions(positions, live_games):
+    """Match Kalshi positions to live ESPN games."""
+    results = []
+    for pos in positions:
+        ticker = pos.get("ticker", "")
+        # Ticker suffix after last '-' is YES team abbreviation
+        parts = ticker.rsplit("-", 1)
+        if len(parts) < 2:
+            continue
+        yes_abbr = parts[1].upper()
+
+        game = live_games.get(yes_abbr)
+        if not game:
+            continue
+
+        # position_fp > 0 means user holds YES contracts, < 0 means NO
+        position_fp = pos.get("position", 0)
+        if position_fp > 0:
+            side = "YES"
+            side_team = yes_abbr
+        elif position_fp < 0:
+            side = "NO"
+            # NO = the other team
+            side_team = game["away_abbr"] if yes_abbr == game["home_abbr"] else game["home_abbr"]
+        else:
+            continue
+
+        # Exposure in dollars (Kalshi returns cents for some fields)
+        market_exposure = pos.get("market_exposure", 0)
+        # market_exposure is in cents
+        exposure_dollars = abs(market_exposure) / 100.0 if market_exposure else abs(position_fp) * 0.01
+
+        results.append({
+            "ticker": ticker,
+            "side": side,
+            "side_team": side_team,
+            "contracts": abs(position_fp),
+            "exposure": exposure_dollars,
+            "game": game,
+        })
+    return results
 
 
 # ==========================================
@@ -883,6 +1135,55 @@ def _render_game_bets(col, lg):
             </div>
             ''', unsafe_allow_html=True)
 
+
+# ==========================================
+# LIVE KALSHI POSITIONS (in-progress games)
+# ==========================================
+try:
+    _kalshi_positions = _fetch_kalshi_positions()
+    _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
+    _live_positions = _build_live_positions(_kalshi_positions, _live_games) if _kalshi_positions else []
+except Exception:
+    _live_positions = []
+
+if _live_positions:
+    st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
+    live_cols = st.columns(min(len(_live_positions), 3))
+    for i, lp in enumerate(_live_positions):
+        g = lp["game"]
+        col = live_cols[i % len(live_cols)]
+        league_label = "W" if g["league"] == "womens" else "M"
+        card_extra = "womens-card" if g["league"] == "womens" else ""
+        contract_label = "contract" if lp["contracts"] == 1 else "contracts"
+        with col:
+            st.markdown(f'''
+            <div class="live-card {card_extra}">
+                <div class="live-header">
+                    <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)}</span>
+                    <span class="live-clock">{_esc(g["clock"])}</span>
+                </div>
+                <div class="live-score-row">
+                    <span class="live-team away">{_esc(g["away_name"])}</span>
+                    <span class="live-score">{_esc(g["away_score"])} &ndash; {_esc(g["home_score"])}</span>
+                    <span class="live-team home">{_esc(g["home_name"])}</span>
+                </div>
+                <div class="live-bet-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Position</span>
+                        <span class="stat-value">{_esc(lp["side"])} {_esc(lp["side_team"])}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Size</span>
+                        <span class="stat-value">{lp["contracts"]} {contract_label}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Exposure</span>
+                        <span class="stat-value">${lp["exposure"]:.2f}</span>
+                    </div>
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-title">Spread Bets</div>', unsafe_allow_html=True)
 col_spread_m, col_spread_w = st.columns(2)
