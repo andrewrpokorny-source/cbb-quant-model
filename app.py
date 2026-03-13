@@ -488,17 +488,38 @@ def _esc(val) -> str:
 
 
 def _filter_not_started(df):
-    """Drop rows whose game time has already passed (in-progress games)."""
+    """Drop rows whose game time has already passed (in-progress games).
+
+    Rows with unparseable Date/Time values are kept (never silently hidden).
+    """
     if df.empty or 'Date/Time' not in df.columns:
         return df
     eastern = pytz.timezone('US/Eastern')
     now = datetime.now(eastern)
+    now_naive = now.replace(tzinfo=None)
     year = now.year
     parsed = pd.to_datetime(
         str(year) + "/" + df["Date/Time"].astype(str),
         format="%Y/%m/%d %I:%M %p",
         errors="coerce",
     )
+    # Year-rollover: Dec viewing Jan games -- bump year when parsed date
+    # is implausibly far in the past (same pattern as backtest_kalshi_game.py)
+    needs_bump = parsed.notna() & (parsed < (now_naive - timedelta(days=60)))
+    if needs_bump.any():
+        parsed = parsed.where(
+            ~needs_bump,
+            pd.to_datetime(
+                str(year + 1) + "/" + df["Date/Time"].astype(str),
+                format="%Y/%m/%d %I:%M %p",
+                errors="coerce",
+            ),
+        )
+    n_failed = parsed.isna().sum()
+    if n_failed > 0:
+        bad = df.loc[parsed.isna(), "Date/Time"].unique()
+        print(f"      WARNING: _filter_not_started: {n_failed} row(s) with "
+              f"unparseable Date/Time (kept): {list(bad[:5])}")
     parsed = parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
     return df[parsed.isna() | (parsed > now)].copy()
 
