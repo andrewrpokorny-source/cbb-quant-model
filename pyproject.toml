@@ -8,6 +8,7 @@ dependencies = [
     "numpy",
     "scikit-learn",
     "joblib",
+    "brotli",
     "requests",
     "pytz",
     "streamlit",

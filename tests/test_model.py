@@ -7,20 +7,46 @@ import pytest
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import GradientBoostingClassifier
 
 from model import (
     FEATURES,
+    MENS_FEATURES,
     TimeAwareCalibratedGBM,
+    build_spread_estimator,
     cover_prob_at_spread,
+    get_feature_list,
     load_model,
     prepare_time_ordered_training_frame,
     time_series_train_test_split,
+    use_calibrated_spread_model,
+    walk_forward_validate,
 )
 
 
 def test_production_features_keep_neutral_drop_distance():
     assert "is_neutral" in FEATURES
     assert "distance_advantage" not in FEATURES
+
+
+def test_mens_feature_list_uses_torvik_priors_and_drops_dead_inputs():
+    mens_features = get_feature_list("mens")
+    assert mens_features == MENS_FEATURES
+    assert "diff_eFG" not in mens_features
+    assert "momentum_gap" not in mens_features
+    assert "hasla_diff_rank_strength" not in mens_features
+    assert "torvik_diff_adj_oe" in mens_features
+    assert "torvik_diff_ftr" in mens_features
+
+
+def test_mens_spread_model_defaults_to_uncalibrated_gbm():
+    assert use_calibrated_spread_model("mens") is False
+    assert isinstance(build_spread_estimator("mens"), GradientBoostingClassifier)
+
+
+def test_womens_spread_model_keeps_calibration():
+    assert use_calibrated_spread_model("womens") is True
+    assert isinstance(build_spread_estimator("womens"), TimeAwareCalibratedGBM)
 
 
 def test_calibrated_gbm_pickles_under_model_module():
@@ -113,6 +139,65 @@ class TestTimeAwareTrainingSplit:
         df = pd.DataFrame({"ats_win": [1], "is_home": [1]})
         with pytest.raises(ValueError):
             prepare_time_ordered_training_frame(df, ["is_home"], "ats_win")
+
+    def test_walk_forward_validate_scores_home_rows_only(self):
+        rows = []
+        base_features = {
+            "is_neutral": 0,
+            "spread": -2.5,
+            "rest_days": 3,
+            "hasla_diff_rank_strength": 0.1,
+            "hasla_diff_off_rank_strength": 0.1,
+            "hasla_diff_def_rank_strength": 0.1,
+            "torvik_diff_adj_oe": 1.0,
+            "torvik_diff_adj_de": 1.0,
+            "torvik_diff_barthag": 0.1,
+            "torvik_tempo_gap": 0.5,
+            "torvik_diff_efg": 0.5,
+            "torvik_diff_tor": 0.5,
+            "torvik_diff_orb": 0.5,
+            "torvik_diff_ftr": 0.5,
+            "roll5_cover_margin": 0.0,
+            "prev_games_played": 10,
+            "opp_win_pct": 0.5,
+            "prev_blowout_rate": 0.2,
+            "prev_roll5_margin": 1.0,
+            "prev_volatility": 9.0,
+            "spread_abs": 2.5,
+            "spread_squared": 6.25,
+        }
+        for game_idx in range(60):
+            game_date = pd.Timestamp("2026-01-01") + pd.Timedelta(days=game_idx)
+            ats_win = int(game_idx % 2 == 0)
+            home_row = {
+                "date": game_date,
+                "team": f"H{game_idx}",
+                "opponent": f"A{game_idx}",
+                "is_home": 1,
+                "ats_win": ats_win,
+                **base_features,
+            }
+            away_row = {
+                "date": game_date,
+                "team": f"A{game_idx}",
+                "opponent": f"H{game_idx}",
+                "is_home": 0,
+                "ats_win": 1 - ats_win,
+                **base_features,
+            }
+            rows.extend([home_row, away_row])
+
+        df = pd.DataFrame(rows)
+        metrics = walk_forward_validate(
+            df,
+            get_feature_list("mens"),
+            "ats_win",
+            estimator_factory=lambda: TimeAwareCalibratedGBM(min_calibration_rows=9999),
+            weeks_back=2,
+        )
+
+        assert metrics["total_bets"] > 0
+        assert metrics["total_bets"] <= len(df[df["is_home"] == 1])
 
 
 class TestCoverProbAtSpread:

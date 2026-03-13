@@ -6,45 +6,83 @@ import numpy as np
 import pandas as pd
 
 from league_config import get_league_artifact_paths, normalize_league
+from hasla import add_hasla_features, ensure_hasla_feature_columns, load_snapshot_file as load_hasla_snapshot_file, load_team_map as load_hasla_team_map
+from torvik import add_torvik_features, ensure_torvik_feature_columns, load_snapshot_file, load_team_map
 from venue import build_team_home_locations, compute_distance_advantage_bulk, load_geocode_cache, save_geocode_cache
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_COLUMNS = [
+    "date",
+    "season",
+    "total_line",
+    "team",
+    "opponent",
+    "location",
+    "team_score",
+    "opp_score",
+    "spread",
+    "is_home",
+    "is_neutral",
+    "venue_city",
+    "venue_state",
+]
+RAW_RATE_COLUMNS = [
+    "possessions",
+    "team_eFG",
+    "team_TO",
+    "team_ORB",
+    "team_FTR",
+    "team_3PR",
+    "opp_eFG",
+    "opp_TO",
+    "opp_ORB",
+    "opp_FTR",
+    "opp_3PR",
+]
+STAT_SOURCE_COLUMNS = {
+    "eFG": "team_eFG",
+    "to": "team_TO",
+    "orb": "team_ORB",
+    "poss": "possessions",
+}
 
 def clean_stale_data(df):
-    print("   -> 🧹 Cleaning stale columns...")
-    keywords = ['season_', 'roll', 'prev_', 'opp_', 'diff_', 'eFG', 'TS', 'off_rating', 'poss', 'ats_win']
-    keep_cols = ['date', 'team', 'opponent', 'location', 'team_score', 'opp_score', 'spread', 'is_home',
-                 'is_neutral', 'venue_city', 'venue_state']
-    
+    print("   -> Cleaning stale columns...")
+    keep_cols = set(BASE_COLUMNS + RAW_RATE_COLUMNS)
     current_cols = df.columns.tolist()
-    drop_list = []
-    for col in current_cols:
-        if col in keep_cols: continue
-        if any(k in col for k in keywords) or col in ['fga', 'to', 'fta', 'orb', 'fgm', '3pm']:
-            drop_list.append(col)
-            
+    drop_list = [col for col in current_cols if col not in keep_cols]
+
     if drop_list:
         df = df.drop(columns=drop_list)
     return df
 
 def calculate_advanced_stats(df):
-    print("   -> Calculating Possessions & Efficiency...")
-    if 'fga' not in df.columns:
-        df['fga'] = df['team_score'] / 2
-        df['to'] = 12
-        df['fta'] = df['team_score'] / 4
-        df['orb'] = 8
-        df['fgm'] = df['team_score'] / 2.2
-        df['3pm'] = 6
-        
-    df['poss'] = 0.96 * (df['fga'] + df['to'] + 0.44 * df['fta'] - df['orb'])
-    df['off_rating'] = 100 * (df['team_score'] / df['poss'])
-    df['eFG'] = (df['fgm'] + 0.5 * df['3pm']) / df['fga']
-    df['TS'] = df['team_score'] / (2 * (df['fga'] + 0.44 * df['fta']))
-    return df
+    print("   -> Calculating supported rate stats from upstream inputs...")
+    available_stats = []
+    missing_sources = []
 
-def calculate_rolling_stats(df):
+    for stat_col, source_col in STAT_SOURCE_COLUMNS.items():
+        if source_col not in df.columns:
+            missing_sources.append(source_col)
+            continue
+        df[stat_col] = pd.to_numeric(df[source_col], errors='coerce')
+        available_stats.append(stat_col)
+
+    if 'poss' in available_stats:
+        poss = df['poss'].where(df['poss'] > 0)
+        df['off_rating'] = 100 * (pd.to_numeric(df['team_score'], errors='coerce') / poss)
+        available_stats.append('off_rating')
+
+    if missing_sources:
+        print(
+            "      Source stats unavailable; skipping unsupported derived metrics:",
+            ", ".join(missing_sources),
+        )
+
+    return df, available_stats
+
+def calculate_rolling_stats(df, stat_cols):
     print("   -> Generating Rolling Averages (Honest Lag)...")
     df = df.sort_values(['team', 'date']).reset_index(drop=True)
 
@@ -55,7 +93,7 @@ def calculate_rolling_stats(df):
     df['rest_days'] = rest.fillna(7).clip(lower=0, upper=7)
     df = df.drop(columns=['prev_game_date'])
 
-    stats_cols = ['eFG', 'TS', 'off_rating', 'poss', 'orb', 'to', 'team_score']
+    stats_cols = list(dict.fromkeys(stat_cols + ['team_score']))
 
     for col in stats_cols:
         df[f'season_team_{col}'] = df.groupby('team')[col].expanding().mean().reset_index(level=0, drop=True)
@@ -103,25 +141,54 @@ def calculate_rolling_stats(df):
 def merge_opponent_stats(df):
     print("   -> Merging opponent entering stats...")
 
-    req_cols = ['date', 'team', 'prev_season_eFG', 'prev_season_orb', 'prev_season_to', 'prev_season_off_rating', 'prev_win_pct']
-    opp_lookup = df[req_cols].copy()
-
+    req_cols = ['date', 'team', 'prev_win_pct']
     rename_map = {
         'team': 'opponent_name',
+        'prev_win_pct': 'opp_win_pct'
+    }
+    optional_prev_cols = {
         'prev_season_eFG': 'opp_season_team_eFG',
         'prev_season_orb': 'opp_season_team_ORB',
         'prev_season_to': 'opp_season_team_TO',
         'prev_season_off_rating': 'opp_season_off_rating',
-        'prev_win_pct': 'opp_win_pct'
     }
+    for src_col, dest_col in optional_prev_cols.items():
+        if src_col in df.columns:
+            req_cols.append(src_col)
+            rename_map[src_col] = dest_col
+
+    opp_lookup = df[req_cols].copy()
     opp_lookup = opp_lookup.rename(columns=rename_map)
 
     df_merged = pd.merge(df, opp_lookup, left_on=['date', 'opponent'], right_on=['date', 'opponent_name'], how='left', suffixes=('', '_dupe'))
 
-    df_merged['diff_eFG'] = df_merged['prev_season_eFG'] - df_merged['opp_season_team_eFG']
-    df_merged['diff_Rebound'] = df_merged['prev_season_orb'] - df_merged['opp_season_team_ORB']
-    df_merged['diff_TO'] = df_merged['prev_season_to'] - df_merged['opp_season_team_TO']
-    df_merged['momentum_gap'] = df_merged['prev_roll3_eFG'] - df_merged['prev_season_eFG']
+    if {'prev_season_eFG', 'opp_season_team_eFG'}.issubset(df_merged.columns):
+        df_merged['diff_eFG'] = (
+            df_merged['prev_season_eFG'] - df_merged['opp_season_team_eFG']
+        ).fillna(0.0)
+    else:
+        df_merged['diff_eFG'] = 0.0
+
+    if {'prev_season_orb', 'opp_season_team_ORB'}.issubset(df_merged.columns):
+        df_merged['diff_Rebound'] = (
+            df_merged['prev_season_orb'] - df_merged['opp_season_team_ORB']
+        ).fillna(0.0)
+    else:
+        df_merged['diff_Rebound'] = 0.0
+
+    if {'prev_season_to', 'opp_season_team_TO'}.issubset(df_merged.columns):
+        df_merged['diff_TO'] = (
+            df_merged['prev_season_to'] - df_merged['opp_season_team_TO']
+        ).fillna(0.0)
+    else:
+        df_merged['diff_TO'] = 0.0
+
+    if {'prev_roll3_eFG', 'prev_season_eFG'}.issubset(df_merged.columns):
+        df_merged['momentum_gap'] = (
+            df_merged['prev_roll3_eFG'] - df_merged['prev_season_eFG']
+        ).fillna(0.0)
+    else:
+        df_merged['momentum_gap'] = 0.0
 
     # Fill missing opponent win pct with 0.5 (neutral)
     df_merged['opp_win_pct'] = df_merged['opp_win_pct'].fillna(0.5)
@@ -131,11 +198,56 @@ def merge_opponent_stats(df):
 
     return df_merged
 
+
+def merge_torvik_priors(df, league, paths):
+    df = ensure_torvik_feature_columns(df)
+    if league != "mens":
+        return df
+
+    snapshot_file = paths.get("torvik_snapshot_file")
+    map_file = paths.get("torvik_map_file")
+    if not snapshot_file or not map_file:
+        return df
+
+    snapshots_df = load_snapshot_file(snapshot_file)
+    team_map_df = load_team_map(
+        map_file,
+        pd.concat([df["team"], df["opponent"]], ignore_index=True).dropna().unique(),
+    )
+    if snapshots_df.empty or team_map_df.empty:
+        return df
+
+    print("   -> Merging Bart Torvik lagged priors...")
+    return add_torvik_features(df, snapshots_df, team_map_df)
+
+
+def merge_hasla_priors(df, league, paths):
+    df = ensure_hasla_feature_columns(df)
+    if league != "mens":
+        return df
+
+    snapshot_file = paths.get("hasla_snapshot_file")
+    map_file = paths.get("hasla_map_file")
+    if not snapshot_file or not map_file:
+        return df
+
+    snapshots_df = load_hasla_snapshot_file(snapshot_file)
+    team_map_df = load_hasla_team_map(
+        map_file,
+        pd.concat([df["team"], df["opponent"]], ignore_index=True).dropna().unique(),
+    )
+    if snapshots_df.empty or team_map_df.empty:
+        return df
+
+    print("   -> Merging Haslametrics lagged priors...")
+    return add_hasla_features(df, snapshots_df, team_map_df)
+
 def main(league="mens"):
     league = normalize_league(league)
-    data_file = get_league_artifact_paths(BASE_DIR, league)["data_file"]
+    paths = get_league_artifact_paths(BASE_DIR, league)
+    data_file = paths["data_file"]
 
-    print(f"--- 🧠 FEATURE ENGINEERING (HONEST MODE: FIXED, {league}) 🧠 ---")
+    print(f"--- FEATURE ENGINEERING (HONEST MODE: FIXED, {league}) ---")
     if not os.path.exists(data_file):
         print("❌ No data file found."); return
 
@@ -150,11 +262,13 @@ def main(league="mens"):
     cols = ['team_score', 'opp_score', 'spread']
     for c in cols: df[c] = pd.to_numeric(df[c], errors='coerce')
     
-    df = calculate_advanced_stats(df)
-    df = calculate_rolling_stats(df)
+    df, stat_cols = calculate_advanced_stats(df)
+    df = calculate_rolling_stats(df, stat_cols)
     df['ats_win'] = (df['team_score'] + df['spread'] > df['opp_score']).astype(int)
     
     df_final = merge_opponent_stats(df)
+    df_final = merge_torvik_priors(df_final, league, paths)
+    df_final = merge_hasla_priors(df_final, league, paths)
 
     # Neutral site: ensure column exists (0 for legacy rows without it)
     if 'is_neutral' not in df_final.columns:
@@ -171,7 +285,7 @@ def main(league="mens"):
     else:
         df_final['distance_advantage'] = 0.0
 
-    print(f"✅ Saving processed data ({len(df_final)} rows)...")
+    print(f"Saving processed data ({len(df_final)} rows)...")
     df_final.to_csv(data_file, index=False)
 
 if __name__ == "__main__":

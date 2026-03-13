@@ -23,12 +23,14 @@ from betting import calculate_edge, get_rating, recommended_units, EdgeRating, S
 from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
+from hasla import HASLA_GAME_FEATURE_COLUMNS, load_snapshot_file as load_hasla_snapshot_file, load_team_map as load_hasla_team_map, matchup_features_for_game as hasla_matchup_features_for_game
 from kalshi_game_archive import append_archive_records as append_kalshi_game_archive_records
 from kalshi_game_archive import build_game_archive_record
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
 from model import load_model
 from model_win import load_win_model_bundle, predict_home_win_prob
 from odds_archive import append_archive_records, build_archive_record
+from torvik import TORVIK_GAME_FEATURE_COLUMNS, load_snapshot_file, load_team_map, matchup_features_for_game
 from venue import (
     build_team_home_locations,
     compute_distance_advantage,
@@ -45,6 +47,10 @@ DATA_FILE = None
 OUTPUT_FILE = None
 BASE_URL = None
 PREDICTIONS_ARCHIVE_PREFIX = None
+TORVIK_SNAPSHOT_FILE = None
+TORVIK_MAP_FILE = None
+HASLA_SNAPSHOT_FILE = None
+HASLA_MAP_FILE = None
 
 # Module-level storage for predictions with line shopping data (for app.py access)
 _latest_predictions = {}
@@ -69,7 +75,7 @@ with open(TEAM_MAP_FILE, 'r') as f:
 
 def configure_league(league="mens"):
     """Set module-level paths/urls for the requested league."""
-    global ACTIVE_LEAGUE, MODEL_FILE, WIN_MODEL_FILE, DATA_FILE, OUTPUT_FILE, BASE_URL, PREDICTIONS_ARCHIVE_PREFIX
+    global ACTIVE_LEAGUE, MODEL_FILE, WIN_MODEL_FILE, DATA_FILE, OUTPUT_FILE, BASE_URL, PREDICTIONS_ARCHIVE_PREFIX, TORVIK_SNAPSHOT_FILE, TORVIK_MAP_FILE, HASLA_SNAPSHOT_FILE, HASLA_MAP_FILE
     ACTIVE_LEAGUE = normalize_league(league)
     paths = get_league_artifact_paths(BASE_DIR, ACTIVE_LEAGUE)
     MODEL_FILE = paths["model_file"]
@@ -78,6 +84,10 @@ def configure_league(league="mens"):
     OUTPUT_FILE = paths["predictions_file"]
     BASE_URL = get_scoreboard_base_url(ACTIVE_LEAGUE)
     PREDICTIONS_ARCHIVE_PREFIX = paths["predictions_archive_prefix"]
+    TORVIK_SNAPSHOT_FILE = paths.get("torvik_snapshot_file")
+    TORVIK_MAP_FILE = paths.get("torvik_map_file")
+    HASLA_SNAPSHOT_FILE = paths.get("hasla_snapshot_file")
+    HASLA_MAP_FILE = paths.get("hasla_map_file")
     return ACTIVE_LEAGUE
 
 
@@ -669,7 +679,7 @@ def get_kalshi_game_edge(
         return result
 
 
-def calculate_production_features(row, h_stats, a_stats):
+def calculate_production_features(row, h_stats, a_stats, game_date=None, torvik_context=None):
     """Calculate features needed for prediction."""
     # --- Original Features ---
     # 1. Effective Field Goal %
@@ -716,6 +726,42 @@ def calculate_production_features(row, h_stats, a_stats):
     # 15-16. Spread interaction features
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
+
+    for col in TORVIK_GAME_FEATURE_COLUMNS:
+        row.setdefault(col, 0.0)
+    for col in HASLA_GAME_FEATURE_COLUMNS:
+        row.setdefault(col, 0.0)
+
+    if torvik_context and game_date is not None:
+        snapshots_df = torvik_context.get("snapshots")
+        team_map_df = torvik_context.get("team_map")
+        if snapshots_df is not None and team_map_df is not None and not snapshots_df.empty and not team_map_df.empty:
+            row.update(
+                matchup_features_for_game(
+                    home_team=row.get("team_name"),
+                    away_team=row.get("opponent_name"),
+                    game_date=game_date,
+                    snapshots_df=snapshots_df,
+                    team_map_df=team_map_df,
+                )
+            )
+        hasla_snapshots = torvik_context.get("hasla_snapshots")
+        hasla_team_map = torvik_context.get("hasla_team_map")
+        if (
+            hasla_snapshots is not None
+            and hasla_team_map is not None
+            and not hasla_snapshots.empty
+            and not hasla_team_map.empty
+        ):
+            row.update(
+                hasla_matchup_features_for_game(
+                    home_team=row.get("team_name"),
+                    away_team=row.get("opponent_name"),
+                    game_date=game_date,
+                    snapshots_df=hasla_snapshots,
+                    team_map_df=hasla_team_map,
+                )
+            )
 
     return row
 
@@ -804,6 +850,32 @@ def main(spread_overrides=None, league="mens"):
 
     known_teams = df_hist['team'].unique()
     team_stats = get_latest_stats(df_hist)
+    torvik_context = {
+        "snapshots": pd.DataFrame(),
+        "team_map": pd.DataFrame(),
+        "hasla_snapshots": pd.DataFrame(),
+        "hasla_team_map": pd.DataFrame(),
+    }
+    if ACTIVE_LEAGUE == "mens" and TORVIK_SNAPSHOT_FILE and TORVIK_MAP_FILE:
+        try:
+            torvik_context = {
+                "snapshots": load_snapshot_file(TORVIK_SNAPSHOT_FILE),
+                "team_map": load_team_map(TORVIK_MAP_FILE, known_teams),
+                "hasla_snapshots": load_hasla_snapshot_file(HASLA_SNAPSHOT_FILE) if HASLA_SNAPSHOT_FILE else pd.DataFrame(),
+                "hasla_team_map": load_hasla_team_map(HASLA_MAP_FILE, known_teams) if HASLA_MAP_FILE else pd.DataFrame(),
+            }
+            if not torvik_context["snapshots"].empty:
+                latest_snapshot = pd.to_datetime(
+                    torvik_context["snapshots"]["snapshot_date"], errors="coerce"
+                ).max()
+                print(f"   Torvik snapshots current through: {latest_snapshot.strftime('%Y-%m-%d')}")
+            if not torvik_context["hasla_snapshots"].empty:
+                latest_hasla = pd.to_datetime(
+                    torvik_context["hasla_snapshots"]["snapshot_date"], errors="coerce"
+                ).max()
+                print(f"   Haslametrics snapshots current through: {latest_hasla.strftime('%Y-%m-%d')}")
+        except (FileNotFoundError, pd.errors.EmptyDataError, ValueError) as e:
+            print(f"   WARNING: priors context unavailable ({e})")
 
     # Check data freshness
     df_hist['date'] = pd.to_datetime(df_hist['date'])
@@ -918,7 +990,12 @@ def main(spread_overrides=None, league="mens"):
         away_actual_rest = max(0, (g['date'].replace(tzinfo=None) - away_last_date).days)
 
         # Build common feature row (for both spread and game models)
-        row = {'is_home': 1, 'spread': resolved_spread}
+        row = {
+            'is_home': 1,
+            'spread': resolved_spread,
+            'team_name': home_matched,
+            'opponent_name': away_matched,
+        }
         row['is_neutral'] = g.get('is_neutral', 0)
         # Not in FEATURES yet -- computed for monitoring and future use
         row['distance_advantage'] = compute_distance_advantage(
@@ -934,7 +1011,13 @@ def main(spread_overrides=None, league="mens"):
         if row['is_neutral']:
             _distance_stats["neutral"] += 1
         row['rest_days'] = min(home_actual_rest, 7)
-        row = calculate_production_features(row, h_stats, a_stats)
+        row = calculate_production_features(
+            row,
+            h_stats,
+            a_stats,
+            game_date=g['date'],
+            torvik_context=torvik_context,
+        )
 
         # Format game time in Eastern once
         try:
@@ -1047,6 +1130,17 @@ def main(spread_overrides=None, league="mens"):
             'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
             'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
             'spread_abs': 0, 'spread_squared': 0,
+            'torvik_diff_adj_oe': 0,
+            'torvik_diff_adj_de': 0,
+            'torvik_diff_barthag': 0,
+            'torvik_tempo_gap': 0,
+            'torvik_diff_efg': 0,
+            'torvik_diff_tor': 0,
+            'torvik_diff_orb': 0,
+            'torvik_diff_ftr': 0,
+            'hasla_diff_rank_strength': 0,
+            'hasla_diff_off_rank_strength': 0,
+            'hasla_diff_def_rank_strength': 0,
         }).fillna(0)
 
         prob = model.predict_proba(input_df)[0][1]
