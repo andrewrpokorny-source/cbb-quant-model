@@ -673,35 +673,23 @@ CBB_GAME_PREFIXES = ("KXNCAAMBGAME", "KXNCAAWBGAME")
 
 @st.cache_data(ttl=120)
 def _fetch_kalshi_positions():
-    """Fetch unsettled Kalshi positions + fills for CBB game markets.
+    """Fetch unsettled Kalshi positions, filtered to CBB game markets.
 
     Returns:
-        Tuple of (positions, fees_by_ticker) where positions is a list of
-        position dicts filtered to CBB game markets, and fees_by_ticker maps
-        each ticker to its total fee in cents. Returns ([], {}) on failure.
+        List of position dicts. Each contains dollar-denominated string
+        fields: market_exposure_dollars, fees_paid_dollars, position_fp.
+        Returns [] on failure.
     """
     try:
         from kalshi.client import KalshiClient
         client = KalshiClient()
         if not client.api_key:
-            return [], {}
+            return []
         positions = client.get_positions(settlement_status="unsettled")
-        cbb_positions = [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
-        if not cbb_positions:
-            return [], {}
-
-        # Fetch all fills at once and group fees by ticker
-        all_fills = client.get_fills()
-        cbb_tickers = {p.get("ticker", "") for p in cbb_positions}
-        fees_by_ticker = {}
-        for fill in all_fills:
-            t = fill.get("ticker", "")
-            if t in cbb_tickers:
-                fees_by_ticker[t] = fees_by_ticker.get(t, 0) + (fill.get("fee", 0) or 0)
-        return cbb_positions, fees_by_ticker
+        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
     except Exception as e:
         print(f"      Failed to fetch Kalshi positions: {e}")
-        return [], {}
+        return []
 
 
 @st.cache_data(ttl=60)
@@ -762,12 +750,12 @@ def _fetch_live_espn_games():
     return games_by_abbr
 
 
-def _build_live_positions(positions, live_games, fees_by_ticker):
+def _build_live_positions(positions, live_games) -> list[dict]:
     """Match Kalshi positions to live ESPN games."""
     results = []
     for pos in positions:
         ticker = pos.get("ticker", "")
-        # Ticker suffix after last '-' is YES team abbreviation
+        # Ticker suffix after last '-' is YES (home) team abbreviation
         parts = ticker.rsplit("-", 1)
         if len(parts) < 2:
             continue
@@ -777,8 +765,8 @@ def _build_live_positions(positions, live_games, fees_by_ticker):
         if not game:
             continue
 
-        # position_fp > 0 means user holds YES contracts, < 0 means NO
-        position_fp = pos.get("position", 0)
+        # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
+        position_fp = float(pos.get("position_fp", 0) or 0)
         if position_fp > 0:
             side = "YES"
             side_team = yes_abbr
@@ -788,20 +776,19 @@ def _build_live_positions(positions, live_games, fees_by_ticker):
         else:
             continue
 
-        contracts = abs(position_fp)
-        market_exposure = pos.get("market_exposure", 0) or 0
-        cost_cents = abs(market_exposure)
-        fee_cents = fees_by_ticker.get(ticker, 0)
-        net_cost_cents = cost_cents + fee_cents
+        contracts = int(abs(position_fp))
+        cost = float(pos.get("market_exposure_dollars", 0) or 0)
+        fee = float(pos.get("fees_paid_dollars", 0) or 0)
+        net_cost = cost + fee
 
         results.append({
             "ticker": ticker,
             "side": side,
             "side_team": side_team,
             "contracts": contracts,
-            "cost_cents": cost_cents,
-            "fee_cents": fee_cents,
-            "net_cost_cents": net_cost_cents,
+            "cost": cost,
+            "fee": fee,
+            "net_cost": net_cost,
             "game": game,
         })
     return results
@@ -1165,9 +1152,9 @@ def _render_game_bets(col, lg):
 # LIVE KALSHI POSITIONS (in-progress games)
 # ==========================================
 try:
-    _kalshi_positions, _kalshi_fees = _fetch_kalshi_positions()
+    _kalshi_positions = _fetch_kalshi_positions()
     _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
-    _live_positions = _build_live_positions(_kalshi_positions, _live_games, _kalshi_fees) if _kalshi_positions else []
+    _live_positions = _build_live_positions(_kalshi_positions, _live_games) if _kalshi_positions else []
 except Exception as e:
     print(f"      Live positions section error: {e}")
     _live_positions = []
@@ -1222,15 +1209,15 @@ if _live_positions:
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Cost</span>
-                        <span class="stat-value">{lp["cost_cents"]:.1f}&#162;</span>
+                        <span class="stat-value">${lp["cost"]:.2f}</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Fee</span>
-                        <span class="stat-value fee-value">{lp["fee_cents"]:.1f}&#162;</span>
+                        <span class="stat-value fee-value">${lp["fee"]:.2f}</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Net Cost</span>
-                        <span class="stat-value fee-value">{lp["net_cost_cents"]:.1f}&#162;</span>
+                        <span class="stat-value fee-value">${lp["net_cost"]:.2f}</span>
                     </div>
                 </div>
             </div>
