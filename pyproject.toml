@@ -20,6 +20,7 @@ dependencies = [
     "geopy>=2.4.1",
     "python-telegram-bot>=21.0",
     "ocrmac>=1.0.0",
+    "streamlit-autorefresh>=1.0.1",
 ]
 
 [project.optional-dependencies]
