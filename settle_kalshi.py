@@ -276,19 +276,71 @@ def _result_from_profit(profit: float) -> str:
     return "void"
 
 
-def _parse_settlement(s: dict) -> list[dict]:
+def _pnl_from_fills(fills: list[dict], settlement_revenue_cents: int, date_str: str) -> dict:
+    """Compute actual P&L from fills + settlement revenue.
+
+    Handles cases where contracts were bought and sold before settlement.
+    The settlement API's total_cost fields include costs of sold contracts
+    but revenue only includes settlement payouts, not sell proceeds.
+    Fills give us the complete picture.
+    """
+    total_bought_cents = 0
+    total_sold_cents = 0
+    total_fees_cents = 0
+    buy_yes_cents = 0
+    buy_no_cents = 0
+
+    for f in fills:
+        count = int(float(f.get("count_fp", 0) or 0))
+        action = f.get("action", "")
+        side = f.get("side", "")
+
+        if side == "yes":
+            price_cents = round(float(f.get("yes_price_dollars", 0) or 0) * 100)
+        else:
+            price_cents = round(float(f.get("no_price_dollars", 0) or 0) * 100)
+
+        cost = count * price_cents
+        fee_dollars = float(f.get("fee_cost", 0) or 0)
+        fee_cents = round(fee_dollars * 100)
+
+        if action == "buy":
+            total_bought_cents += cost
+            if side == "yes":
+                buy_yes_cents += cost
+            else:
+                buy_no_cents += cost
+        elif action == "sell":
+            total_sold_cents += cost
+
+        total_fees_cents += fee_cents
+
+    total_in = total_sold_cents + settlement_revenue_cents
+    net_cents = total_in - total_bought_cents - total_fees_cents
+
+    wager = total_bought_cents / 100
+    payout = total_in / 100
+    profit = round(net_cents / 100, 2)
+    side = "NO" if buy_no_cents >= buy_yes_cents else "YES"
+
+    return {"side": side, "wager": wager, "payout": payout,
+            "profit": profit, "result": _result_from_profit(profit), "date": date_str}
+
+
+def _parse_settlement(s: dict, fills: list[dict] | None = None) -> list[dict]:
     """Parse a single Kalshi settlement into one or more row-ready dicts.
 
     When only one side was traded, returns a single entry.  When both YES
-    and NO were filled, returns two entries with revenue assigned by market
-    outcome: the winning side receives $1/contract and the losing side $0.
+    and NO were filled, uses fills data to compute actual P&L (accounting
+    for intermediate sells that the settlement API's total_cost fields
+    don't subtract).
     """
     yes_count = int(float(s.get("yes_count_fp") or s.get("yes_count") or 0))
     no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
     yes_cost = s.get("yes_total_cost", 0) or 0
     no_cost = s.get("no_total_cost", 0) or 0
     revenue = s.get("revenue", 0) or 0
-    market_result = s.get("market_result", "")  # "yes", "no", or "all_no" / "all_yes"
+    market_result = s.get("market_result", "")
     date_str = _parse_date(s.get("settled_time", ""))
 
     if yes_count == 0 and no_count == 0:
@@ -309,21 +361,41 @@ def _parse_settlement(s: dict) -> list[dict]:
         return [{"side": "NO", "wager": wager, "payout": payout,
                  "profit": profit, "result": _result_from_profit(profit), "date": date_str}]
 
-    # Both sides filled -- assign revenue by market outcome.
-    # In a binary Kalshi market, the winning side pays $1/contract and
-    # the losing side pays $0.
+    # Both sides traded.  Check whether the revenue matches what we'd
+    # expect if every counted winning contract settled normally.  If it
+    # does, the counts are trustworthy and we can split into two entries.
+    # If not, there were intermediate sells that inflated the counts and
+    # we need fills for accurate P&L.
     yes_won = market_result.lower() in ("yes", "all_yes")
-    yes_rev_cents = yes_count * 100 if yes_won else 0
-    no_rev_cents = no_count * 100 if not yes_won else 0
+    winning_count = yes_count if yes_won else no_count
+    expected_revenue = winning_count * 100
 
-    entries = []
-    for side, cost, rev in [("YES", yes_cost, yes_rev_cents), ("NO", no_cost, no_rev_cents)]:
-        wager = cost / 100
-        payout = rev / 100
-        profit = round(payout - wager, 2)
-        entries.append({"side": side, "wager": wager, "payout": payout,
-                        "profit": profit, "result": _result_from_profit(profit), "date": date_str})
-    return entries
+    if revenue == expected_revenue:
+        # Clean dual-side hold -- split into per-side entries.
+        yes_rev_cents = yes_count * 100 if yes_won else 0
+        no_rev_cents = no_count * 100 if not yes_won else 0
+        entries = []
+        for side, cost, rev in [("YES", yes_cost, yes_rev_cents), ("NO", no_cost, no_rev_cents)]:
+            wager = cost / 100
+            payout = rev / 100
+            profit = round(payout - wager, 2)
+            entries.append({"side": side, "wager": wager, "payout": payout,
+                            "profit": profit, "result": _result_from_profit(profit), "date": date_str})
+        return entries
+
+    # Revenue mismatch -- intermediate sells inflated the counts.
+    # Use fills for accurate P&L.
+    if fills:
+        return [_pnl_from_fills(fills, revenue, date_str)]
+
+    # Fallback when fills unavailable: use settlement revenue directly.
+    # This may understate profit when sell proceeds aren't in revenue.
+    total_cost = (yes_cost + no_cost) / 100
+    payout = revenue / 100
+    profit = round(payout - total_cost, 2)
+    side = "NO" if no_cost >= yes_cost else "YES"
+    return [{"side": side, "wager": total_cost, "payout": payout,
+             "profit": profit, "result": _result_from_profit(profit), "date": date_str}]
 
 
 def _read_sync_ts() -> int | None:
@@ -393,7 +465,17 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
             skipped += 1
             continue
 
-        entries = _parse_settlement(s)
+        # Fetch fills for dual-side settlements (both YES and NO traded)
+        yes_count = int(float(s.get("yes_count_fp") or s.get("yes_count") or 0))
+        no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
+        fills = None
+        if yes_count > 0 and no_count > 0:
+            try:
+                fills = client.get_fills(ticker=ticker)
+            except Exception as e:
+                logger.warning("Failed to fetch fills for %s: %s", ticker, e)
+
+        entries = _parse_settlement(s, fills=fills)
         if not entries:
             parse_failed += 1
             skipped += 1
