@@ -2000,13 +2000,17 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif logged or kalshi_settled:
                 parts = []
                 if logged:
-                    profit = sum(float(r["profit"]) for r in logged)
+                    total_profit = sum(float(r["profit"]) for r in logged)
                     wins = sum(1 for r in logged if r["result"] == "win")
                     losses = sum(1 for r in logged if r["result"] == "loss")
-                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {total_profit:+.2f}U)")
                 if kalshi_settled:
                     parts.append(f"{kalshi_settled} pending settled")
                 msg_parts.append(f"Kalshi: {', '.join(parts)}")
+                for r in logged:
+                    icon = {"win": "W", "loss": "L"}.get(r.get("result", ""), "?")
+                    p = float(r.get("profit", 0))
+                    msg_parts.append(f"  [{icon}] {r.get('line', '?')} ({r.get('game', '?')}) {p:+.2f}U")
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
             msg_parts.append("Kalshi: fetch failed")
