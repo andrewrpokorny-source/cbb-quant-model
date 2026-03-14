@@ -185,10 +185,43 @@ def _ensure_csv_headers(csv_path: str):
     print(f"Migrated CSV: added {missing} column(s) to {len(rows)} rows")
 
 
-def _reconstruct_line(title: str, side: str) -> str:
-    """Best-effort line reconstruction from market title + side."""
+def _game_ml_label(team_parts: list[str], side: str, yes_team: str) -> str:
+    """Return '{Team} ML' for a game/winner market given two team names."""
+    if yes_team:
+        yt = yes_team.lower()
+        # Match yes_team to one of the two title teams
+        scores = []
+        for t in team_parts:
+            tl = t.lower()
+            if yt == tl or yt in tl or tl in yt:
+                scores.append(1)
+            else:
+                scores.append(0)
+        if scores[0] > scores[1]:
+            yes_idx = 0
+        elif scores[1] > scores[0]:
+            yes_idx = 1
+        else:
+            yes_idx = 1  # fallback to legacy home-team assumption
+        if side == "YES":
+            return f"{team_parts[yes_idx]} ML"
+        return f"{team_parts[1 - yes_idx]} ML"
+    # No yes_team provided -- fall back to legacy positional assumption
+    if side == "YES":
+        return f"{team_parts[1]} ML"
+    return f"{team_parts[0]} ML"
+
+
+def _reconstruct_line(title: str, side: str, yes_team: str = "") -> str:
+    """Best-effort line reconstruction from market title + side.
+
+    Args:
+        yes_team: The YES-side team name (from market ``yes_sub_title``).
+                  Used for game/winner markets to avoid guessing from
+                  title position, which breaks when YES != home team.
+    """
     # e.g. "Duke vs UNC: Duke -5.5" -> "Duke -5.5" for YES side
-    # For game markets, side is YES (home team wins) or NO
+    # For game markets, side is YES (yes_team wins) or NO
     parts = title.split(":")
     if len(parts) >= 2:
         qualifier = parts[-1].strip()
@@ -198,9 +231,7 @@ def _reconstruct_line(title: str, side: str) -> str:
         if qualifier.lower() == "winner":
             team_parts = re.split(r"\s+(?:at|vs\.?)\s+", base_title, flags=re.IGNORECASE)
             if len(team_parts) == 2:
-                if side == "YES":
-                    return f"{team_parts[1].strip()} ML"
-                return f"{team_parts[0].strip()} ML"
+                return _game_ml_label(team_parts, side, yes_team)
 
         # Spread markets: qualifier is like "Team -5.5"
         if side == "YES":
@@ -252,9 +283,8 @@ def _reconstruct_line(title: str, side: str) -> str:
     # Game market -- no colon; try "Team A at/vs Team B Winner?"
     m = re.match(r"(.+?)\s+(?:at|vs\.?)\s+(.+?)(?:\s+Winner\??)?$", title, re.IGNORECASE)
     if m:
-        if side == "YES":
-            return f"{m.group(2).strip()} ML"
-        return f"{m.group(1).strip()} ML"
+        team_parts = [m.group(1).strip(), m.group(2).strip()]
+        return _game_ml_label(team_parts, side, yes_team)
     return f"{side} side"
 
 
@@ -511,7 +541,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
                 "platform": "Kalshi",
                 "game": _clean_game_title(title),
                 "bet_type": _bet_type_from_ticker(ticker),
-                "line": _reconstruct_line(title, parsed["side"]),
+                "line": _reconstruct_line(title, parsed["side"], market.get("yes_sub_title", "")),
                 "odds": "",
                 "wager": f"{parsed['wager']:.2f}",
                 "result": parsed["result"],
