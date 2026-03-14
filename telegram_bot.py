@@ -1983,22 +1983,20 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 1) Settle pending (FanDuel etc.) bets via score lookup
         summary = settle_pending_bets()
 
-        msg_parts = [
-            f"Pending settled: {summary['settled']}",
-            f"Still pending: {summary['still_pending']}",
-        ]
-        if summary["details"]:
-            msg_parts.append("")
+        msg_parts = []
+        if summary["settled"]:
+            msg_parts.append(f"Settled {summary['settled']}:")
             msg_parts.extend(summary["details"][:20])
+        if summary["still_pending"]:
+            msg_parts.append(f"Still pending: {summary['still_pending']}")
 
         # 2) Import settled Kalshi positions (uses persisted sync cursor)
         try:
             kalshi_result = settle_to_csv()
             logged = kalshi_result["logged"]
             kalshi_settled = kalshi_result["settled"]
-            skipped = kalshi_result["skipped"]
             if kalshi_result["error"]:
-                msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+                msg_parts.append(f"Kalshi: {kalshi_result['error']}")
             elif logged or kalshi_settled:
                 parts = []
                 if logged:
@@ -2008,16 +2006,12 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
                 if kalshi_settled:
                     parts.append(f"{kalshi_settled} pending settled")
-                msg_parts.append(f"\nKalshi: {', '.join(parts)}")
-            elif skipped:
-                msg_parts.append(f"\nKalshi: all {skipped} already logged")
-            else:
-                msg_parts.append("\nKalshi: no recent settlements")
+                msg_parts.append(f"Kalshi: {', '.join(parts)}")
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
-            msg_parts.append("\nKalshi: fetch failed")
+            msg_parts.append("Kalshi: fetch failed")
 
-        await update.message.reply_text("\n".join(msg_parts))
+        await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.")
 
 
 @authorized_only
