@@ -1332,6 +1332,24 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     # 7. Result-specific payout override
     if result == "win":
+        # Sanity check: a winning payout must exceed the wager. If OCR
+        # produced a bogus second dollar amount, recalculate from odds.
+        if payout <= wager and odds and wager > 0:
+            try:
+                odds_val = int(float(odds))
+                if odds_val < 0:
+                    calc_profit = wager * 100.0 / abs(odds_val)
+                else:
+                    calc_profit = wager * odds_val / 100.0
+                payout = round(wager + calc_profit, 2)
+                logger.warning(
+                    "FD settled card: OCR payout ($%.2f) <= wager ($%.2f), "
+                    "recalculated from odds %s -> $%.2f (bet_id=%s)",
+                    raw_amounts[1] if len(raw_amounts) >= 2 else 0.0,
+                    wager, odds, payout, bet_id,
+                )
+            except (ValueError, TypeError):
+                pass
         profit = round(payout - wager, 2)
     elif result == "void":
         payout = wager  # void = wager refunded; override raw $0.00 from OCR
