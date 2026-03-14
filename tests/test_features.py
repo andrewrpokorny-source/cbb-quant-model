@@ -1,6 +1,6 @@
 import pandas as pd
 
-from features import calculate_advanced_stats, clean_stale_data, merge_opponent_stats
+from features import calculate_advanced_stats, clean_stale_data, merge_archived_market_spreads, merge_opponent_stats
 
 
 def test_clean_stale_data_preserves_raw_source_columns():
@@ -80,3 +80,39 @@ def test_merge_opponent_stats_zero_fills_unavailable_advanced_deltas():
     assert home_row["diff_Rebound"] == 0.0
     assert home_row["diff_TO"] == 0.0
     assert home_row["momentum_gap"] == 0.0
+
+
+def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
+    archive_file = tmp_path / "odds_history.csv"
+    pd.DataFrame(
+        [
+            {
+                "captured_at": "2026-03-06T12:00:00+00:00",
+                "league": "womens",
+                "date": "2026-03-06",
+                "home_team": "Home",
+                "away_team": "Away",
+                "spread": -4.5,
+                "total_line": pd.NA,
+                "book": "Manual",
+                "provider": "manual_override",
+                "source": "prediction_run",
+                "raw_line": "Manual -4.5",
+                "has_market_spread": True,
+            }
+        ]
+    ).to_csv(archive_file, index=False)
+
+    df = pd.DataFrame(
+        [
+            {"date": "2026-03-06", "team": "Home", "opponent": "Away", "is_home": 1, "spread": 0.0},
+            {"date": "2026-03-06", "team": "Away", "opponent": "Home", "is_home": 0, "spread": 0.0},
+        ]
+    )
+
+    result = merge_archived_market_spreads(df, "womens", {"odds_archive_file": str(archive_file)})
+
+    home = result[result["is_home"] == 1].iloc[0]
+    away = result[result["is_home"] == 0].iloc[0]
+    assert home["spread"] == -4.5
+    assert away["spread"] == 4.5

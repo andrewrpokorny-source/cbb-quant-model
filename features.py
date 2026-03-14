@@ -6,9 +6,16 @@ import numpy as np
 import pandas as pd
 
 from league_config import get_league_artifact_paths, normalize_league
+from odds_archive import load_latest_market_spreads
 from hasla import add_hasla_features, ensure_hasla_feature_columns, load_snapshot_file as load_hasla_snapshot_file, load_team_map as load_hasla_team_map
 from torvik import add_torvik_features, ensure_torvik_feature_columns, load_snapshot_file, load_team_map
 from venue import build_team_home_locations, compute_distance_advantage_bulk, load_geocode_cache, save_geocode_cache
+from womens_net import (
+    add_womens_net_features,
+    ensure_womens_net_feature_columns,
+    load_snapshot_file as load_womens_net_snapshot_file,
+    load_team_map as load_womens_net_team_map,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -242,6 +249,67 @@ def merge_hasla_priors(df, league, paths):
     print("   -> Merging Haslametrics lagged priors...")
     return add_hasla_features(df, snapshots_df, team_map_df)
 
+
+def merge_womens_net_priors(df, league, paths):
+    df = ensure_womens_net_feature_columns(df)
+    if league != "womens":
+        return df
+
+    snapshot_file = paths.get("womens_net_snapshot_file")
+    map_file = paths.get("womens_net_map_file")
+    if not snapshot_file or not map_file:
+        return df
+
+    snapshots_df = load_womens_net_snapshot_file(snapshot_file)
+    team_map_df = load_womens_net_team_map(
+        map_file,
+        pd.concat([df["team"], df["opponent"]], ignore_index=True).dropna().unique(),
+    )
+    if snapshots_df.empty or team_map_df.empty:
+        return df
+
+    print("   -> Merging NCAA women NET lagged priors...")
+    return add_womens_net_features(df, snapshots_df, team_map_df)
+
+
+def merge_archived_market_spreads(df, league, paths):
+    archive_file = paths.get("odds_archive_file")
+    archived = load_latest_market_spreads(archive_file, league=league)
+    if archived.empty:
+        return df
+
+    working = df.copy()
+    working["date"] = pd.to_datetime(working["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    archived["date"] = pd.to_datetime(archived["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+
+    mirrored = pd.concat(
+        [
+            archived.assign(team=archived["home_team"], opponent=archived["away_team"], is_home=1),
+            archived.assign(team=archived["away_team"], opponent=archived["home_team"], is_home=0, spread=-archived["spread"]),
+        ],
+        ignore_index=True,
+    )
+    mirrored = mirrored[["date", "team", "opponent", "is_home", "spread"]].rename(columns={"spread": "archived_spread"})
+
+    merged = working.merge(mirrored, on=["date", "team", "opponent", "is_home"], how="left")
+    current_spread = pd.to_numeric(merged["spread"], errors="coerce")
+    archived_spread = pd.to_numeric(merged["archived_spread"], errors="coerce")
+
+    if league == "womens":
+        needs_fill = current_spread.isna() | current_spread.eq(0)
+    else:
+        needs_fill = current_spread.isna()
+
+    filled_rows = int((needs_fill & archived_spread.notna()).sum())
+    merged["spread"] = current_spread.where(~needs_fill, archived_spread)
+    merged = merged.drop(columns=["archived_spread"])
+
+    if filled_rows:
+        print(f"   -> Filled {filled_rows} spreads from archived market data...")
+
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce").dt.normalize()
+    return merged
+
 def main(league="mens"):
     league = normalize_league(league)
     paths = get_league_artifact_paths(BASE_DIR, league)
@@ -261,6 +329,8 @@ def main(league="mens"):
     
     cols = ['team_score', 'opp_score', 'spread']
     for c in cols: df[c] = pd.to_numeric(df[c], errors='coerce')
+
+    df = merge_archived_market_spreads(df, league, paths)
     
     df, stat_cols = calculate_advanced_stats(df)
     df = calculate_rolling_stats(df, stat_cols)
@@ -269,6 +339,7 @@ def main(league="mens"):
     df_final = merge_opponent_stats(df)
     df_final = merge_torvik_priors(df_final, league, paths)
     df_final = merge_hasla_priors(df_final, league, paths)
+    df_final = merge_womens_net_priors(df_final, league, paths)
 
     # Neutral site: ensure column exists (0 for legacy rows without it)
     if 'is_neutral' not in df_final.columns:

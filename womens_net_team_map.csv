@@ -1,0 +1,623 @@
+team,net_team,match_source,match_score,needs_review
+Abilene Christian Wildcats,Abilene Christian,alias_exact,1.0,False
+Agnes Scott College Scotties,,unmatched,0.0,True
+Air Force Falcons,Air Force,alias_exact,1.0,False
+Akron Zips,Akron,alias_exact,1.0,False
+Alabama A&M Bulldogs,Alabama A&M,alias_exact,1.0,False
+Alabama Crimson Tide,Alabama,alias_exact,1.0,False
+Alabama State Lady Hornets,Alabama St.,alias_exact,1.0,False
+Alaska Anchorage Seawolves,,unmatched,0.0,True
+Albany St (GA) Golden Rams,,unmatched,0.0,True
+Alcorn State Lady Braves,Alcorn,alias_exact,1.0,False
+Allen University Yellow Jackets,,unmatched,0.0,True
+American University Eagles,,unmatched,0.0,True
+Anderson (IN) Ravens,,unmatched,0.0,True
+App State Mountaineers,App State,alias_exact,1.0,False
+Apprentice School Builders,,unmatched,0.0,True
+Aquinas Saints,,unmatched,0.0,True
+Arcadia University Knights,,unmatched,0.0,True
+Arizona State Sun Devils,Arizona St.,alias_exact,1.0,False
+Arizona Wildcats,Arizona,alias_exact,1.0,False
+Arkansas Baptist Buffaloes,,unmatched,0.0,True
+Arkansas Razorbacks,Arkansas,alias_exact,1.0,False
+Arkansas State Red Wolves,Arkansas St.,alias_exact,1.0,False
+Arkansas-Pine Bluff Golden Lions,Ark.-Pine Bluff,normalized_exact,1.0,False
+Arlington Baptist Patriots,,unmatched,0.0,True
+Army Black Knights,Army West Point,normalized_exact,1.0,False
+Auburn Tigers,Auburn,alias_exact,1.0,False
+Auburn-Montgomery Senators,,unmatched,0.0,True
+Austin Peay Governors,Austin Peay,alias_exact,1.0,False
+Ave Maria Gyrenes,,unmatched,0.0,True
+Averett Cougars,,unmatched,0.0,True
+BYU Cougars,BYU,alias_exact,1.0,False
+Ball State Cardinals,Ball St.,alias_exact,1.0,False
+Bard Eagles,,unmatched,0.0,True
+Barton Bulldogs,,unmatched,0.0,True
+Baylor Bears,Baylor,alias_exact,1.0,False
+Bellarmine Knights,Bellarmine,alias_exact,1.0,False
+Belmont Bruins,Belmont,alias_exact,1.0,False
+Benedictine (AZ) Redhawks,,unmatched,0.0,True
+Berkeley Knights,,unmatched,0.0,True
+Berry Vikings,,unmatched,0.0,True
+Bethany (KS) BETHANY (KS),,unmatched,0.0,True
+Bethesda University Flames,,unmatched,0.0,True
+Bethune-Cookman Wildcats,Bethune-Cookman,alias_exact,1.0,False
+Binghamton Bearcats,Binghamton,alias_exact,1.0,False
+Bismarck State Mystics,,unmatched,0.0,True
+Bloomfield Deacons,,unmatched,0.0,True
+Bloomsburg Huskies,,unmatched,0.0,True
+Blue Mountain College Toppers,,unmatched,0.0,True
+Bluefield University Ramblin' Rams,,unmatched,0.0,True
+Bob Jones Bruins,,unmatched,0.0,True
+Boise State Broncos,Boise St.,alias_exact,1.0,False
+Boston College Eagles,Boston College,alias_exact,1.0,False
+Boston University Terriers,Boston U.,alias_exact,1.0,False
+Bowling Green Falcons,Bowling Green,alias_exact,1.0,False
+Bradley Braves,Bradley,alias_exact,1.0,False
+Brevard Tornados,,unmatched,0.0,True
+Brewton-Parker Wildcats,,unmatched,0.0,True
+Briar Cliff Chargers,,unmatched,0.0,True
+Brown Bears,Brown,alias_exact,1.0,False
+Bryant Bulldogs,Bryant,alias_exact,1.0,False
+Bucknell Bison,Bucknell,alias_exact,1.0,False
+Buena Vista Beavers,,unmatched,0.0,True
+Buffalo Bulls,Buffalo,alias_exact,1.0,False
+Bushnell Beacons,,unmatched,0.0,True
+Butler Bulldogs,Butler,alias_exact,1.0,False
+CS Monterey Bay Otters,,unmatched,0.0,True
+Cal Lutheran Kingsmen,,unmatched,0.0,True
+Cal Poly Mustangs,Cal Poly,alias_exact,1.0,False
+Cal State Bakersfield Roadrunners,Cal St. Fullerton,alias_contains,0.5455,False
+Cal State East Bay Pioneers,,unmatched,0.0,True
+Cal State Fullerton Titans,Cal St. Fullerton,alias_exact,1.0,False
+Cal State LA Golden Eagles,,unmatched,0.0,True
+Cal State Northridge Matadors,Cal St. Fullerton,alias_contains,0.5455,False
+Cal State San Marcos Cougars,,unmatched,0.0,True
+California (PA) Vulcans,,unmatched,0.0,True
+California Baptist Lancers,California Baptist,alias_exact,1.0,False
+California Golden Bears,,unmatched,0.0,True
+Calumet College Of St. Joseph Crimson Wave,,unmatched,0.0,True
+Campbell Fighting Camels,Campbell,alias_exact,1.0,False
+Canisius Golden Griffins,,unmatched,0.0,True
+Carnegie Mellon Tartans,,unmatched,0.0,True
+Carolina University Bruins,,unmatched,0.0,True
+Cedarville Yellow Jackets,,unmatched,0.0,True
+Central Arkansas Sugar Bears,Central Ark.,alias_exact,1.0,False
+Central Baptist College Mustangs,,unmatched,0.0,True
+Central Connecticut Blue Devils,Central Conn. St.,alias_exact,1.0,False
+Central Michigan Chippewas,Central Mich.,alias_exact,1.0,False
+Chadron State Eagles,,unmatched,0.0,True
+Champion Christian Tigers,,unmatched,0.0,True
+Chapman Panthers,,unmatched,0.0,True
+Charleston Cougars,,unmatched,0.0,True
+Charleston Southern Buccaneers,Charleston So.,alias_exact,1.0,False
+Charlotte 49ers,Charlotte,alias_exact,1.0,False
+Chattanooga Mocs,Chattanooga,alias_exact,1.0,False
+Chestnut Hill College Griffins,,unmatched,0.0,True
+Cheyney (PA) Wolves,,unmatched,0.0,True
+Chicago State Cougars,Chicago St.,alias_exact,1.0,False
+Chico State Wildcats,,unmatched,0.0,True
+Christopher Newport University Captains,,unmatched,0.0,True
+Cincinnati Bearcats,Cincinnati,alias_exact,1.0,False
+Claflin Panthers,,unmatched,0.0,True
+Clemson Tigers,Clemson,alias_exact,1.0,False
+Cleveland State Vikings,Cleveland St.,alias_exact,1.0,False
+Clinton College Golden Bears,,unmatched,0.0,True
+Coastal Carolina Chanticleers,Coastal Carolina,alias_exact,1.0,False
+Coastal Georgia Mariner,,unmatched,0.0,True
+Colby-Sawyer Chargers,,unmatched,0.0,True
+Colgate Raiders,Colgate,alias_exact,1.0,False
+College Of Biblical Studies Ambassadors,,unmatched,0.0,True
+College Of St Mary Flames,,unmatched,0.0,True
+Colorado Buffaloes,Colorado,alias_exact,1.0,False
+Colorado Christian Cougars,,unmatched,0.0,True
+Colorado State Rams,Colorado St.,alias_exact,1.0,False
+Columbia College (MO) Cougars,,unmatched,0.0,True
+Columbia College (SC) Koalas,,unmatched,0.0,True
+Columbia International COLUMBIA INTERNATIONAL,,unmatched,0.0,True
+Columbia Lions,Columbia,alias_exact,1.0,False
+Concord Mountain Lions,,unmatched,0.0,True
+Concordia Moorhead Cobbers,,unmatched,0.0,True
+Concordia-Texas Tornados,,unmatched,0.0,True
+Coppin State Eagles,Coppin St.,alias_exact,1.0,False
+Corban University Warriors,,unmatched,0.0,True
+Cornell Big Red,,unmatched,0.0,True
+Creighton Bluejays,Creighton,alias_exact,1.0,False
+Crown College Storm,,unmatched,0.0,True
+Dallas Crusaders,,unmatched,0.0,True
+Dartmouth Big Green,,unmatched,0.0,True
+Davenport Panthers,,unmatched,0.0,True
+Davidson Wildcats,Davidson,alias_exact,1.0,False
+Davis & Elkins Senators,,unmatched,0.0,True
+Dayton Flyers,Dayton,alias_exact,1.0,False
+DePaul Blue Demons,DePaul,alias_exact,1.0,False
+Defiance Yellow Jackets,,unmatched,0.0,True
+Delaware Blue Hens,,unmatched,0.0,True
+Delaware State Hornets,Delaware St.,alias_exact,1.0,False
+Delta State Statesmen,,unmatched,0.0,True
+Denver Pioneers,Denver,alias_exact,1.0,False
+Detroit Mercy Titans,Detroit Mercy,alias_exact,1.0,False
+Dickinson State (ND) Blue Hawks,,unmatched,0.0,True
+Dillard Blue Devils,,unmatched,0.0,True
+District Of Columbia DISTRICT OF COLUMBIA,,unmatched,0.0,True
+Drake Bulldogs,Drake,alias_exact,1.0,False
+Drexel Dragons,Drexel,alias_exact,1.0,False
+Duke Blue Devils,Duke,alias_exact,1.0,False
+Duquesne Dukes,Duquesne,alias_exact,1.0,False
+E. New Mexico Greyhounds,New Mexico,alias_fuzzy,0.9091,False
+East Carolina Pirates,East Carolina,alias_exact,1.0,False
+East Tennessee State Bucs,,unmatched,0.0,True
+East Texas A&M Lions,East Texas A&M,alias_exact,1.0,False
+Eastern Illinois Panthers,Eastern Ill.,alias_exact,1.0,False
+Eastern Kentucky Colonels,Eastern Ky.,alias_exact,1.0,False
+Eastern Michigan Eagles,Eastern Mich.,alias_exact,1.0,False
+Eastern Washington Eagles,Eastern Wash.,alias_exact,1.0,False
+Ecclesia Royals,,unmatched,0.0,True
+Edward Waters Tigers,,unmatched,0.0,True
+Elizabeth City State Vikings,,unmatched,0.0,True
+Elon Phoenix,Elon,alias_exact,1.0,False
+Embry-Riddle (AZ) Eagles,,unmatched,0.0,True
+Emmanuel (MA) Lions,,unmatched,0.0,True
+Emory & Henry Wasps,,unmatched,0.0,True
+Erskine Flying Fleet,,unmatched,0.0,True
+Eureka Red Devils,,unmatched,0.0,True
+Evansville Purple Aces,,unmatched,0.0,True
+Evergreen State Geoducks,,unmatched,0.0,True
+Fairfield Stags,Fairfield,alias_exact,1.0,False
+Fairleigh Dickinson Knights,FDU,alias_exact,1.0,False
+Faulkner Eagles,,unmatched,0.0,True
+Felician Golden Falcons,,unmatched,0.0,True
+Ferrum Panthers,,unmatched,0.0,True
+Fisk Bulldogs,,unmatched,0.0,True
+Florida A&M Rattlers,Florida A&M,alias_exact,1.0,False
+Florida Atlantic Owls,Fla. Atlantic,alias_exact,1.0,False
+Florida Gators,Florida,alias_exact,1.0,False
+Florida Gulf Coast Eagles,FGCU,alias_exact,1.0,False
+Florida International Panthers,FIU,alias_exact,1.0,False
+Florida National Conquistadors,,unmatched,0.0,True
+Florida State Seminoles,Florida St.,alias_exact,1.0,False
+Florida Tech Panthers,,unmatched,0.0,True
+Fordham Rams,Fordham,alias_exact,1.0,False
+Fort Lauderdale Eagles,,unmatched,0.0,True
+Franklin Pierce Ravens,,unmatched,0.0,True
+Fresno State Bulldogs,Fresno St.,alias_exact,1.0,False
+Frostburg State Bobcats,,unmatched,0.0,True
+Furman Paladins,Furman,alias_exact,1.0,False
+Gardner-Webb Runnin' Bulldogs,Gardner-Webb,alias_exact,1.0,False
+Geneva Golden Tornadoes,,unmatched,0.0,True
+George Mason Patriots,George Mason,alias_exact,1.0,False
+George Washington Revolutionaries,George Washington,alias_exact,1.0,False
+Georgetown College (KY) Tigers,,unmatched,0.0,True
+Georgetown Hoyas,Georgetown,alias_exact,1.0,False
+Georgia Lady Bulldogs,,unmatched,0.0,True
+Georgia Southern Eagles,Ga. Southern,alias_exact,1.0,False
+Georgia Southwestern Hurricanes,,unmatched,0.0,True
+Georgia State Panthers,Georgia St.,alias_exact,1.0,False
+Georgia Tech Yellow Jackets,Georgia Tech,alias_exact,1.0,False
+Georgian Court University Lions,,unmatched,0.0,True
+Gonzaga Bulldogs,Gonzaga,alias_exact,1.0,False
+Grambling Lady Tigers,,unmatched,0.0,True
+Grand Canyon Lopes,Grand Canyon,alias_exact,1.0,False
+Green Bay Phoenix,Green Bay,alias_exact,1.0,False
+Gwynedd-Mercy Griffins,,unmatched,0.0,True
+Hampton Lady Pirates,,unmatched,0.0,True
+Harris-Stowe State Hornets,,unmatched,0.0,True
+Harvard Crimson,Harvard,alias_exact,1.0,False
+Haskell Jayhawks,,unmatched,0.0,True
+Hawai'i Hilo Vulcans,,unmatched,0.0,True
+Hawai'i Rainbow Wahine,,unmatched,0.0,True
+Health Sciences & Pharmacy Eutectics,,unmatched,0.0,True
+Heidelberg Student Princes,,unmatched,0.0,True
+Hendrix College Warriors,,unmatched,0.0,True
+Hesston Larks,,unmatched,0.0,True
+High Point Panthers,High Point,alias_exact,1.0,False
+Hofstra Pride,Hofstra,alias_exact,1.0,False
+Holy Cross Crusaders,Holy Cross,alias_exact,1.0,False
+Hope International Royals,,unmatched,0.0,True
+Houston Christian Huskies,Houston Christian,alias_exact,1.0,False
+Houston Cougars,Houston,alias_exact,1.0,False
+Howard Bison,Howard,alias_exact,1.0,False
+Huston-Tillotson Rams,,unmatched,0.0,True
+IU Columbus Crimson Pride,,unmatched,0.0,True
+IU Indianapolis Jaguars,IU Indy,alias_exact,1.0,False
+Idaho State Bengals,Idaho St.,alias_exact,1.0,False
+Idaho Vandals,Idaho,alias_exact,1.0,False
+Illinois Fighting Illini,Illinois,alias_exact,1.0,False
+Illinois State Redbirds,Illinois St.,alias_exact,1.0,False
+Incarnate Word Cardinals,UIW,alias_exact,1.0,False
+Indiana Hoosiers,Indiana,alias_exact,1.0,False
+Indiana State Sycamores,Indiana St.,alias_exact,1.0,False
+Indiana University East Red Wolves,,unmatched,0.0,True
+Indiana-Southeast Grenadiers,,unmatched,0.0,True
+Iona Gaels,Iona,alias_exact,1.0,False
+Iowa Hawkeyes,Iowa,alias_exact,1.0,False
+Iowa State Cyclones,Iowa St.,alias_exact,1.0,False
+Ithaca College Bombers,,unmatched,0.0,True
+Jackson State Lady Tigers,Jackson St.,alias_exact,1.0,False
+Jacksonville Dolphins,Jacksonville,alias_exact,1.0,False
+Jacksonville State Gamecocks,Jacksonville St.,alias_exact,1.0,False
+James Madison Dukes,James Madison,alias_exact,1.0,False
+Jarvis Christian Bulldogs,,unmatched,0.0,True
+Johns Hopkins University Blue Jays,,unmatched,0.0,True
+Johnson & Wales (NC) Wildcats,,unmatched,0.0,True
+Johnson University (TN) Royals,,unmatched,0.0,True
+Judson University Eagles,,unmatched,0.0,True
+Kansas City Roos,Kansas City,alias_exact,1.0,False
+Kansas Jayhawks,Kansas,alias_exact,1.0,False
+Kansas State Wildcats,Kansas St.,alias_exact,1.0,False
+Kean Cougars,,unmatched,0.0,True
+Kennesaw State Owls,Kennesaw St.,alias_exact,1.0,False
+Kent State Golden Flashes,Kent St.,alias_exact,1.0,False
+Kentucky Christian Knights,,unmatched,0.0,True
+Kentucky State Thorobreds,,unmatched,0.0,True
+Kentucky Wildcats,Kentucky,alias_exact,1.0,False
+King (TN) Tornado,,unmatched,0.0,True
+Kings (PA) Monarchs,,unmatched,0.0,True
+LSU Alexandria Generals,,unmatched,0.0,True
+LSU Tigers,LSU,alias_exact,1.0,False
+La Salle Explorers,La Salle,alias_exact,1.0,False
+La Sierra Golden Eagles,,unmatched,0.0,True
+LaGrange Panthers,,unmatched,0.0,True
+Lafayette Leopards,Lafayette,alias_exact,1.0,False
+Lamar Cardinals,Lamar University,alias_exact,1.0,False
+Langston Lions,,unmatched,0.0,True
+Le Moyne Dolphins,Le Moyne,alias_exact,1.0,False
+LeTourneau Yellow Jackets,,unmatched,0.0,True
+Lees-McRae Bobcats,,unmatched,0.0,True
+Lehigh Mountain Hawks,,unmatched,0.0,True
+Lehman College Lightning,,unmatched,0.0,True
+Liberty Flames,Liberty,alias_exact,1.0,False
+Life Pacific Warriors,,unmatched,0.0,True
+Life University Running Eagles,,unmatched,0.0,True
+Lincoln (PA) Lions,,unmatched,0.0,True
+Lindenwood Lions,Lindenwood,alias_exact,1.0,False
+Lindsey Wilson LINDSEY WILSON,,unmatched,0.0,True
+Lipscomb Bisons,Lipscomb,alias_exact,1.0,False
+Little Rock Trojans,Little Rock,alias_exact,1.0,False
+Livingstone Blue Bears,,unmatched,0.0,True
+Long Beach State Beach,Long Beach St.,alias_exact,1.0,False
+Long Island University Sharks,LIU,alias_exact,1.0,False
+Longwood Lancers,Longwood,alias_exact,1.0,False
+Louisiana Christian Wildcats,,unmatched,0.0,True
+Louisiana Ragin' Cajuns,Louisiana,alias_exact,1.0,False
+Louisiana Tech Lady Techsters,Louisiana Tech,alias_exact,1.0,False
+Louisville Cardinals,Louisville,alias_exact,1.0,False
+Lourdes University LOURDES,,unmatched,0.0,True
+Loyola Chicago Ramblers,Loyola Chicago,alias_exact,1.0,False
+Loyola Maryland Greyhounds,Loyola Maryland,alias_exact,1.0,False
+Loyola Marymount Lions,LMU (CA),alias_exact,1.0,False
+Loyola New Orleans Wolfpack,,unmatched,0.0,True
+Lyon Scots,,unmatched,0.0,True
+MSU Denver Roadrunners,,unmatched,0.0,True
+Maine Black Bears,,unmatched,0.0,True
+Maine-Fort Kent Bengals,,unmatched,0.0,True
+Manhattan Jaspers,Manhattan,alias_exact,1.0,False
+Marist Red Foxes,,unmatched,0.0,True
+Marquette Golden Eagles,Marquette,alias_exact,1.0,False
+Mars Hill Mountain Lions,,unmatched,0.0,True
+Marshall Thundering Herd,,unmatched,0.0,True
+Maryland Eastern Shore Hawks,UMES,alias_exact,1.0,False
+Maryland Terrapins,Maryland,alias_exact,1.0,False
+Marywood Pacers,,unmatched,0.0,True
+Massachusetts Minutewomen,Massachusetts,alias_exact,1.0,False
+Mayville State Comets,,unmatched,0.0,True
+McMurry War Hawks,,unmatched,0.0,True
+McNeese Cowgirls,McNeese,alias_exact,1.0,False
+Memphis Tigers,Memphis,alias_exact,1.0,False
+Mercer Bears,Mercer,alias_exact,1.0,False
+Mercy Mavericks,,unmatched,0.0,True
+Mercyhurst Lakers,Mercyhurst,alias_exact,1.0,False
+Merrimack Warriors,Merrimack,alias_exact,1.0,False
+Miami (OH) RedHawks,Miami (OH),alias_exact,1.0,False
+Miami Hurricanes,Miami (FL),alias_exact,1.0,False
+Michigan State Spartans,Michigan St.,alias_exact,1.0,False
+Michigan Wolverines,Michigan,alias_exact,1.0,False
+Middle Tennessee Blue Raiders,Middle Tenn.,alias_exact,1.0,False
+Midway University Eagles,,unmatched,0.0,True
+Miles Golden Bears,,unmatched,0.0,True
+Milwaukee Panthers,Milwaukee,alias_exact,1.0,False
+Minnesota Golden Gophers,Minnesota,alias_exact,1.0,False
+Minot State Beavers,,unmatched,0.0,True
+Mississippi State Bulldogs,Mississippi St.,alias_exact,1.0,False
+Mississippi University For Women Owls,,unmatched,0.0,True
+Mississippi Valley State Devilettes,Mississippi Val.,alias_fuzzy,0.9091,False
+Missouri State Bears,Missouri St.,alias_exact,1.0,False
+Missouri Tigers,Missouri,alias_exact,1.0,False
+Molloy Lions,,unmatched,0.0,True
+Monmouth Hawks,Monmouth,alias_exact,1.0,False
+Montana Lady Griz,,unmatched,0.0,True
+Montana State Bobcats,Montana St.,alias_exact,1.0,False
+Montana Western Bulldogs,,unmatched,0.0,True
+Montreat Cavaliers,,unmatched,0.0,True
+Morehead State Eagles,Morehead St.,alias_exact,1.0,False
+Morgan State Lady Bears,Morgan St.,alias_exact,1.0,False
+Morris College Hornets,,unmatched,0.0,True
+Mount St. Mary's Mountaineers,Mount St. Mary's,alias_exact,1.0,False
+Murray State Racers,Murray St.,alias_exact,1.0,False
+NC State Wolfpack,NC State,alias_exact,1.0,False
+NC Wesleyan Battling Bishops,,unmatched,0.0,True
+NJIT Highlanders,NJIT,alias_exact,1.0,False
+Navy Midshipmen,Navy,alias_exact,1.0,False
+Nebraska Cornhuskers,Nebraska,alias_exact,1.0,False
+Nelson American Indiana College Warriors,,unmatched,0.0,True
+Nelson Lions,,unmatched,0.0,True
+Nevada Wolf Pack,Nevada,alias_exact,1.0,False
+New England College Pilgrims,,unmatched,0.0,True
+New Hampshire Wildcats,New Hampshire,alias_exact,1.0,False
+New Haven Chargers,New Haven,alias_exact,1.0,False
+New Jersey City NEW JERSEY CITY,,unmatched,0.0,True
+New Mexico Highlands Cowboys,New Mexico,alias_exact,1.0,False
+New Mexico Lobos,New Mexico,alias_exact,1.0,False
+New Mexico State Aggies,New Mexico St.,alias_exact,1.0,False
+New Orleans Privateers,New Orleans,alias_exact,1.0,False
+Newberry Wolves,,unmatched,0.0,True
+Niagara Purple Eagles,,unmatched,0.0,True
+Nicholls Colonels,Nicholls,alias_exact,1.0,False
+Norfolk State Spartans,Norfolk St.,alias_exact,1.0,False
+North Alabama Lions,North Ala.,alias_exact,1.0,False
+North American Stallions,,unmatched,0.0,True
+North Carolina A&T Aggies,N.C. A&T,alias_fuzzy,0.9524,False
+North Carolina Central Eagles,North Carolina,alias_exact,1.0,False
+North Carolina Tar Heels,North Carolina,alias_exact,1.0,False
+North Dakota Fighting Hawks,North Dakota,alias_exact,1.0,False
+North Dakota State Bison,North Dakota St.,alias_exact,1.0,False
+North Florida Ospreys,North Florida,alias_exact,1.0,False
+North Texas Mean Green,North Texas,alias_exact,1.0,False
+Northeastern Huskies,Northeastern,alias_exact,1.0,False
+Northern Arizona Lumberjacks,Northern Ariz.,alias_exact,1.0,False
+Northern Colorado Bears,Northern Colo.,alias_exact,1.0,False
+Northern Illinois Huskies,NIU,alias_exact,1.0,False
+Northern Iowa Panthers,UNI,alias_exact,1.0,False
+Northern Kentucky Norse,Northern Ky.,alias_exact,1.0,False
+Northwest University Eagles,,unmatched,0.0,True
+Northwestern State Lady Demons,Northwestern St.,alias_exact,1.0,False
+Northwestern Wildcats,Northwestern,alias_exact,1.0,False
+Notre Dame Fighting Irish,Notre Dame,alias_exact,1.0,False
+Notre Dame Of Maryland University Gators,,unmatched,0.0,True
+Oakland City Mighty Oaks,,unmatched,0.0,True
+Oakland Golden Grizzlies,,unmatched,0.0,True
+Oakwood Ambassadors,,unmatched,0.0,True
+Occidental Tigers,,unmatched,0.0,True
+Ohio Bobcats,Ohio,alias_exact,1.0,False
+Ohio State Buckeyes,Ohio St.,alias_exact,1.0,False
+Oklahoma Sooners,Oklahoma,alias_exact,1.0,False
+Oklahoma State Cowgirls,Oklahoma St.,alias_exact,1.0,False
+Oklahoma Wesleyan Eagles,,unmatched,0.0,True
+Old Dominion Monarchs,Old Dominion,alias_exact,1.0,False
+Ole Miss Rebels,Ole Miss,alias_exact,1.0,False
+Omaha Mavericks,Omaha,alias_exact,1.0,False
+Oral Roberts Golden Eagles,Oral Roberts,alias_exact,1.0,False
+Oregon Ducks,Oregon,alias_exact,1.0,False
+Oregon State Beavers,Oregon St.,alias_exact,1.0,False
+Ottawa (KS) OTTAWA (KS),,unmatched,0.0,True
+Ouachita Baptist Tigers,,unmatched,0.0,True
+Pacific Tigers,Pacific,alias_exact,1.0,False
+Palm Beach Atlantic Sailfish,,unmatched,0.0,True
+Park University Gilbert Buccaneers,,unmatched,0.0,True
+Penn State Lady Lions,Penn St.,alias_exact,1.0,False
+Pennsylvania Quakers,Penn,alias_exact,1.0,False
+Pepperdine Waves,Pepperdine,alias_exact,1.0,False
+Pittsburgh Panthers,Pittsburgh,alias_exact,1.0,False
+Pittsburgh-Johnstown Mountain Cats,,unmatched,0.0,True
+Point Park Pioneers,,unmatched,0.0,True
+Point University Skyhawks,,unmatched,0.0,True
+Portland Pilots,Portland,alias_exact,1.0,False
+Portland State Vikings,Portland St.,alias_exact,1.0,False
+Prairie View A&M Lady Panthers,,unmatched,0.0,True
+Presbyterian Blue Hose,,unmatched,0.0,True
+Princeton Tigers,Princeton,alias_exact,1.0,False
+Providence Friars,Providence,alias_exact,1.0,False
+Puerto Rico-Bayamon Pirates,,unmatched,0.0,True
+Puerto Rico-Mayaguez Bulldogs,,unmatched,0.0,True
+Purchase Panthers,,unmatched,0.0,True
+Purdue Boilermakers,Purdue,alias_exact,1.0,False
+Purdue Fort Wayne Mastodons,Purdue Fort Wayne,alias_exact,1.0,False
+Queens University Royals,,unmatched,0.0,True
+Quinnipiac Bobcats,Quinnipiac,alias_exact,1.0,False
+Radford Highlanders,Radford,alias_exact,1.0,False
+Randolph College Wildcats,,unmatched,0.0,True
+Regis (CO) REGIS UNIVERSITY,,unmatched,0.0,True
+Rensselaer Engineers,,unmatched,0.0,True
+Rhode Island Rams,Rhode Island,alias_exact,1.0,False
+Rice Owls,Rice,alias_exact,1.0,False
+Richmond Spiders,Richmond,alias_exact,1.0,False
+Rider Broncs,Rider,alias_exact,1.0,False
+Ripon College Red Hawks,,unmatched,0.0,True
+Robert Morris Colonials,Robert Morris,alias_exact,1.0,False
+Rochester Christian Warriors,,unmatched,0.0,True
+Roosevelt Lakers,,unmatched,0.0,True
+Rust College Bearcats,,unmatched,0.0,True
+Rutgers Scarlet Knights,Rutgers,alias_exact,1.0,False
+SE Louisiana Lady Lions,,unmatched,0.0,True
+SIU Edwardsville Cougars,SIUE,alias_exact,1.0,False
+SMU Mustangs,SMU,alias_exact,1.0,False
+SUNY Delhi Broncos,,unmatched,0.0,True
+SUNY Geneseo Knights,,unmatched,0.0,True
+SUNY-New Paltz Hawks,,unmatched,0.0,True
+Sacramento State Hornets,Sacramento St.,alias_exact,1.0,False
+Sacred Heart Pioneers,Sacred Heart,alias_exact,1.0,False
+Saint Francis Red Flash,Saint Francis,alias_exact,1.0,False
+Saint Joseph's Hawks,Saint Joseph's,alias_exact,1.0,False
+Saint Louis Billikens,Saint Louis,alias_exact,1.0,False
+Saint Martin's Saints,,unmatched,0.0,True
+Saint Mary's (MN) Cardinals,,unmatched,0.0,True
+Saint Mary's Gaels,,unmatched,0.0,True
+Saint Mary-Of-The-Woods College Pomeroys,,unmatched,0.0,True
+Saint Peter's Peacocks,Saint Peter's,alias_exact,1.0,False
+Salem University Tigers,,unmatched,0.0,True
+Sam Houston Bearkats,Sam Houston,alias_exact,1.0,False
+Samford Bulldogs,Samford,alias_exact,1.0,False
+San Diego State Aztecs,San Diego St.,alias_exact,1.0,False
+San Diego Toreros,San Diego,alias_exact,1.0,False
+San Francisco Dons,San Francisco,alias_exact,1.0,False
+San Francisco State Gators,San Francisco,alias_exact,1.0,False
+San José State Spartans,San Jose St.,alias_fuzzy,0.9091,False
+Santa Clara Broncos,Santa Clara,alias_exact,1.0,False
+Scranton Royals,,unmatched,0.0,True
+Seattle U Redhawks,Seattle U,alias_exact,1.0,False
+Seton Hall Pirates,Seton Hall,alias_exact,1.0,False
+Sewanee Tigers,,unmatched,0.0,True
+Shaw Bears,,unmatched,0.0,True
+Siena Saints,Siena,alias_exact,1.0,False
+Simmons College (KY) Falcons,,unmatched,0.0,True
+Simpson University (CA) Red Hawks,,unmatched,0.0,True
+Slippery Rock The Rock,,unmatched,0.0,True
+South Alabama Jaguars,South Alabama,alias_exact,1.0,False
+South Carolina Gamecocks,South Carolina,alias_exact,1.0,False
+South Carolina State Lady Bulldogs,,unmatched,0.0,True
+South Carolina Upstate Spartans,South Carolina,alias_exact,1.0,False
+South Dakota Coyotes,South Dakota,alias_exact,1.0,False
+South Dakota Mines Hardrockers,South Dakota,alias_exact,1.0,False
+South Dakota State Jackrabbits,South Dakota St.,alias_exact,1.0,False
+South Florida Bulls,South Fla.,alias_exact,1.0,False
+Southeast Missouri State Redhawks,,unmatched,0.0,True
+Southeastern Fires,,unmatched,0.0,True
+Southern Arkansas Muleriders,,unmatched,0.0,True
+Southern Illinois Salukis,Southern Ill.,alias_exact,1.0,False
+Southern Indiana Screaming Eagles,Southern Ind.,alias_exact,1.0,False
+Southern Jaguars,,unmatched,0.0,True
+Southern Miss Lady Eagles,Southern Miss.,alias_exact,1.0,False
+Southern Utah Thunderbirds,Southern Utah,alias_exact,1.0,False
+Southern Wesleyan Warriors,,unmatched,0.0,True
+Southern-New Orleans Knights,,unmatched,0.0,True
+St. Anselm Hawks,,unmatched,0.0,True
+St. Bonaventure Bonnies,St. Bonaventure,alias_exact,1.0,False
+St. Francis (IL) Fighting Saints,,unmatched,0.0,True
+St. John's Red Storm,St. John's (NY),fuzzy,0.9565,False
+St. Joseph's Brookyn Bears,Saint Joseph's,alias_exact,1.0,False
+St. Mary's (MD) Seahawks,,unmatched,0.0,True
+St. Mary's (TX) Rattlers,,unmatched,0.0,True
+St. Thomas (TX) Celts,St. Thomas (MN),alias_contains,0.8571,False
+St. Thomas-Minnesota Tommies,St. Thomas (MN),alias_exact,1.0,False
+Stanford Cardinal,Stanford,alias_exact,1.0,False
+Stanislaus State Warriors,,unmatched,0.0,True
+Stephen F. Austin Ladyjacks,,unmatched,0.0,True
+Stephens,,unmatched,0.0,True
+Stetson Hatters,Stetson,alias_exact,1.0,False
+Stillman Tigers,,unmatched,0.0,True
+Stonehill Skyhawks,Stonehill,alias_exact,1.0,False
+Stony Brook Seawolves,Stony Brook,alias_exact,1.0,False
+Syracuse Orange,Syracuse,alias_exact,1.0,False
+TCU Horned Frogs,TCU,alias_exact,1.0,False
+Talladega Tornadoes,,unmatched,0.0,True
+Tarleton State Texans,Tarleton St.,alias_exact,1.0,False
+Temple Owls,Temple,alias_exact,1.0,False
+Tennessee Lady Volunteers,,unmatched,0.0,True
+Tennessee State Lady Tigers,Tennessee St.,alias_exact,1.0,False
+Tennessee Tech Golden Eagles,Tennessee Tech,alias_exact,1.0,False
+Texas A&M Aggies,Texas A&M,alias_exact,1.0,False
+Texas A&M-Corpus Christi Islanders,A&M-Corpus Christi,normalized_exact,1.0,False
+Texas A&M-International Dustdevils,,unmatched,0.0,True
+Texas A&M-Kingsville Javelinas,,unmatched,0.0,True
+Texas A&M-San Antonio Jaguars,,unmatched,0.0,True
+Texas A&M-Texarkana Eagles,,unmatched,0.0,True
+Texas College Steers,,unmatched,0.0,True
+Texas Longhorns,Texas,alias_exact,1.0,False
+Texas Southern Tigers,Texas Southern,alias_exact,1.0,False
+Texas State Bobcats,Texas St.,alias_exact,1.0,False
+Texas Tech Lady Raiders,Texas Tech,alias_exact,1.0,False
+Thomas (GA) Night Hawks,,unmatched,0.0,True
+Toledo Rockets,Toledo,alias_exact,1.0,False
+Tougaloo Bulldogs,,unmatched,0.0,True
+Towson Tigers,Towson,alias_exact,1.0,False
+Trinity (FL) Tigers,,unmatched,0.0,True
+Trinity Baptist Eagles,,unmatched,0.0,True
+Troy Trojans,Troy,alias_exact,1.0,False
+Truman State Bulldogs,,unmatched,0.0,True
+Tulane Green Wave,Tulane,alias_exact,1.0,False
+Tulsa Golden Hurricane,Tulsa,alias_exact,1.0,False
+Tusculum Pioneers,,unmatched,0.0,True
+Tuskegee Golden Tigers,,unmatched,0.0,True
+UAB Blazers,UAB,alias_exact,1.0,False
+UAlbany Great Danes,UAlbany,alias_fuzzy,0.9231,False
+UC Davis Aggies,UC Davis,alias_exact,1.0,False
+UC Irvine Anteaters,UC Irvine,alias_exact,1.0,False
+UC Merced Bobcats,,unmatched,0.0,True
+UC Riverside Highlanders,UC Riverside,alias_exact,1.0,False
+UC San Diego Tritons,UC San Diego,alias_exact,1.0,False
+UC Santa Barbara Gauchos,UC Santa Barbara,alias_exact,1.0,False
+UCF Knights,UCF,alias_exact,1.0,False
+UCLA Bruins,UCLA,alias_exact,1.0,False
+UConn Huskies,UConn,alias_exact,1.0,False
+UIC Flames,UIC,alias_exact,1.0,False
+UL Monroe Warhawks,ULM,alias_exact,1.0,False
+UMBC Retrievers,UMBC,alias_exact,1.0,False
+UMass Lowell River Hawks,UMass Lowell,alias_exact,1.0,False
+UNC Asheville Bulldogs,UNC Asheville,alias_exact,1.0,False
+UNC Greensboro Spartans,UNC Greensboro,alias_exact,1.0,False
+UNC Pembroke Braves,,unmatched,0.0,True
+UNC Wilmington Seahawks,UNCW,alias_exact,1.0,False
+UNLV Lady Rebels,,unmatched,0.0,True
+UNT Dallas Trailblazers,,unmatched,0.0,True
+USC Trojans,Southern California,alias_exact,1.0,False
+UT Arlington Mavericks,UT Arlington,alias_exact,1.0,False
+UT Dallas Comets,,unmatched,0.0,True
+UT Martin Skyhawks,UT Martin,alias_exact,1.0,False
+UT Rio Grande Valley Vaqueros,UTRGV,alias_exact,1.0,False
+UTEP Miners,UTEP,alias_exact,1.0,False
+UTSA Roadrunners,UTSA,alias_exact,1.0,False
+UVA Wise Cavaliers,,unmatched,0.0,True
+University of The Southwest Mustangs,,unmatched,0.0,True
+Ursinus Bears,,unmatched,0.0,True
+Utah State Aggies,Utah St.,alias_exact,1.0,False
+Utah Tech Trailblazers,Utah Tech,alias_exact,1.0,False
+Utah Utes,Utah,alias_exact,1.0,False
+Utah Valley Wolverines,Utah Valley,alias_exact,1.0,False
+VCU Rams,VCU,alias_exact,1.0,False
+VIRGINISL Buccaneers,,unmatched,0.0,True
+Valparaiso Beacons,Valparaiso,alias_exact,1.0,False
+Vanderbilt Commodores,Vanderbilt,alias_exact,1.0,False
+Vermont Catamounts,Vermont,alias_exact,1.0,False
+Villanova Wildcats,Villanova,alias_exact,1.0,False
+Virginia Cavaliers,Virginia,alias_exact,1.0,False
+Virginia St Trojans,,unmatched,0.0,True
+Virginia Tech Hokies,Virginia Tech,alias_exact,1.0,False
+Virginia-Lynchburg Dragons,,unmatched,0.0,True
+Wagner Seahawks,Wagner,alias_exact,1.0,False
+Wake Forest Demon Deacons,Wake Forest,alias_exact,1.0,False
+Walla Walla Wolves,,unmatched,0.0,True
+Walsh Cavaliers,,unmatched,0.0,True
+Warner Pacific Knights,,unmatched,0.0,True
+Warner University Royals,,unmatched,0.0,True
+Warren Wilson Owls,,unmatched,0.0,True
+Washington Adventist Shock,,unmatched,0.0,True
+Washington Huskies,Washington,alias_exact,1.0,False
+Washington State Cougars,Washington St.,alias_exact,1.0,False
+Wayne State (MI) Warriors,,unmatched,0.0,True
+Weber State Wildcats,Weber St.,alias_exact,1.0,False
+Wesleyan College (GA) Wolves,,unmatched,0.0,True
+West Alabama Tigers,,unmatched,0.0,True
+West Chester Golden Rams,,unmatched,0.0,True
+West Georgia Wolves,West Ga.,alias_exact,1.0,False
+West Liberty Hilltoppers,,unmatched,0.0,True
+West Virginia Mountaineers,West Virginia,alias_exact,1.0,False
+Westcliff Warriors,,unmatched,0.0,True
+Western Carolina Catamounts,Western Caro.,alias_exact,1.0,False
+Western Illinois Leathernecks,Western Ill.,alias_exact,1.0,False
+Western Kentucky Lady Toppers,Western Ky.,alias_exact,1.0,False
+Western Michigan Broncos,Western Mich.,alias_exact,1.0,False
+Western New Mexico Mustangs,,unmatched,0.0,True
+Western Oregon Wolves,,unmatched,0.0,True
+Westminster (UT) Griffins,,unmatched,0.0,True
+Westmont Warriors,,unmatched,0.0,True
+Wheaton College (MA) Lyons,,unmatched,0.0,True
+Wichita State Shockers,Wichita St.,alias_exact,1.0,False
+Wilberforce Bulldogs,,unmatched,0.0,True
+Wiley Wildcats,,unmatched,0.0,True
+Willamette Bearcats,,unmatched,0.0,True
+William & Mary Tribe,William & Mary,alias_exact,1.0,False
+William Carey Crusaders,,unmatched,0.0,True
+William Jewell Cardinals,,unmatched,0.0,True
+William Peace Pacers,,unmatched,0.0,True
+William Woods Owls,,unmatched,0.0,True
+Winston-Salem Rams,,unmatched,0.0,True
+Winthrop Eagles,Winthrop,alias_exact,1.0,False
+Wisconsin Badgers,Wisconsin,alias_exact,1.0,False
+Wisconsin-Lutheran Warriors,,unmatched,0.0,True
+Wisconsin-Stout Blue Devils,,unmatched,0.0,True
+Wofford Terriers,Wofford,alias_exact,1.0,False
+Wright State Raiders,Wright St.,alias_exact,1.0,False
+Wyoming Cowgirls,Wyoming,alias_exact,1.0,False
+Xavier Musketeers,Xavier,alias_exact,1.0,False
+Yale Bulldogs,Yale,alias_exact,1.0,False
+Youngstown State Penguins,Youngstown St.,alias_exact,1.0,False

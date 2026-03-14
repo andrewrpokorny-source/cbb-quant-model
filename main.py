@@ -15,6 +15,7 @@ from league_config import (
     get_scoreboard_base_url,
     normalize_league,
 )
+from womens_net import sync_current_snapshot as sync_womens_net_snapshot
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -478,6 +479,17 @@ def update_database(league="mens"):
 
 def run_pipeline(league):
     print("\n--- TRIGGERING PIPELINE ---")
+    if normalize_league(league) == "womens":
+        try:
+            report = sync_womens_net_snapshot(league="womens")
+            print(
+                "0. Synced women's NET snapshots "
+                f"(team map: {report['team_map_coverage']:.1%}, "
+                f"source teams: {report['source_team_coverage']:.1%})"
+            )
+        except (FileNotFoundError, requests.RequestException, ValueError) as e:
+            print(f"0. WARNING: women's NET sync skipped ({e})")
+
     print("1. Calculating efficiency stats...")
     subprocess.run([sys.executable, "features.py", "--league", league], check=True)
 

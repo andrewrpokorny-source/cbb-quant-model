@@ -12,6 +12,7 @@ from main import (
     get_last_recorded_date,
     merge_raw_rate_data,
     merge_venue_metadata,
+    run_pipeline,
 )
 
 
@@ -233,3 +234,46 @@ def test_fetch_games_for_date_keeps_unparseable_spread_as_missing(monkeypatch):
     assert len(games) == 2
     assert pd.isna(games[0]["spread"])
     assert pd.isna(games[1]["spread"])
+
+
+def test_run_pipeline_syncs_womens_net_before_subprocesses(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "main.sync_womens_net_snapshot",
+        lambda league="womens": {
+            "team_map_coverage": 0.75,
+            "source_team_coverage": 0.9,
+            "snapshot_dates": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "main.subprocess.run",
+        lambda cmd, check: calls.append((cmd, check)),
+    )
+
+    run_pipeline("womens")
+
+    assert len(calls) == 2
+    assert calls[0][0][1:] == ["features.py", "--league", "womens"]
+    assert calls[1][0][1:] == ["backtest.py", "--league", "womens"]
+
+
+def test_run_pipeline_skips_womens_net_sync_for_mens(monkeypatch):
+    calls = []
+    sync_called = {"value": False}
+
+    def fake_sync(*_args, **_kwargs):
+        sync_called["value"] = True
+        return {}
+
+    monkeypatch.setattr("main.sync_womens_net_snapshot", fake_sync)
+    monkeypatch.setattr(
+        "main.subprocess.run",
+        lambda cmd, check: calls.append((cmd, check)),
+    )
+
+    run_pipeline("mens")
+
+    assert sync_called["value"] is False
+    assert len(calls) == 2
