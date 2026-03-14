@@ -435,7 +435,7 @@ class KalshiClient:
 
             result = self._get("/portfolio/positions", params)
             if not result:
-                break
+                raise RuntimeError("Kalshi API request failed fetching positions")
             positions = result.get("market_positions", [])
             all_positions.extend(positions)
 
@@ -471,7 +471,7 @@ class KalshiClient:
 
             result = self._get("/portfolio/fills", params)
             if not result:
-                break
+                raise RuntimeError("Kalshi API request failed fetching fills")
             fills = result.get("fills", [])
             all_fills.extend(fills)
 

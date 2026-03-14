@@ -12,7 +12,7 @@ import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
-import requests as _requests
+import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 
@@ -673,7 +673,13 @@ CBB_GAME_PREFIXES = ("KXNCAAMBGAME", "KXNCAAWBGAME")
 
 @st.cache_data(ttl=120)
 def _fetch_kalshi_positions():
-    """Fetch unsettled Kalshi positions + fills for CBB game markets."""
+    """Fetch unsettled Kalshi positions + fills for CBB game markets.
+
+    Returns:
+        Tuple of (positions, fees_by_ticker) where positions is a list of
+        position dicts filtered to CBB game markets, and fees_by_ticker maps
+        each ticker to its total fee in cents. Returns ([], {}) on failure.
+    """
     try:
         from kalshi.client import KalshiClient
         client = KalshiClient()
@@ -684,15 +690,17 @@ def _fetch_kalshi_positions():
         if not cbb_positions:
             return [], {}
 
-        # Fetch fills for each position ticker to get actual fees
+        # Fetch all fills at once and group fees by ticker
+        all_fills = client.get_fills()
+        cbb_tickers = {p.get("ticker", "") for p in cbb_positions}
         fees_by_ticker = {}
-        for pos in cbb_positions:
-            ticker = pos.get("ticker", "")
-            fills = client.get_fills(ticker=ticker)
-            total_fee = sum(f.get("fee", 0) for f in fills)
-            fees_by_ticker[ticker] = total_fee  # in cents
+        for fill in all_fills:
+            t = fill.get("ticker", "")
+            if t in cbb_tickers:
+                fees_by_ticker[t] = fees_by_ticker.get(t, 0) + (fill.get("fee", 0) or 0)
         return cbb_positions, fees_by_ticker
-    except Exception:
+    except Exception as e:
+        print(f"      Failed to fetch Kalshi positions: {e}")
         return [], {}
 
 
@@ -703,10 +711,11 @@ def _fetch_live_espn_games():
     for lg in LEAGUES:
         try:
             url = get_scoreboard_base_url(lg)
-            resp = _requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10)
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as e:
+            print(f"      ESPN scoreboard fetch failed for {lg}: {e}")
             continue
         for event in data.get("events", []):
             status = event.get("status", {})
@@ -746,8 +755,10 @@ def _fetch_live_espn_games():
                 "clock": clock_display,
                 "league": lg,
             }
-            games_by_abbr[away["team"]["abbreviation"]] = game_info
-            games_by_abbr[home["team"]["abbreviation"]] = game_info
+            if game_info["away_abbr"]:
+                games_by_abbr[game_info["away_abbr"]] = game_info
+            if game_info["home_abbr"]:
+                games_by_abbr[game_info["home_abbr"]] = game_info
     return games_by_abbr
 
 
@@ -1157,7 +1168,8 @@ try:
     _kalshi_positions, _kalshi_fees = _fetch_kalshi_positions()
     _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
     _live_positions = _build_live_positions(_kalshi_positions, _live_games, _kalshi_fees) if _kalshi_positions else []
-except Exception:
+except Exception as e:
+    print(f"      Live positions section error: {e}")
     _live_positions = []
 
 if _live_positions:
