@@ -759,9 +759,10 @@ def _build_live_positions(positions, live_games) -> list[dict]:
     results = []
     for pos in positions:
         ticker = pos.get("ticker", "")
-        # Ticker suffix after last '-' is YES team abbreviation.
-        # For spread tickers the suffix includes a spread number (e.g. "SMC8"),
-        # so strip trailing digits to get the team abbreviation.
+        # Ticker suffix after last '-' contains the YES team abbreviation.
+        # Game tickers use the bare abbreviation (e.g. "MIZZ"), while spread
+        # tickers append a spread number (e.g. "SMC8"), so extract only
+        # the leading letters.
         parts = ticker.rsplit("-", 1)
         if len(parts) < 2:
             continue
@@ -791,7 +792,7 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         fee = float(pos.get("fees_paid_dollars", 0) or 0)
         net_cost = cost + fee
 
-        # Determine market type (game vs spread) from ticker prefix
+        # Determine market type (game vs spread) from ticker
         market_type = "spread" if "SPREAD" in ticker.upper() else "game"
 
         results.append({
