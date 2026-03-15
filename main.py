@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timedelta
+import time
 
 import pandas as pd
 import requests
@@ -409,6 +410,7 @@ def update_database(league="mens"):
     base_url = get_scoreboard_base_url(league)
     season_start_date = pd.Timestamp(get_season_start_date(league)).to_pydatetime()
 
+    t_start = time.monotonic()
     print(f"--- AUTO-HEALING UPDATER ({settings['label']}) ---")
     
     # 1. Determine Range
@@ -430,6 +432,7 @@ def update_database(league="mens"):
                 df_backfilled.to_csv(data_file, index=False)
                 print("Box-score and venue metadata backfilled.")
         run_pipeline(league)
+        print(f"\nTotal elapsed: {time.monotonic() - t_start:.1f}s")
         return
 
     print(f"Filling gap: {start_date.date()} to {end_date.date()}")
@@ -474,15 +477,21 @@ def update_database(league="mens"):
             print("Box-score and venue metadata backfilled.")
 
     run_pipeline(league)
+    print(f"\nTotal elapsed: {time.monotonic() - t_start:.1f}s")
 
 
 def run_pipeline(league):
     print("\n--- TRIGGERING PIPELINE ---")
+
+    t0 = time.monotonic()
     print("1. Calculating efficiency stats...")
     subprocess.run([sys.executable, "features.py", "--league", league], check=True)
+    print(f"   Done in {time.monotonic() - t0:.1f}s")
 
+    t0 = time.monotonic()
     print("2. Grading history...")
     subprocess.run([sys.executable, "backtest.py", "--league", league], check=True)
+    print(f"   Done in {time.monotonic() - t0:.1f}s")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update CBB data and run feature/backtest pipeline.")
