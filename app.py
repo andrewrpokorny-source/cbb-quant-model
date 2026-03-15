@@ -12,6 +12,7 @@ import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
+import re
 import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
@@ -668,12 +669,15 @@ def _parse_edge(series):
 # LIVE KALSHI POSITIONS
 # ==========================================
 
-CBB_GAME_PREFIXES = ("KXNCAAMBGAME", "KXNCAAWBGAME")
+CBB_POSITION_PREFIXES = (
+    "KXNCAAMBGAME", "KXNCAAWBGAME",
+    "KXNCAAMBSPREAD", "KXNCAAWBSPREAD",
+)
 
 
 @st.cache_data(ttl=120)
 def _fetch_kalshi_positions():
-    """Fetch unsettled Kalshi positions, filtered to CBB game markets.
+    """Fetch unsettled Kalshi positions, filtered to CBB markets.
 
     Returns:
         List of position dicts. Each contains dollar-denominated string
@@ -686,7 +690,7 @@ def _fetch_kalshi_positions():
         if not client.api_key:
             return []
         positions = client.get_positions(settlement_status="unsettled")
-        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_GAME_PREFIXES)]
+        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_POSITION_PREFIXES)]
     except Exception as e:
         print(f"      Failed to fetch Kalshi positions: {e}")
         return []
@@ -755,11 +759,17 @@ def _build_live_positions(positions, live_games) -> list[dict]:
     results = []
     for pos in positions:
         ticker = pos.get("ticker", "")
-        # Ticker suffix after last '-' is YES (home) team abbreviation
+        # Ticker suffix after last '-' is YES team abbreviation.
+        # For spread tickers the suffix includes a spread number (e.g. "SMC8"),
+        # so strip trailing digits to get the team abbreviation.
         parts = ticker.rsplit("-", 1)
         if len(parts) < 2:
             continue
-        yes_abbr = parts[1].upper()
+        tail = parts[1].upper()
+        abbr_match = re.match(r"([A-Z]+)", tail)
+        if not abbr_match:
+            continue
+        yes_abbr = abbr_match.group(1)
 
         game = live_games.get(yes_abbr)
         if not game:
@@ -781,6 +791,9 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         fee = float(pos.get("fees_paid_dollars", 0) or 0)
         net_cost = cost + fee
 
+        # Determine market type (game vs spread) from ticker prefix
+        market_type = "spread" if "SPREAD" in ticker.upper() else "game"
+
         results.append({
             "ticker": ticker,
             "side": side,
@@ -790,6 +803,7 @@ def _build_live_positions(positions, live_games) -> list[dict]:
             "fee": fee,
             "net_cost": net_cost,
             "game": game,
+            "market_type": market_type,
         })
     return results
 
@@ -1184,13 +1198,14 @@ if _live_positions:
         g = lp["game"]
         col = live_cols[i % len(live_cols)]
         league_label = "W" if g["league"] == "womens" else "M"
+        type_label = "SPR" if lp["market_type"] == "spread" else "ML"
         card_extra = "womens-card" if g["league"] == "womens" else ""
         contract_label = "contract" if lp["contracts"] == 1 else "contracts"
         with col:
             st.markdown(f'''
             <div class="live-card {card_extra}">
                 <div class="live-header">
-                    <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)}</span>
+                    <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)} {_esc(type_label)}</span>
                     <span class="live-clock">{_esc(g["clock"])}</span>
                 </div>
                 <div class="live-score-row">
