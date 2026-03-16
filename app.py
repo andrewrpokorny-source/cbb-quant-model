@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import pytz
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, normalize_league
+from prediction_io import load_predictions_csv
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -556,22 +557,28 @@ for lg in LEAGUES:
 
         if not st.session_state.get(loaded_key, False):
             with st.spinner(f"Loading {settings['label']}..."):
+                load_succeeded = False
                 try:
                     predict.main(
                         spread_overrides=st.session_state.get(overrides_key, {}),
                         league=lg,
                     )
+                    load_succeeded = True
                 except Exception as e:
                     st.error(f"Failed to load {settings['label']} predictions: {e}")
-            # Only mark loaded if predictions file exists and has content
-            if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
+            # Treat a blank file as a valid no-picks result for the current slate.
+            if load_succeeded and os.path.exists(pred_file):
                 st.session_state[loaded_key] = True
 
     try:
-        df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+        df, predictions_status = load_predictions_csv(pred_file)
     except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
         st.warning(f"Could not read {settings['label']} predictions: {e}")
         df = pd.DataFrame()
+        predictions_status = "error"
+
+    if predictions_status == "empty" and has_artifacts:
+        st.info(f"No {settings['label']} predictions are available for the current slate.")
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
