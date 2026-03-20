@@ -322,6 +322,7 @@ Mississippi State Bulldogs,Mississippi St.,alias_exact,1.0,False
 Mississippi University For Women Owls,,unmatched,0.0,True
 Mississippi Valley State Devilettes,Mississippi Val.,alias_fuzzy,0.9091,False
 Missouri State Bears,Missouri St.,alias_exact,1.0,False
+Missouri State Lady Bears,Missouri St.,alias_exact,1.0,False
 Missouri Tigers,Missouri,alias_exact,1.0,False
 Molloy Lions,,unmatched,0.0,True
 Monmouth Hawks,Monmouth,alias_exact,1.0,False
