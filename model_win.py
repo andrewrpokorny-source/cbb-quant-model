@@ -306,13 +306,17 @@ def predict_home_win_prob(
 
     if use_with_line:
         model = bundle["model_with_line"]
-        features = bundle.get("features_with_line", WOMENS_FEATURES_WITH_LINE)
+        features = bundle.get("features_with_line")
+        if not features:
+            raise ValueError("Win model bundle missing features_with_line.")
         variant = "with_line"
     else:
         model = bundle.get("model_no_line")
         if model is None:
             raise ValueError("No available no-line model in bundle.")
-        features = bundle.get("features_no_line", WOMENS_FEATURES_NO_LINE)
+        features = bundle.get("features_no_line")
+        if not features:
+            raise ValueError("Win model bundle missing features_no_line.")
         variant = "no_line"
 
     frame = pd.DataFrame([row_data])

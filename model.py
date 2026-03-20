@@ -420,8 +420,7 @@ def train_and_evaluate(league="mens"):
     uncal_acc = accuracy_score(y_test, uncal_preds)
     uncal_brier = brier_score_loss(y_test, uncal_probs)
 
-    # 8. Train CALIBRATED model using cross-validation
-    # CalibratedClassifierCV with cv=5 will handle calibration internally
+    # 8. Train the calibrated walk-forward production model.
     calibrated_clf = TimeAwareCalibratedGBM(
         n_estimators=150,
         learning_rate=0.05,

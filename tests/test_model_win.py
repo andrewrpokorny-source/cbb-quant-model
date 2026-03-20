@@ -85,6 +85,19 @@ def test_predict_raises_without_no_line_model():
         predict_home_win_prob({"spread": -1.5}, bundle)
 
 
+def test_predict_raises_when_bundle_missing_feature_keys():
+    bundle = {
+        "model_no_line": DummyModel(0.61),
+        "model_with_line": DummyModel(0.72),
+    }
+
+    with pytest.raises(ValueError, match="missing features_no_line"):
+        predict_home_win_prob({"spread": 0.0}, bundle)
+
+    with pytest.raises(ValueError, match="missing features_with_line"):
+        predict_home_win_prob({"spread": -3.5}, bundle)
+
+
 def test_load_bundle_supports_raw_legacy_model(tmp_path):
     legacy_model = DummyModel(0.64)
     p = tmp_path / "legacy.pkl"

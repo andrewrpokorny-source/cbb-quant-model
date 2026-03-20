@@ -41,7 +41,8 @@ WOMENS_NET_GAME_FEATURE_COLUMNS = [
     "womens_net_diff_prev_rank_strength",
 ]
 WOMENS_NET_MAP_COLUMNS = ["team", "net_team", "match_source", "match_score", "needs_review"]
-MIN_WOMENS_NET_TEAMS = 360.0
+# A substantially smaller parsed field usually means the NCAA table layout changed.
+MIN_WOMENS_NET_TEAMS = 360
 WOMENS_NET_NAME_OVERRIDES = {
     "connecticut": "uconn",
     "mississippi": "ole miss",
@@ -239,7 +240,7 @@ def fetch_current_net_html(session=None, timeout=20):
             session.close()
 
 
-def parse_current_net_html(html_text, source_url=WOMENS_NET_URL):
+def parse_current_net_html(html_text, source_url=WOMENS_NET_URL, min_teams=0):
     snapshot_date = _parse_through_games_date(html_text)
     table_html = _extract_rankings_table(html_text)
     rows = re.findall(r"<tr>(.*?)</tr>", table_html, flags=re.S)
@@ -253,9 +254,11 @@ def parse_current_net_html(html_text, source_url=WOMENS_NET_URL):
         raise WomensNetParseError(f"Unexpected NCAA NET headers: {headers[:len(expected)]}")
 
     parsed_rows = []
+    skipped_short_rows = 0
     for row_html in rows[1:]:
         cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.S)
         if len(cells) < len(expected):
+            skipped_short_rows += 1
             continue
         values = [_clean_cell(cell) for cell in cells[: len(expected)]]
         parsed_rows.append(
@@ -276,6 +279,11 @@ def parse_current_net_html(html_text, source_url=WOMENS_NET_URL):
 
     if not parsed_rows:
         raise WomensNetParseError("Parsed NCAA NET page contained no ranking data.")
+    if len(parsed_rows) < int(min_teams or 0):
+        raise WomensNetParseError(
+            "Parsed NCAA NET page contained too few ranking rows: "
+            f"{len(parsed_rows)} parsed, {skipped_short_rows} skipped, expected at least {int(min_teams)}."
+        )
     return pd.DataFrame(parsed_rows, columns=WOMENS_NET_SNAPSHOT_COLUMNS)
 
 
@@ -529,15 +537,15 @@ def sync_current_snapshot(league="womens", timeout=20):
         raise FileNotFoundError(f"Processed data file not found: {data_file}")
 
     html_text = fetch_current_net_html(timeout=timeout)
-    fetched = parse_current_net_html(html_text)
+    fetched = parse_current_net_html(html_text, min_teams=MIN_WOMENS_NET_TEAMS)
     existing = load_snapshot_file(snapshot_file)
     combined = pd.concat([existing, fetched], ignore_index=True)
     combined = combined.drop_duplicates(subset=["snapshot_date", "team"], keep="last")
-    save_snapshot_file(combined, snapshot_file)
 
     games_df = pd.read_csv(data_file, low_memory=False)
     team_map = load_team_map(map_file, pd.concat([games_df["team"], games_df["opponent"]]).dropna().unique())
     team_map = sync_team_map_for_games(games_df, combined, team_map_df=team_map)
+    save_snapshot_file(combined, snapshot_file)
     save_team_map(team_map, map_file)
 
     mapped_teams = team_map.loc[team_map["net_team"].notna(), "team"].nunique() if not team_map.empty else 0

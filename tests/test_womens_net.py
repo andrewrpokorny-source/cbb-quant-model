@@ -2,12 +2,14 @@ import pandas as pd
 import pytest
 
 from womens_net import (
+    WomensNetParseError,
     WOMENS_NET_GAME_FEATURE_COLUMNS,
     add_womens_net_features,
     build_team_map,
     ensure_womens_net_feature_columns,
     load_snapshot_file,
     parse_current_net_html,
+    sync_current_snapshot,
 )
 
 
@@ -41,6 +43,11 @@ def test_parse_current_net_html_extracts_rank_rows():
     assert result.loc[0, "snapshot_date"] == "2026-03-12"
     assert result.loc[0, "net_rank"] == 1
     assert result.loc[1, "prev_rank"] == 6
+
+
+def test_parse_current_net_html_raises_when_below_minimum_rows():
+    with pytest.raises(WomensNetParseError, match="too few ranking rows"):
+        parse_current_net_html(SAMPLE_HTML, min_teams=3)
 
 
 def test_build_team_map_matches_common_aliases():
@@ -151,3 +158,57 @@ def test_load_snapshot_file_backfills_missing_columns(tmp_path):
 
     assert "prev_rank" in loaded.columns
     assert pd.isna(loaded.loc[0, "prev_rank"])
+
+
+def test_sync_current_snapshot_does_not_write_snapshot_before_team_map_succeeds(monkeypatch, tmp_path):
+    data_file = tmp_path / "womens_data.csv"
+    pd.DataFrame([{"team": "UConn", "opponent": "Michigan"}]).to_csv(data_file, index=False)
+
+    calls = []
+
+    monkeypatch.setattr(
+        "womens_net.get_league_artifact_paths",
+        lambda base_dir, league: {
+            "data_file": str(data_file),
+            "womens_net_snapshot_file": str(tmp_path / "snapshot.csv"),
+            "womens_net_map_file": str(tmp_path / "map.csv"),
+        },
+    )
+    monkeypatch.setattr("womens_net.MIN_WOMENS_NET_TEAMS", 1)
+    monkeypatch.setattr("womens_net.fetch_current_net_html", lambda timeout=20: SAMPLE_HTML)
+    monkeypatch.setattr(
+        "womens_net.load_snapshot_file",
+        lambda path: pd.DataFrame(
+            columns=[
+                "snapshot_date",
+                "team",
+                "net_rank",
+                "prev_rank",
+                "record",
+                "conf",
+                "quad1",
+                "quad2",
+                "quad3",
+                "quad4",
+                "source_url",
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "womens_net.load_team_map",
+        lambda path, team_names=None: pd.DataFrame(
+            columns=["team", "net_team", "match_source", "match_score", "needs_review"]
+        ),
+    )
+    monkeypatch.setattr("womens_net.save_snapshot_file", lambda df, path: calls.append("save_snapshot"))
+    monkeypatch.setattr("womens_net.save_team_map", lambda df, path: calls.append("save_team_map"))
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("team map failed")
+
+    monkeypatch.setattr("womens_net.sync_team_map_for_games", explode)
+
+    with pytest.raises(RuntimeError, match="team map failed"):
+        sync_current_snapshot()
+
+    assert calls == []

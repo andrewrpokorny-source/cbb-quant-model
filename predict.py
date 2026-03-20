@@ -717,17 +717,17 @@ def calculate_production_features(row, h_stats, a_stats, game_date=None, torvik_
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
-    # 11-14. Win-model team strength features (used by Kalshi GAME scoring)
+    # Win-model team strength features used by GAME scoring.
     row['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
     row['prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0)
     row['prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0)
     row['prev_season_off_rating'] = h_stats.get('prev_season_off_rating', 100.0)
     row['opp_season_off_rating'] = a_stats.get('prev_season_off_rating', 100.0)
     row['off_rating_gap'] = row['prev_season_off_rating'] - row['opp_season_off_rating']
-    row['diff_prev_season_team_score'] = h_stats.get('prev_season_team_score', 0.0) - a_stats.get('prev_season_team_score', 0.0)
-    row['diff_prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 0.0) - a_stats.get('prev_roll3_team_score', 0.0)
+    row['diff_prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0) - a_stats.get('prev_season_team_score', 70.0)
+    row['diff_prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0) - a_stats.get('prev_roll3_team_score', 70.0)
 
-    # 15-16. Spread interaction features
+    # Spread interaction features.
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
 
