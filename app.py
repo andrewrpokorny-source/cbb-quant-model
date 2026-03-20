@@ -804,14 +804,16 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         # Determine market type (game vs spread) from ticker
         market_type = "spread" if "SPREAD" in ticker.upper() else "game"
 
-        # Fetch current market price for this position
+        # Fetch current market bid price (what we'd get if we sold now)
         current_price = None
         try:
-            prices = client.get_market_prices(ticker)
-            if side == "YES" and prices.get("yes_price") is not None:
-                current_price = prices["yes_price"] / 100
-            elif side == "NO" and prices.get("no_price") is not None:
-                current_price = prices["no_price"] / 100
+            market = client.get_market(ticker)
+            if side == "YES":
+                bid = market.get("yes_bid_dollars")
+            else:
+                bid = market.get("no_bid_dollars")
+            if bid is not None:
+                current_price = float(bid)
         except Exception:
             pass
 
