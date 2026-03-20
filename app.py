@@ -1291,7 +1291,7 @@ if os.path.exists(BET_HIST_FILE):
 if _recent_kalshi:
     st.markdown('<div class="section-title">Recent Kalshi Results</div>', unsafe_allow_html=True)
     _rows_html = ""
-    for _r in _recent_kalshi[:8]:
+    for _r in _recent_kalshi:
         _res = _r.get("result", "").strip().lower()
         _profit = float(_r.get("profit", 0) or 0)
         if _res == "win":

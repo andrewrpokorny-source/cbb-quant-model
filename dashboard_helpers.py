@@ -14,9 +14,9 @@ def filter_recent_kalshi(bets, *, cutoff_days=7, limit=8):
     cutoff = (datetime.now() - timedelta(days=cutoff_days)).strftime("%Y-%m-%d")
     filtered = [
         r for r in bets
-        if r.get("platform", "").strip().upper() == "KALSHI"
-        and r.get("date", "") >= cutoff
-        and r.get("result", "").strip().lower() in ("win", "loss", "void")
+        if (r.get("platform") or "").strip().upper() == "KALSHI"
+        and (r.get("date") or "") >= cutoff
+        and (r.get("result") or "").strip().lower() in ("win", "loss", "void")
     ]
-    filtered.sort(key=lambda r: r.get("date", ""), reverse=True)
+    filtered.sort(key=lambda r: r.get("date") or "", reverse=True)
     return filtered[:limit]

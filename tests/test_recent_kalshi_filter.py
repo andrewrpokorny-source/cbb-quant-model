@@ -2,8 +2,6 @@
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from dashboard_helpers import filter_recent_kalshi
 
 
@@ -13,9 +11,6 @@ def _today():
 
 def _days_ago(n):
     return (datetime.now() - timedelta(days=n)).strftime("%Y-%m-%d")
-
-
-# --- RED: these should all fail (module doesn't exist yet) ---
 
 
 class TestFilterRecentKalshi:
@@ -134,3 +129,11 @@ class TestFilterRecentKalshi:
             for i in range(5)
         ]
         assert len(filter_recent_kalshi(bets, limit=3)) == 3
+
+    def test_none_field_values_gracefully_excluded(self):
+        bets = [
+            {"platform": None, "date": _today(), "result": "win"},
+            {"platform": "Kalshi", "date": None, "result": "win"},
+            {"platform": "Kalshi", "date": _today(), "result": None},
+        ]
+        assert len(filter_recent_kalshi(bets)) == 0
