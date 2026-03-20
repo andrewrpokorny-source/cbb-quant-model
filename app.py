@@ -17,6 +17,7 @@ import re
 import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
+from dashboard_helpers import filter_recent_kalshi
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1201,13 +1202,18 @@ except Exception as e:
     print(f"      Live positions section error: {e}")
     _live_positions = []
 
+# Auto-refresh: keep running even after live positions disappear so that
+# recently-settled results are picked up without a manual browser refresh.
+if "live_auto_refresh" not in st.session_state:
+    st.session_state.live_auto_refresh = True
+
+if st.session_state.live_auto_refresh:
+    st_autorefresh(interval=60_000, key="live_autorefresh")
+
 if _live_positions:
     st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
 
     # Refresh controls
-    if "live_auto_refresh" not in st.session_state:
-        st.session_state.live_auto_refresh = True
-
     ctrl_cols = st.columns([1, 1, 6])
     with ctrl_cols[0]:
         if st.button("Refresh now", key="live_refresh_btn"):
@@ -1217,9 +1223,6 @@ if _live_positions:
     with ctrl_cols[1]:
         auto_on = st.toggle("Auto-refresh", value=st.session_state.live_auto_refresh, key="live_auto_toggle")
         st.session_state.live_auto_refresh = auto_on
-
-    if st.session_state.live_auto_refresh:
-        st_autorefresh(interval=60_000, key="live_autorefresh")
 
     live_cols = st.columns(min(len(_live_positions), 3))
     for i, lp in enumerate(_live_positions):
@@ -1281,21 +1284,14 @@ if os.path.exists(BET_HIST_FILE):
     try:
         with open(BET_HIST_FILE, "r", newline="") as _f:
             _all_bets = list(csv.DictReader(_f))
-        _cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        _recent_kalshi = [
-            r for r in _all_bets
-            if r.get("platform", "").strip().upper() == "KALSHI"
-            and r.get("date", "") >= _cutoff
-            and r.get("result", "").strip().lower() in ("win", "loss", "void")
-        ]
-        _recent_kalshi.sort(key=lambda r: r.get("date", ""), reverse=True)
+        _recent_kalshi = filter_recent_kalshi(_all_bets)
     except (OSError, csv.Error, UnicodeDecodeError, ValueError) as e:
         print(f"      Failed to read recent Kalshi results: {e}")
 
 if _recent_kalshi:
     st.markdown('<div class="section-title">Recent Kalshi Results</div>', unsafe_allow_html=True)
     _rows_html = ""
-    for _r in _recent_kalshi[:8]:
+    for _r in _recent_kalshi:
         _res = _r.get("result", "").strip().lower()
         _profit = float(_r.get("profit", 0) or 0)
         if _res == "win":
