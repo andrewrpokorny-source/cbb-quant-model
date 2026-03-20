@@ -814,8 +814,8 @@ def _build_live_positions(positions, live_games) -> list[dict]:
                 bid = market.get("no_bid_dollars")
             if bid is not None:
                 current_price = float(bid)
-        except Exception:
-            pass
+        except (requests.RequestException, ValueError, TypeError) as e:
+            print(f"      Failed to fetch market price for {ticker}: {e}")
 
         # Unrealized P&L: what the position is worth now vs what was paid
         pnl = None
@@ -827,8 +827,6 @@ def _build_live_positions(positions, live_games) -> list[dict]:
             "side": side,
             "side_team": yes_team_name,
             "contracts": contracts,
-            "cost": cost,
-            "fee": fee,
             "net_cost": net_cost,
             "game": game,
             "market_type": market_type,
@@ -1280,16 +1278,19 @@ if _live_positions:
 # Recent Kalshi results (last 7 days)
 _recent_kalshi = []
 if os.path.exists(BET_HIST_FILE):
-    with open(BET_HIST_FILE, "r", newline="") as _f:
-        _all_bets = list(csv.DictReader(_f))
-    _cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    _recent_kalshi = [
-        r for r in _all_bets
-        if r.get("platform", "").strip().upper() == "KALSHI"
-        and r.get("date", "") >= _cutoff
-        and r.get("result", "").strip().lower() in ("win", "loss", "void")
-    ]
-    _recent_kalshi.sort(key=lambda r: r.get("date", ""), reverse=True)
+    try:
+        with open(BET_HIST_FILE, "r", newline="") as _f:
+            _all_bets = list(csv.DictReader(_f))
+        _cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        _recent_kalshi = [
+            r for r in _all_bets
+            if r.get("platform", "").strip().upper() == "KALSHI"
+            and r.get("date", "") >= _cutoff
+            and r.get("result", "").strip().lower() in ("win", "loss", "void")
+        ]
+        _recent_kalshi.sort(key=lambda r: r.get("date", ""), reverse=True)
+    except (OSError, csv.Error, UnicodeDecodeError, ValueError) as e:
+        print(f"      Failed to read recent Kalshi results: {e}")
 
 if _recent_kalshi:
     st.markdown('<div class="section-title">Recent Kalshi Results</div>', unsafe_allow_html=True)
