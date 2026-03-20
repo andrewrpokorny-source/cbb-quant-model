@@ -756,6 +756,8 @@ def _fetch_live_espn_games():
 
 def _build_live_positions(positions, live_games) -> list[dict]:
     """Match Kalshi positions to live ESPN games."""
+    from kalshi.client import KalshiClient
+    client = KalshiClient()
     results = []
     for pos in positions:
         ticker = pos.get("ticker", "")
@@ -794,6 +796,17 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         # Determine market type (game vs spread) from ticker
         market_type = "spread" if "SPREAD" in ticker.upper() else "game"
 
+        # Fetch current market price for this position
+        current_price = None
+        try:
+            prices = client.get_market_prices(ticker)
+            if side == "YES" and prices.get("yes_price") is not None:
+                current_price = prices["yes_price"] / 100  # convert cents to dollars
+            elif side == "NO" and prices.get("no_price") is not None:
+                current_price = prices["no_price"] / 100
+        except Exception:
+            pass
+
         results.append({
             "ticker": ticker,
             "side": side,
@@ -804,6 +817,7 @@ def _build_live_positions(positions, live_games) -> list[dict]:
             "net_cost": net_cost,
             "game": game,
             "market_type": market_type,
+            "current_price": current_price,
         })
     return results
 
@@ -1233,6 +1247,10 @@ if _live_positions:
                     <div class="stat-item">
                         <span class="stat-label">Net Cost</span>
                         <span class="stat-value fee-value">${lp["net_cost"]:.2f}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Mkt Price</span>
+                        <span class="stat-value">{f'${lp["current_price"]:.2f}' if lp.get("current_price") is not None else '—'}</span>
                     </div>
                 </div>
             </div>
