@@ -36,6 +36,8 @@ LEAGUE_SETTINGS = {
         "sport_path": "womens-college-basketball",
         "season_start_date": "2025-11-05",
         "data_file": "wbb_training_data_processed.csv",
+        "womens_net_snapshot_file": "womens_net_snapshots.csv",
+        "womens_net_map_file": "womens_net_team_map.csv",
         "model_file": "womens_cbb_spread_model_v2.pkl",
         "win_model_file": "womens_cbb_win_model_v1.pkl",
         "predictions_file": "daily_predictions_wbb.csv",
@@ -65,6 +67,8 @@ def get_league_artifact_paths(base_dir, league):
     torvik_map_file = settings.get("torvik_map_file")
     hasla_snapshot_file = settings.get("hasla_snapshot_file")
     hasla_map_file = settings.get("hasla_map_file")
+    womens_net_snapshot_file = settings.get("womens_net_snapshot_file")
+    womens_net_map_file = settings.get("womens_net_map_file")
     return {
         "data_file": os.path.join(base_dir, settings["data_file"]),
         "torvik_snapshot_file": (
@@ -73,6 +77,10 @@ def get_league_artifact_paths(base_dir, league):
         "torvik_map_file": os.path.join(base_dir, torvik_map_file) if torvik_map_file else None,
         "hasla_snapshot_file": os.path.join(base_dir, hasla_snapshot_file) if hasla_snapshot_file else None,
         "hasla_map_file": os.path.join(base_dir, hasla_map_file) if hasla_map_file else None,
+        "womens_net_snapshot_file": (
+            os.path.join(base_dir, womens_net_snapshot_file) if womens_net_snapshot_file else None
+        ),
+        "womens_net_map_file": os.path.join(base_dir, womens_net_map_file) if womens_net_map_file else None,
         "model_file": os.path.join(base_dir, settings["model_file"]),
         "win_model_file": os.path.join(base_dir, settings["win_model_file"]),
         "odds_archive_file": os.path.join(base_dir, "odds_history.csv"),

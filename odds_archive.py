@@ -106,3 +106,42 @@ def append_archive_records(records, archive_file: str = DEFAULT_ARCHIVE_FILE) ->
         before = len(pd.read_csv(archive_file))
     combined.to_csv(archive_file, index=False)
     return len(combined) - before
+
+
+def load_latest_market_spreads(archive_file: str = DEFAULT_ARCHIVE_FILE, *, league: str | None = None) -> pd.DataFrame:
+    """Load the latest non-null archived market spread for each game."""
+    if not archive_file or not os.path.exists(archive_file):
+        return pd.DataFrame(columns=["league", "date", "home_team", "away_team", "spread", "total_line", "captured_at"])
+
+    df = pd.read_csv(archive_file, low_memory=False)
+    if df.empty:
+        return pd.DataFrame(columns=["league", "date", "home_team", "away_team", "spread", "total_line", "captured_at"])
+
+    if league is not None and "league" in df.columns:
+        df = df[df["league"].astype(str).str.lower() == str(league).lower()].copy()
+
+    if "captured_at" in df.columns:
+        df["captured_at"] = pd.to_datetime(df["captured_at"], errors="coerce")
+    else:
+        df["captured_at"] = pd.NaT
+
+    df["spread"] = pd.to_numeric(df.get("spread"), errors="coerce")
+    if "total_line" in df.columns:
+        df["total_line"] = pd.to_numeric(df["total_line"], errors="coerce")
+    else:
+        df["total_line"] = pd.NA
+
+    if "has_market_spread" in df.columns:
+        has_market = df["has_market_spread"].astype(str).str.lower().eq("true")
+        df = df[has_market | df["spread"].notna()].copy()
+    else:
+        df = df[df["spread"].notna()].copy()
+
+    if df.empty:
+        return pd.DataFrame(columns=["league", "date", "home_team", "away_team", "spread", "total_line", "captured_at"])
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df = df.dropna(subset=["date", "home_team", "away_team", "spread"]).copy()
+    df = df.sort_values(["date", "home_team", "away_team", "captured_at"])
+    latest = df.groupby(["league", "date", "home_team", "away_team"], as_index=False, dropna=False).tail(1)
+    return latest[["league", "date", "home_team", "away_team", "spread", "total_line", "captured_at"]].reset_index(drop=True)

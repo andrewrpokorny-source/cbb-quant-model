@@ -17,6 +17,7 @@ import re
 import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
+from prediction_io import load_predictions_csv
 from dashboard_helpers import filter_recent_kalshi
 
 # --- PATH CONFIG ---
@@ -863,22 +864,28 @@ for lg in LEAGUES:
 
         if not st.session_state.get(loaded_key, False):
             with st.spinner(f"Loading {settings['label']}..."):
+                load_succeeded = False
                 try:
                     predict.main(
                         spread_overrides=st.session_state.get(overrides_key, {}),
                         league=lg,
                     )
+                    load_succeeded = True
                 except Exception as e:
                     st.error(f"Failed to load {settings['label']} predictions: {e}")
-            # Only mark loaded if predictions file exists and has content
-            if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
+            # Treat a blank file as a valid no-picks result for the current slate.
+            if load_succeeded and os.path.exists(pred_file):
                 st.session_state[loaded_key] = True
 
     try:
-        df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+        df, predictions_status = load_predictions_csv(pred_file)
     except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
         st.warning(f"Could not read {settings['label']} predictions: {e}")
         df = pd.DataFrame()
+        predictions_status = "error"
+
+    if predictions_status == "empty" and has_artifacts:
+        st.info(f"No {settings['label']} predictions are available for the current slate.")
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
@@ -1677,5 +1684,91 @@ for i, lg in enumerate(LEAGUES):
                     "Link": st.column_config.LinkColumn("Kalshi", width="small", display_text="Trade"),
                 }
             )
+
+
+# ==========================================
+# LIVE KALSHI POSITIONS (in-progress games)
+# ==========================================
+try:
+    _kalshi_positions = _fetch_kalshi_positions()
+    _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
+    _live_positions = _build_live_positions(_kalshi_positions, _live_games) if _kalshi_positions else []
+except Exception as e:
+    print(f"      Live positions section error: {e}")
+    _live_positions = []
+
+if _live_positions:
+    st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
+
+    if "live_auto_refresh" not in st.session_state:
+        st.session_state.live_auto_refresh = True
+
+    ctrl_cols = st.columns([1, 1, 6])
+    with ctrl_cols[0]:
+        if st.button("Refresh now", key="live_refresh_btn"):
+            _fetch_kalshi_positions.clear()
+            _fetch_live_espn_games.clear()
+            st.rerun()
+    with ctrl_cols[1]:
+        auto_on = st.toggle("Auto-refresh", value=st.session_state.live_auto_refresh, key="live_auto_toggle")
+        st.session_state.live_auto_refresh = auto_on
+
+    if st.session_state.live_auto_refresh:
+        st_autorefresh(interval=60_000, key="live_autorefresh")
+
+    live_cols = st.columns(min(len(_live_positions), 3))
+    for i, lp in enumerate(_live_positions):
+        g = lp["game"]
+        col = live_cols[i % len(live_cols)]
+        league_label = "W" if g["league"] == "womens" else "M"
+        type_label = "SPR" if lp["market_type"] == "spread" else "ML"
+        card_extra = "womens-card" if g["league"] == "womens" else ""
+
+        pnl = lp.get("pnl")
+        if pnl is not None:
+            pnl_color = "var(--green-600)" if pnl >= 0 else "var(--live)"
+            pnl_html = f'<span style="color:{pnl_color};font-weight:700">{pnl:+.2f}</span>'
+        else:
+            pnl_html = '<span style="color:var(--neutral-400)">--</span>'
+
+        mkt_html = f'${lp["current_price"]:.2f}' if lp.get("current_price") is not None else '--'
+        size_label = f'{lp["contracts"]}x ' if lp["contracts"] > 1 else ''
+
+        with col:
+            st.markdown(
+                f'''
+                <div class="live-card {card_extra}">
+                    <div class="live-header">
+                        <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)} {_esc(type_label)}</span>
+                        <span class="live-clock">{_esc(g["clock"])}</span>
+                    </div>
+                    <div class="live-score-row">
+                        <span class="live-team away">{_esc(g["away_name"])}</span>
+                        <span class="live-score">{_esc(g["away_score"])} &ndash; {_esc(g["home_score"])}</span>
+                        <span class="live-team home">{_esc(g["home_name"])}</span>
+                    </div>
+                    <div class="live-bet-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Position</span>
+                            <span class="stat-value">{_esc(size_label)}{_esc(lp["side"])} {_esc(lp["side_team"])}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Cost</span>
+                            <span class="stat-value">${lp["net_cost"]:.2f}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Mkt</span>
+                            <span class="stat-value">{mkt_html}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">P&amp;L</span>
+                            <span class="stat-value">{pnl_html}</span>
+                        </div>
+                    </div>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
+    st.markdown("<hr>", unsafe_allow_html=True)
 
 st.caption(f"Men's: {os.path.basename(league_data['mens']['paths']['model_file'])} | Women's: {os.path.basename(league_data['womens']['paths']['model_file'])}")

@@ -27,7 +27,7 @@ from hasla import HASLA_GAME_FEATURE_COLUMNS, load_snapshot_file as load_hasla_s
 from kalshi_game_archive import append_archive_records as append_kalshi_game_archive_records
 from kalshi_game_archive import build_game_archive_record
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
-from model import load_model
+from model import load_model, use_calibrated_spread_model
 from model_win import load_win_model_bundle, predict_home_win_prob
 from odds_archive import append_archive_records, build_archive_record
 from torvik import TORVIK_GAME_FEATURE_COLUMNS, load_snapshot_file, load_team_map, matchup_features_for_game
@@ -717,13 +717,17 @@ def calculate_production_features(row, h_stats, a_stats, game_date=None, torvik_
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
-    # 11-14. Win-model team strength features (used by Kalshi GAME scoring)
+    # Win-model team strength features used by GAME scoring.
     row['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
+    row['prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0)
+    row['prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0)
     row['prev_season_off_rating'] = h_stats.get('prev_season_off_rating', 100.0)
     row['opp_season_off_rating'] = a_stats.get('prev_season_off_rating', 100.0)
     row['off_rating_gap'] = row['prev_season_off_rating'] - row['opp_season_off_rating']
+    row['diff_prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0) - a_stats.get('prev_season_team_score', 70.0)
+    row['diff_prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0) - a_stats.get('prev_roll3_team_score', 70.0)
 
-    # 15-16. Spread interaction features
+    # Spread interaction features.
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
 
@@ -810,6 +814,11 @@ def get_games_needing_spreads(league="mens"):
     return _games_needing_spreads.get(canonical)
 
 
+def get_spread_model_label(league="mens"):
+    """Return the display label for the configured spread model."""
+    return "GBM + Sigmoid Calibration" if use_calibrated_spread_model(league) else "GBM"
+
+
 @_with_runtime_lock
 def main(spread_overrides=None, league="mens"):
     """Run prediction engine.
@@ -832,10 +841,8 @@ def main(spread_overrides=None, league="mens"):
     try:
         model, sigma = load_model(league=ACTIVE_LEAGUE)
         feature_count = len(getattr(model, "feature_names_in_", [])) or "unknown"
-        print(
-            f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, "
-            f"{feature_count} features) ---"
-        )
+        model_label = get_spread_model_label(ACTIVE_LEAGUE)
+        print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, {model_label}, {feature_count} features) ---")
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -1129,6 +1136,10 @@ def main(spread_overrides=None, league="mens"):
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
             'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
             'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
+            'prev_season_team_score': 70,
+            'prev_roll3_team_score': 70,
+            'diff_prev_season_team_score': 0,
+            'diff_prev_roll3_team_score': 0,
             'spread_abs': 0, 'spread_squared': 0,
             'torvik_diff_adj_oe': 0,
             'torvik_diff_adj_de': 0,
