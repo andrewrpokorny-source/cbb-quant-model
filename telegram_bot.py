@@ -1332,6 +1332,24 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     # 7. Result-specific payout override
     if result == "win":
+        # Sanity check: a winning payout must exceed the wager. If OCR
+        # produced a bogus second dollar amount, recalculate from odds.
+        if payout <= wager and odds and wager > 0:
+            try:
+                odds_val = int(float(odds))
+                if odds_val < 0:
+                    calc_profit = wager * 100.0 / abs(odds_val)
+                else:
+                    calc_profit = wager * odds_val / 100.0
+                payout = round(wager + calc_profit, 2)
+                logger.warning(
+                    "FD settled card: OCR payout ($%.2f) <= wager ($%.2f), "
+                    "recalculated from odds %s -> $%.2f (bet_id=%s)",
+                    raw_amounts[1] if len(raw_amounts) >= 2 else 0.0,
+                    wager, odds, payout, bet_id,
+                )
+            except (ValueError, TypeError):
+                pass
         profit = round(payout - wager, 2)
     elif result == "void":
         payout = wager  # void = wager refunded; override raw $0.00 from OCR
@@ -1965,41 +1983,39 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 1) Settle pending (FanDuel etc.) bets via score lookup
         summary = settle_pending_bets()
 
-        msg_parts = [
-            f"Pending settled: {summary['settled']}",
-            f"Still pending: {summary['still_pending']}",
-        ]
-        if summary["details"]:
-            msg_parts.append("")
+        msg_parts = []
+        if summary["settled"]:
+            msg_parts.append(f"Settled {summary['settled']}:")
             msg_parts.extend(summary["details"][:20])
+        if summary["still_pending"]:
+            msg_parts.append(f"Still pending: {summary['still_pending']}")
 
         # 2) Import settled Kalshi positions (uses persisted sync cursor)
         try:
             kalshi_result = settle_to_csv()
             logged = kalshi_result["logged"]
             kalshi_settled = kalshi_result["settled"]
-            skipped = kalshi_result["skipped"]
             if kalshi_result["error"]:
-                msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+                msg_parts.append(f"Kalshi: {kalshi_result['error']}")
             elif logged or kalshi_settled:
                 parts = []
                 if logged:
-                    profit = sum(float(r["profit"]) for r in logged)
+                    total_profit = sum(float(r["profit"]) for r in logged)
                     wins = sum(1 for r in logged if r["result"] == "win")
                     losses = sum(1 for r in logged if r["result"] == "loss")
-                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {total_profit:+.2f}U)")
                 if kalshi_settled:
                     parts.append(f"{kalshi_settled} pending settled")
-                msg_parts.append(f"\nKalshi: {', '.join(parts)}")
-            elif skipped:
-                msg_parts.append(f"\nKalshi: all {skipped} already logged")
-            else:
-                msg_parts.append("\nKalshi: no recent settlements")
+                msg_parts.append(f"Kalshi: {', '.join(parts)}")
+                for r in logged:
+                    icon = {"win": "W", "loss": "L"}.get(r.get("result", ""), "?")
+                    p = float(r.get("profit", 0))
+                    msg_parts.append(f"  [{icon}] {r.get('line', '?')} ({r.get('game', '?')}) {p:+.2f}U")
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
-            msg_parts.append("\nKalshi: fetch failed")
+            msg_parts.append("Kalshi: fetch failed")
 
-        await update.message.reply_text("\n".join(msg_parts))
+        await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.")
 
 
 @authorized_only
