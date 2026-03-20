@@ -158,6 +158,8 @@ def merge_opponent_stats(df):
         'prev_season_orb': 'opp_season_team_ORB',
         'prev_season_to': 'opp_season_team_TO',
         'prev_season_off_rating': 'opp_season_off_rating',
+        'prev_season_team_score': 'opp_prev_season_team_score',
+        'prev_roll3_team_score': 'opp_prev_roll3_team_score',
     }
     for src_col, dest_col in optional_prev_cols.items():
         if src_col in df.columns:
@@ -196,6 +198,20 @@ def merge_opponent_stats(df):
         ).fillna(0.0)
     else:
         df_merged['momentum_gap'] = 0.0
+
+    if {'prev_season_team_score', 'opp_prev_season_team_score'}.issubset(df_merged.columns):
+        df_merged['diff_prev_season_team_score'] = (
+            df_merged['prev_season_team_score'] - df_merged['opp_prev_season_team_score']
+        ).fillna(0.0)
+    else:
+        df_merged['diff_prev_season_team_score'] = 0.0
+
+    if {'prev_roll3_team_score', 'opp_prev_roll3_team_score'}.issubset(df_merged.columns):
+        df_merged['diff_prev_roll3_team_score'] = (
+            df_merged['prev_roll3_team_score'] - df_merged['opp_prev_roll3_team_score']
+        ).fillna(0.0)
+    else:
+        df_merged['diff_prev_roll3_team_score'] = 0.0
 
     # Fill missing opponent win pct with 0.5 (neutral)
     df_merged['opp_win_pct'] = df_merged['opp_win_pct'].fillna(0.5)
@@ -310,6 +326,15 @@ def merge_archived_market_spreads(df, league, paths):
     merged["date"] = pd.to_datetime(merged["date"], errors="coerce").dt.normalize()
     return merged
 
+
+def normalize_training_spreads(df, league):
+    normalized = df.copy()
+    normalized["spread"] = pd.to_numeric(normalized["spread"], errors="coerce")
+    if normalize_league(league) == "womens":
+        normalized["spread"] = normalized["spread"].fillna(0.0)
+    return normalized
+
+
 def main(league="mens"):
     league = normalize_league(league)
     paths = get_league_artifact_paths(BASE_DIR, league)
@@ -331,6 +356,7 @@ def main(league="mens"):
     for c in cols: df[c] = pd.to_numeric(df[c], errors='coerce')
 
     df = merge_archived_market_spreads(df, league, paths)
+    df = normalize_training_spreads(df, league)
     
     df, stat_cols = calculate_advanced_stats(df)
     df = calculate_rolling_stats(df, stat_cols)

@@ -1,6 +1,12 @@
 import pandas as pd
 
-from features import calculate_advanced_stats, clean_stale_data, merge_archived_market_spreads, merge_opponent_stats
+from features import (
+    calculate_advanced_stats,
+    clean_stale_data,
+    merge_archived_market_spreads,
+    merge_opponent_stats,
+    normalize_training_spreads,
+)
 
 
 def test_clean_stale_data_preserves_raw_source_columns():
@@ -80,6 +86,30 @@ def test_merge_opponent_stats_zero_fills_unavailable_advanced_deltas():
     assert home_row["diff_Rebound"] == 0.0
     assert home_row["diff_TO"] == 0.0
     assert home_row["momentum_gap"] == 0.0
+    assert home_row["diff_prev_season_team_score"] == 0.0
+    assert home_row["diff_prev_roll3_team_score"] == 0.0
+
+
+def test_merge_opponent_stats_builds_scoring_gap_features_when_available():
+    df = pd.DataFrame(
+        {
+            "date": ["2026-01-01", "2026-01-01"],
+            "team": ["Home", "Away"],
+            "opponent": ["Away", "Home"],
+            "prev_win_pct": [0.8, 0.3],
+            "prev_season_team_score": [78.0, 70.0],
+            "prev_roll3_team_score": [82.0, 68.0],
+        }
+    )
+
+    result = merge_opponent_stats(df)
+
+    home_row = result[result["team"] == "Home"].iloc[0]
+    away_row = result[result["team"] == "Away"].iloc[0]
+    assert home_row["diff_prev_season_team_score"] == 8.0
+    assert home_row["diff_prev_roll3_team_score"] == 14.0
+    assert away_row["diff_prev_season_team_score"] == -8.0
+    assert away_row["diff_prev_roll3_team_score"] == -14.0
 
 
 def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
@@ -116,3 +146,18 @@ def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
     away = result[result["is_home"] == 0].iloc[0]
     assert home["spread"] == -4.5
     assert away["spread"] == 4.5
+
+
+def test_normalize_training_spreads_fills_missing_womens_lines_with_pickem():
+    df = pd.DataFrame(
+        [
+            {"spread": pd.NA},
+            {"spread": -3.5},
+        ]
+    )
+
+    womens = normalize_training_spreads(df, "womens")
+    mens = normalize_training_spreads(df, "mens")
+
+    assert womens["spread"].tolist() == [0.0, -3.5]
+    assert pd.isna(mens.loc[0, "spread"])
