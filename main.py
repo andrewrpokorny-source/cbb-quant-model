@@ -223,12 +223,14 @@ def fetch_games_for_date(target_date, base_url):
             game_date_str = target_date.strftime("%Y-%m-%d")
 
             spread_val = float("nan")
+            has_spread_line = False
             try:
                 if comp.get('odds'):
                     odds = comp['odds'][0]
                     details = odds.get('details', '')
                     if details == 'EVEN':
                         spread_val = 0.0
+                        has_spread_line = True
                     elif details and details != '0':
                         parts = details.split()
                         val = abs(float(parts[-1]))
@@ -237,6 +239,7 @@ def fetch_games_for_date(target_date, base_url):
                         home_name = home['team'].get('displayName', '')
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         spread_val = -val if is_home_fav else val
+                        has_spread_line = True
             except (ValueError, IndexError, TypeError) as e:
                 event_id = event.get('id', 'unknown')
                 print(f"      WARNING: Could not parse spread for event {event_id}: {type(e).__name__}: {e}")
@@ -257,6 +260,7 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(away['score']),
                 'is_home': 1,
                 'spread': spread_val,
+                'has_spread_line': has_spread_line,
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,
@@ -274,6 +278,7 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(home['score']),
                 'is_home': 0,
                 'spread': -1 * spread_val,
+                'has_spread_line': has_spread_line,
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,

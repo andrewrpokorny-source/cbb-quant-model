@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 
 from model import (
+    FEATURES,
     MENS_FEATURES,
     WOMENS_FEATURES,
     TimeAwareCalibratedGBM,
@@ -22,6 +23,10 @@ from model import (
     use_calibrated_spread_model,
     walk_forward_validate,
 )
+
+
+def test_exported_features_constant_stays_on_mens_baseline():
+    assert FEATURES == MENS_FEATURES
 
 
 def test_womens_feature_list_uses_live_inputs_only():

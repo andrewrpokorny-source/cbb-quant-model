@@ -236,6 +236,44 @@ def test_fetch_games_for_date_keeps_unparseable_spread_as_missing(monkeypatch):
     assert pd.isna(games[1]["spread"])
 
 
+def test_fetch_games_for_date_marks_even_line_as_real_pickem(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "events": [
+                    {
+                        "id": "evt-2",
+                        "status": {"type": {"state": "post"}},
+                        "competitions": [
+                            {
+                                "competitors": [
+                                    {"team": {"displayName": "Home Team", "abbreviation": "HOME"}, "score": "70"},
+                                    {"team": {"displayName": "Away Team", "abbreviation": "AWAY"}, "score": "65"},
+                                ],
+                                "odds": [{"details": "EVEN"}],
+                                "neutralSite": False,
+                                "venue": {"address": {"city": "Columbus", "state": "OH"}},
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("main.requests.get", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr("main.fetch_boxscore_rates", lambda *_args, **_kwargs: {})
+
+    games = fetch_games_for_date(datetime(2026, 1, 5), "http://example.com/scoreboard?groups=50&limit=1000")
+
+    assert len(games) == 2
+    assert games[0]["spread"] == 0.0
+    assert games[1]["spread"] == -0.0
+    assert games[0]["has_spread_line"] is True
+    assert games[1]["has_spread_line"] is True
+
+
 def test_run_pipeline_syncs_womens_net_before_subprocesses(monkeypatch):
     calls = []
 

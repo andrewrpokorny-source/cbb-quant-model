@@ -29,6 +29,7 @@ BASE_COLUMNS = [
     "team_score",
     "opp_score",
     "spread",
+    "has_spread_line",
     "is_home",
     "is_neutral",
     "venue_city",
@@ -53,6 +54,15 @@ STAT_SOURCE_COLUMNS = {
     "orb": "team_ORB",
     "poss": "possessions",
 }
+
+
+def _coerce_bool_series(series, index):
+    if series is None:
+        return pd.Series(pd.NA, index=index, dtype="boolean")
+
+    lowered = series.astype("string").str.strip().str.lower()
+    mapped = lowered.map({"true": True, "false": False})
+    return pd.Series(mapped, index=index, dtype="boolean")
 
 def clean_stale_data(df):
     print("   -> Cleaning stale columns...")
@@ -310,14 +320,15 @@ def merge_archived_market_spreads(df, league, paths):
     merged = working.merge(mirrored, on=["date", "team", "opponent", "is_home"], how="left")
     current_spread = pd.to_numeric(merged["spread"], errors="coerce")
     archived_spread = pd.to_numeric(merged["archived_spread"], errors="coerce")
+    has_spread_line = _coerce_bool_series(merged.get("has_spread_line"), merged.index)
 
-    if league == "womens":
-        needs_fill = current_spread.isna() | current_spread.eq(0)
-    else:
-        needs_fill = current_spread.isna()
+    needs_fill = current_spread.isna()
+    if normalize_league(league) == "womens":
+        needs_fill = needs_fill | (current_spread.eq(0) & has_spread_line.eq(False))
 
     filled_rows = int((needs_fill & archived_spread.notna()).sum())
     merged["spread"] = current_spread.where(~needs_fill, archived_spread)
+    merged["has_spread_line"] = has_spread_line.where(~(needs_fill & archived_spread.notna()), True)
     merged = merged.drop(columns=["archived_spread"])
 
     if filled_rows:
@@ -330,8 +341,14 @@ def merge_archived_market_spreads(df, league, paths):
 def normalize_training_spreads(df, league):
     normalized = df.copy()
     normalized["spread"] = pd.to_numeric(normalized["spread"], errors="coerce")
+    has_spread_line = _coerce_bool_series(normalized.get("has_spread_line"), normalized.index)
+
     if normalize_league(league) == "womens":
-        normalized["spread"] = normalized["spread"].fillna(0.0)
+        ambiguous_zero = normalized["spread"].eq(0) & has_spread_line.isna()
+        no_market_line = has_spread_line.eq(False)
+        normalized.loc[ambiguous_zero | no_market_line, "spread"] = pd.NA
+
+    normalized["has_spread_line"] = has_spread_line
     return normalized
 
 
@@ -360,7 +377,10 @@ def main(league="mens"):
     
     df, stat_cols = calculate_advanced_stats(df)
     df = calculate_rolling_stats(df, stat_cols)
-    df['ats_win'] = (df['team_score'] + df['spread'] > df['opp_score']).astype(int)
+    ats_margin = pd.to_numeric(df['team_score'], errors='coerce') + df['spread'] - pd.to_numeric(df['opp_score'], errors='coerce')
+    df['ats_win'] = pd.Series(pd.NA, index=df.index, dtype='Int64')
+    has_spread_target = df['spread'].notna()
+    df.loc[has_spread_target, 'ats_win'] = (ats_margin.loc[has_spread_target] > 0).astype(int)
     
     df_final = merge_opponent_stats(df)
     df_final = merge_torvik_priors(df_final, league, paths)

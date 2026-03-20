@@ -19,6 +19,7 @@ def test_clean_stale_data_preserves_raw_source_columns():
             "team_score": [80],
             "opp_score": [70],
             "spread": [-4.5],
+            "has_spread_line": [True],
             "is_home": [1],
             "is_neutral": [0],
             "venue_city": [""],
@@ -39,6 +40,7 @@ def test_clean_stale_data_preserves_raw_source_columns():
     assert "team_eFG" in result.columns
     assert "team_TO" in result.columns
     assert "team_ORB" in result.columns
+    assert "has_spread_line" in result.columns
     assert "prev_season_eFG" not in result.columns
     assert "diff_eFG" not in result.columns
     assert "ats_win" not in result.columns
@@ -112,7 +114,7 @@ def test_merge_opponent_stats_builds_scoring_gap_features_when_available():
     assert away_row["diff_prev_roll3_team_score"] == -14.0
 
 
-def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
+def test_merge_archived_market_spreads_fills_missing_womens_spreads(tmp_path):
     archive_file = tmp_path / "odds_history.csv"
     pd.DataFrame(
         [
@@ -135,8 +137,8 @@ def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
 
     df = pd.DataFrame(
         [
-            {"date": "2026-03-06", "team": "Home", "opponent": "Away", "is_home": 1, "spread": 0.0},
-            {"date": "2026-03-06", "team": "Away", "opponent": "Home", "is_home": 0, "spread": 0.0},
+            {"date": "2026-03-06", "team": "Home", "opponent": "Away", "is_home": 1, "spread": 0.0, "has_spread_line": False},
+            {"date": "2026-03-06", "team": "Away", "opponent": "Home", "is_home": 0, "spread": 0.0, "has_spread_line": False},
         ]
     )
 
@@ -146,18 +148,71 @@ def test_merge_archived_market_spreads_fills_womens_zero_spreads(tmp_path):
     away = result[result["is_home"] == 0].iloc[0]
     assert home["spread"] == -4.5
     assert away["spread"] == 4.5
+    assert bool(home["has_spread_line"]) is True
+    assert bool(away["has_spread_line"]) is True
 
 
-def test_normalize_training_spreads_fills_missing_womens_lines_with_pickem():
+def test_merge_archived_market_spreads_preserves_real_womens_pickem_lines(tmp_path):
+    archive_file = tmp_path / "odds_history.csv"
+    pd.DataFrame(
+        [
+            {
+                "captured_at": "2026-03-06T12:00:00+00:00",
+                "league": "womens",
+                "date": "2026-03-06",
+                "home_team": "Home",
+                "away_team": "Away",
+                "spread": -4.5,
+                "total_line": pd.NA,
+                "book": "Manual",
+                "provider": "manual_override",
+                "source": "prediction_run",
+                "raw_line": "Manual -4.5",
+                "has_market_spread": True,
+            }
+        ]
+    ).to_csv(archive_file, index=False)
+
     df = pd.DataFrame(
         [
-            {"spread": pd.NA},
-            {"spread": -3.5},
+            {"date": "2026-03-06", "team": "Home", "opponent": "Away", "is_home": 1, "spread": 0.0, "has_spread_line": True},
+            {"date": "2026-03-06", "team": "Away", "opponent": "Home", "is_home": 0, "spread": -0.0, "has_spread_line": True},
+        ]
+    )
+
+    result = merge_archived_market_spreads(df, "womens", {"odds_archive_file": str(archive_file)})
+
+    home = result[result["is_home"] == 1].iloc[0]
+    away = result[result["is_home"] == 0].iloc[0]
+    assert home["spread"] == 0.0
+    assert away["spread"] == 0.0
+
+
+def test_normalize_training_spreads_preserves_missing_womens_lines():
+    df = pd.DataFrame(
+        [
+            {"spread": pd.NA, "has_spread_line": False},
+            {"spread": -3.5, "has_spread_line": True},
         ]
     )
 
     womens = normalize_training_spreads(df, "womens")
     mens = normalize_training_spreads(df, "mens")
 
-    assert womens["spread"].tolist() == [0.0, -3.5]
+    assert pd.isna(womens.loc[0, "spread"])
+    assert womens.loc[1, "spread"] == -3.5
     assert pd.isna(mens.loc[0, "spread"])
+
+
+def test_normalize_training_spreads_drops_ambiguous_legacy_womens_zeroes():
+    df = pd.DataFrame(
+        [
+            {"spread": 0.0},
+            {"spread": 0.0, "has_spread_line": True},
+        ]
+    )
+
+    womens = normalize_training_spreads(df, "womens")
+
+    assert pd.isna(womens.loc[0, "spread"])
+    assert womens.loc[1, "spread"] == 0.0

@@ -58,7 +58,7 @@ MENS_FEATURES = [
     'spread_abs',
     'spread_squared',
 ]
-FEATURES = WOMENS_FEATURES
+FEATURES = MENS_FEATURES
 FEATURES_BY_LEAGUE = {
     'mens': MENS_FEATURES,
     'womens': WOMENS_FEATURES,
