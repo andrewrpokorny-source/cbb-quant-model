@@ -780,12 +780,11 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         position_fp = float(pos.get("position_fp", 0) or 0)
         if position_fp > 0:
             side = "YES"
-            side_team = yes_abbr
         elif position_fp < 0:
             side = "NO"
-            side_team = game["away_abbr"] if yes_abbr == game["home_abbr"] else game["home_abbr"]
         else:
             continue
+        side_team = yes_abbr
 
         contracts = int(abs(position_fp))
         cost = float(pos.get("market_exposure_dollars", 0) or 0)
