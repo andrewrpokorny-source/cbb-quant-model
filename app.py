@@ -12,10 +12,13 @@ import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 import pytz
+import csv
 import re
 import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
+from prediction_io import load_predictions_csv
+from dashboard_helpers import filter_recent_kalshi
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -756,6 +759,8 @@ def _fetch_live_espn_games():
 
 def _build_live_positions(positions, live_games) -> list[dict]:
     """Match Kalshi positions to live ESPN games."""
+    from kalshi.client import KalshiClient
+    client = KalshiClient()
     results = []
     for pos in positions:
         ticker = pos.get("ticker", "")
@@ -780,12 +785,18 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         position_fp = float(pos.get("position_fp", 0) or 0)
         if position_fp > 0:
             side = "YES"
-            side_team = yes_abbr
         elif position_fp < 0:
             side = "NO"
-            side_team = game["away_abbr"] if yes_abbr == game["home_abbr"] else game["home_abbr"]
         else:
             continue
+
+        # Resolve full team name from the game data
+        if yes_abbr == game["home_abbr"]:
+            yes_team_name = game["home_name"]
+        elif yes_abbr == game["away_abbr"]:
+            yes_team_name = game["away_name"]
+        else:
+            yes_team_name = yes_abbr
 
         contracts = int(abs(position_fp))
         cost = float(pos.get("market_exposure_dollars", 0) or 0)
@@ -795,16 +806,34 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         # Determine market type (game vs spread) from ticker
         market_type = "spread" if "SPREAD" in ticker.upper() else "game"
 
+        # Fetch current market bid price (what we'd get if we sold now)
+        current_price = None
+        try:
+            market = client.get_market(ticker)
+            if side == "YES":
+                bid = market.get("yes_bid_dollars")
+            else:
+                bid = market.get("no_bid_dollars")
+            if bid is not None:
+                current_price = float(bid)
+        except (requests.RequestException, ValueError, TypeError) as e:
+            print(f"      Failed to fetch market price for {ticker}: {e}")
+
+        # Unrealized P&L: what the position is worth now vs what was paid
+        pnl = None
+        if current_price is not None:
+            pnl = round(current_price * contracts - net_cost, 2)
+
         results.append({
             "ticker": ticker,
             "side": side,
-            "side_team": side_team,
+            "side_team": yes_team_name,
             "contracts": contracts,
-            "cost": cost,
-            "fee": fee,
             "net_cost": net_cost,
             "game": game,
             "market_type": market_type,
+            "current_price": current_price,
+            "pnl": pnl,
         })
     return results
 
@@ -835,22 +864,28 @@ for lg in LEAGUES:
 
         if not st.session_state.get(loaded_key, False):
             with st.spinner(f"Loading {settings['label']}..."):
+                load_succeeded = False
                 try:
                     predict.main(
                         spread_overrides=st.session_state.get(overrides_key, {}),
                         league=lg,
                     )
+                    load_succeeded = True
                 except Exception as e:
                     st.error(f"Failed to load {settings['label']} predictions: {e}")
-            # Only mark loaded if predictions file exists and has content
-            if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
+            # Treat a blank file as a valid no-picks result for the current slate.
+            if load_succeeded and os.path.exists(pred_file):
                 st.session_state[loaded_key] = True
 
     try:
-        df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+        df, predictions_status = load_predictions_csv(pred_file)
     except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
         st.warning(f"Could not read {settings['label']} predictions: {e}")
         df = pd.DataFrame()
+        predictions_status = "error"
+
+    if predictions_status == "empty" and has_artifacts:
+        st.info(f"No {settings['label']} predictions are available for the current slate.")
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
@@ -1174,13 +1209,18 @@ except Exception as e:
     print(f"      Live positions section error: {e}")
     _live_positions = []
 
+# Auto-refresh: keep running even after live positions disappear so that
+# recently-settled results are picked up without a manual browser refresh.
+if "live_auto_refresh" not in st.session_state:
+    st.session_state.live_auto_refresh = True
+
+if st.session_state.live_auto_refresh:
+    st_autorefresh(interval=60_000, key="live_autorefresh")
+
 if _live_positions:
     st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
 
     # Refresh controls
-    if "live_auto_refresh" not in st.session_state:
-        st.session_state.live_auto_refresh = True
-
     ctrl_cols = st.columns([1, 1, 6])
     with ctrl_cols[0]:
         if st.button("Refresh now", key="live_refresh_btn"):
@@ -1191,9 +1231,6 @@ if _live_positions:
         auto_on = st.toggle("Auto-refresh", value=st.session_state.live_auto_refresh, key="live_auto_toggle")
         st.session_state.live_auto_refresh = auto_on
 
-    if st.session_state.live_auto_refresh:
-        st_autorefresh(interval=60_000, key="live_autorefresh")
-
     live_cols = st.columns(min(len(_live_positions), 3))
     for i, lp in enumerate(_live_positions):
         g = lp["game"]
@@ -1201,7 +1238,19 @@ if _live_positions:
         league_label = "W" if g["league"] == "womens" else "M"
         type_label = "SPR" if lp["market_type"] == "spread" else "ML"
         card_extra = "womens-card" if g["league"] == "womens" else ""
-        contract_label = "contract" if lp["contracts"] == 1 else "contracts"
+
+        # P&L display with color
+        pnl = lp.get("pnl")
+        if pnl is not None:
+            pnl_color = "var(--green-600)" if pnl >= 0 else "var(--live)"
+            pnl_html = f'<span style="color:{pnl_color};font-weight:700">{pnl:+.2f}</span>'
+        else:
+            pnl_html = '<span style="color:var(--neutral-400)">--</span>'
+
+        mkt_html = f'${lp["current_price"]:.2f}' if lp.get("current_price") is not None else '--'
+
+        size_label = f'{lp["contracts"]}x ' if lp["contracts"] > 1 else ''
+
         with col:
             st.markdown(f'''
             <div class="live-card {card_extra}">
@@ -1217,27 +1266,74 @@ if _live_positions:
                 <div class="live-bet-stats">
                     <div class="stat-item">
                         <span class="stat-label">Position</span>
-                        <span class="stat-value">{_esc(lp["side"])} {_esc(lp["side_team"])}</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">Size</span>
-                        <span class="stat-value">{lp["contracts"]} {contract_label}</span>
+                        <span class="stat-value">{_esc(size_label)}{_esc(lp["side"])} {_esc(lp["side_team"])}</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Cost</span>
-                        <span class="stat-value">${lp["cost"]:.2f}</span>
+                        <span class="stat-value">${lp["net_cost"]:.2f}</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Fee</span>
-                        <span class="stat-value fee-value">${lp["fee"]:.2f}</span>
+                        <span class="stat-label">Mkt</span>
+                        <span class="stat-value">{mkt_html}</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Net Cost</span>
-                        <span class="stat-value fee-value">${lp["net_cost"]:.2f}</span>
+                        <span class="stat-label">P&amp;L</span>
+                        <span class="stat-value">{pnl_html}</span>
                     </div>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+# Recent Kalshi results (last 7 days)
+_recent_kalshi = []
+if os.path.exists(BET_HIST_FILE):
+    try:
+        with open(BET_HIST_FILE, "r", newline="") as _f:
+            _all_bets = list(csv.DictReader(_f))
+        _recent_kalshi = filter_recent_kalshi(_all_bets)
+    except (OSError, csv.Error, UnicodeDecodeError, ValueError) as e:
+        print(f"      Failed to read recent Kalshi results: {e}")
+
+if _recent_kalshi:
+    st.markdown('<div class="section-title">Recent Kalshi Results</div>', unsafe_allow_html=True)
+    _rows_html = ""
+    for _r in _recent_kalshi:
+        _res = _r.get("result", "").strip().lower()
+        _profit = float(_r.get("profit", 0) or 0)
+        if _res == "win":
+            _res_style = "color:var(--green-600);font-weight:700"
+            _res_label = "W"
+        elif _res == "loss":
+            _res_style = "color:var(--live);font-weight:700"
+            _res_label = "L"
+        else:
+            _res_style = "color:var(--neutral-500)"
+            _res_label = "V"
+        _pnl_color = "var(--green-600)" if _profit >= 0 else "var(--live)"
+        _rows_html += f'''
+        <tr style="border-bottom:1px solid var(--neutral-100)">
+            <td style="padding:6px 8px;color:var(--neutral-500)">{_esc(_r.get("date", "")[5:])}</td>
+            <td style="padding:6px 8px">{_esc(_r.get("game", ""))}</td>
+            <td style="padding:6px 8px">{_esc(_r.get("line", ""))}</td>
+            <td style="padding:6px 8px;text-align:center"><span style="{_res_style}">{_res_label}</span></td>
+            <td style="padding:6px 8px;text-align:right;color:{_pnl_color};font-weight:600">{_profit:+.2f}</td>
+        </tr>'''
+    st.markdown(f'''
+    <table style="width:100%;font-family:var(--font-mono);font-size:0.78rem;border-collapse:collapse;margin-bottom:0.5rem">
+        <thead>
+            <tr style="border-bottom:1px solid var(--neutral-200);color:var(--neutral-400);font-size:0.6rem;text-transform:uppercase;letter-spacing:0.06em">
+                <th style="text-align:left;padding:4px 8px">Date</th>
+                <th style="text-align:left;padding:4px 8px">Game</th>
+                <th style="text-align:left;padding:4px 8px">Line</th>
+                <th style="text-align:center;padding:4px 8px">Result</th>
+                <th style="text-align:right;padding:4px 8px">P&L</th>
+            </tr>
+        </thead>
+        <tbody>{_rows_html}
+        </tbody>
+    </table>
+    ''', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-title">Spread Bets</div>', unsafe_allow_html=True)
@@ -1588,5 +1684,6 @@ for i, lg in enumerate(LEAGUES):
                     "Link": st.column_config.LinkColumn("Kalshi", width="small", display_text="Trade"),
                 }
             )
+
 
 st.caption(f"Men's: {os.path.basename(league_data['mens']['paths']['model_file'])} | Women's: {os.path.basename(league_data['womens']['paths']['model_file'])}")
