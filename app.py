@@ -1251,12 +1251,15 @@ if _live_positions:
 
         size_label = f'{lp["contracts"]}x ' if lp["contracts"] > 1 else ''
 
+        kalshi_url = kalshi_event_url(lp["ticker"])
+        kalshi_link = f'<a href="{_esc(kalshi_url)}" target="_blank" style="color:var(--neutral-400);font-size:0.65rem;text-decoration:none">view</a>' if kalshi_url else ''
+
         with col:
             st.markdown(f'''
             <div class="live-card {card_extra}">
                 <div class="live-header">
                     <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)} {_esc(type_label)}</span>
-                    <span class="live-clock">{_esc(g["clock"])}</span>
+                    <span class="live-clock">{_esc(g["clock"])} {kalshi_link}</span>
                 </div>
                 <div class="live-score-row">
                     <span class="live-team away">{_esc(g["away_name"])}</span>
