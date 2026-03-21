@@ -777,8 +777,12 @@ def _build_live_positions(positions, live_games) -> list[dict]:
             continue
         yes_abbr = abbr_match.group(1)
 
+        # Determine league from ticker prefix to avoid cross-league mismatches
+        # (e.g. men's UK position matching women's UK game).
+        ticker_league = "womens" if "AAWB" in ticker.upper() else "mens"
+
         game = live_games.get(yes_abbr)
-        if not game:
+        if not game or game.get("league") != ticker_league:
             continue
 
         # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
