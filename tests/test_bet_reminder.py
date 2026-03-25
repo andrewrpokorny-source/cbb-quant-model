@@ -483,6 +483,17 @@ class TestJobRegistration:
         eastern = pytz.timezone("US/Eastern")
         assert scheduled_time.tzinfo is not None
 
+    def test_misfire_grace_time_unlimited(self, monkeypatch):
+        """Job should run even if missed (e.g., laptop was asleep at 6 AM)."""
+        from telegram_bot import _register_scheduled_jobs
+
+        mock_job_queue = MagicMock()
+        _register_scheduled_jobs(mock_job_queue)
+
+        call_kwargs = mock_job_queue.run_daily.call_args
+        job_kwargs = call_kwargs[1].get("job_kwargs", {})
+        assert job_kwargs.get("misfire_grace_time") is None
+
 
 _REAL_ARCHIVE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "predictions_20260323.csv")
 

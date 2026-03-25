@@ -2654,6 +2654,7 @@ def _register_scheduled_jobs(job_queue):
     job_queue.run_daily(
         _reminder_check_unlogged,
         time=datetime.strptime("06:00", "%H:%M").time().replace(tzinfo=eastern),
+        job_kwargs={"misfire_grace_time": None},
     )
     logger.info("Scheduled daily unlogged-bet reminder at 6:00 AM ET")
 
