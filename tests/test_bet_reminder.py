@@ -150,6 +150,41 @@ class TestFindUnloggedStrongGames:
         assert len(result) == 1
         assert "Duke" in result[0]["matchup"]
 
+    def test_dedup_prefers_row_with_std_edge_data(self, tmp_project):
+        """When deduplicating, prefer the row with actual Std edge/units over empty."""
+        from telegram_bot import find_unlogged_strong_games
+
+        target = date(2026, 3, 27)
+        archive_path = tmp_project / "predictions_20260323.csv"
+        _write_predictions_csv(archive_path, [
+            {
+                "Bet_Type": "game",
+                "Date/Time": "03/27 07:10 PM",
+                "Matchup": "St. John's Red Storm @ Duke Blue Devils",
+                "Pick": "Duke Blue Devils ML YES",
+                "Rating": "STRONG",
+                "Std_Rating": "PASS",
+                "Std_Edge_Pct": "",
+                "Std_Units": "",
+            },
+            {
+                "Bet_Type": "spread",
+                "Date/Time": "03/27 07:10 PM",
+                "Matchup": "St. John's Red Storm @ Duke Blue Devils",
+                "Pick": "Duke Blue Devils -6.5",
+                "Rating": "STRONG",
+                "Std_Rating": "GOOD",
+                "Std_Edge_Pct": "+5.1%",
+                "Std_Units": "1.2",
+            },
+        ])
+
+        result = find_unlogged_strong_games(target)
+
+        assert len(result) == 1
+        assert result[0]["std_units"] == 1.2
+        assert result[0]["pick"] == "Duke Blue Devils -6.5"
+
     def test_excludes_logged_fanduel_game(self, tmp_project):
         """A STRONG game with a FanDuel entry in betting_history should NOT be returned."""
         from telegram_bot import find_unlogged_strong_games
@@ -449,9 +484,13 @@ class TestJobRegistration:
         assert scheduled_time.tzinfo is not None
 
 
+_REAL_ARCHIVE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "predictions_20260323.csv")
+
+
 class TestIntegrationRealData:
     """TDD Cycle 7: Integration test against real prediction archives."""
 
+    @pytest.mark.skipif(not os.path.exists(_REAL_ARCHIVE), reason="Real archive not present")
     def test_finds_unlogged_strong_game_from_real_archive(self):
         """Real archive predictions_20260323.csv has a STRONG Wichita State game on 03/24
         with no corresponding FanDuel/DraftKings entry in betting_history.csv."""

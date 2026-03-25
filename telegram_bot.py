@@ -1147,6 +1147,7 @@ def find_unlogged_strong_games(target_date) -> list[dict]:
             try:
                 df = pd.read_csv(fpath)
             except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+                logger.warning("Skipping unreadable prediction archive: %s", fpath, exc_info=True)
                 continue
             if "Date/Time" not in df.columns:
                 continue
@@ -1167,10 +1168,8 @@ def find_unlogged_strong_games(target_date) -> list[dict]:
 
                 matchup = str(row.get("Matchup", "")).strip()
                 matchup_key = matchup.upper()
-                if matchup_key in strong_games:
-                    continue
 
-                strong_games[matchup_key] = {
+                new_entry = {
                     "matchup": matchup,
                     "pick": str(row.get("Pick", "")),
                     "std_edge_pct": str(row.get("Std_Edge_Pct", "")),
@@ -1178,6 +1177,13 @@ def find_unlogged_strong_games(target_date) -> list[dict]:
                     "league": league,
                     "bet_type": str(row.get("Bet_Type", "spread")),
                 }
+
+                # Prefer rows with actual Std edge data (spread rows over Kalshi game rows)
+                existing = strong_games.get(matchup_key)
+                if existing and existing["std_units"] > 0 and new_entry["std_units"] == 0:
+                    continue
+
+                strong_games[matchup_key] = new_entry
 
     if not strong_games:
         return []
@@ -1190,6 +1196,7 @@ def find_unlogged_strong_games(target_date) -> list[dict]:
     try:
         hist = pd.read_csv(BETTING_HISTORY)
     except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+        logger.warning("Could not read %s -- treating all STRONG games as unlogged", BETTING_HISTORY, exc_info=True)
         return list(strong_games.values())
 
     logged = hist[
