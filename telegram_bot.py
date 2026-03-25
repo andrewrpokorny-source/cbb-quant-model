@@ -43,6 +43,7 @@ from telegram.ext import (
 from ocrmac import ocrmac
 
 from betting import VALUE_RATINGS
+from kalshi.market_mapper import normalize_team_name
 from settle_bets import settle_pending_bets
 from settle_kalshi import settle_to_csv
 
@@ -1112,6 +1113,160 @@ def _resolve_game_date(team_name: str) -> str:
                     team_name, fpath, dt_str,
                 )
     return ""
+
+
+def find_unlogged_strong_games(target_date) -> list[dict]:
+    """Find STRONG-rated games on target_date that have no FanDuel/DraftKings bet logged.
+
+    Scans prediction archives for both men's and women's leagues.
+    Returns list of dicts with matchup, pick, edge, units, league info.
+    """
+    target_mm = target_date.month
+    target_dd = target_date.day
+
+    def _archive_sort_key_local(path: str) -> str:
+        match = re.search(r"(\d{8})", os.path.basename(path))
+        return match.group(1) if match else ""
+
+    # Collect STRONG games from prediction archives, keyed by matchup to deduplicate
+    strong_games = {}
+
+    league_prefixes = [
+        ("predictions", "mens"),
+        ("predictions_wbb", "womens"),
+    ]
+
+    for prefix, league in league_prefixes:
+        archive_files = glob.glob(os.path.join(BASE_DIR, f"{prefix}_*.csv"))
+        # Exclude wbb files from men's glob (predictions_*.csv also matches predictions_wbb_*)
+        if prefix == "predictions":
+            archive_files = [f for f in archive_files if "_wbb_" not in os.path.basename(f)]
+        archive_files.sort(key=_archive_sort_key_local, reverse=True)
+
+        for fpath in archive_files[:7]:
+            try:
+                df = pd.read_csv(fpath)
+            except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+                continue
+            if "Date/Time" not in df.columns:
+                continue
+
+            for _, row in df.iterrows():
+                dt_str = str(row.get("Date/Time", "")).strip()
+                m = re.match(r"(\d{1,2})/(\d{1,2})", dt_str)
+                if not m:
+                    continue
+                month, day = int(m.group(1)), int(m.group(2))
+                if (month, day) != (target_mm, target_dd):
+                    continue
+
+                std_rating = str(row.get("Std_Rating", "")).strip()
+                kalshi_rating = str(row.get("Rating", "")).strip()
+                if std_rating != "STRONG" and kalshi_rating != "STRONG":
+                    continue
+
+                matchup = str(row.get("Matchup", "")).strip()
+                matchup_key = matchup.upper()
+                if matchup_key in strong_games:
+                    continue
+
+                strong_games[matchup_key] = {
+                    "matchup": matchup,
+                    "pick": str(row.get("Pick", "")),
+                    "std_edge_pct": str(row.get("Std_Edge_Pct", "")),
+                    "std_units": float(row.get("Std_Units", 0) or 0),
+                    "league": league,
+                    "bet_type": str(row.get("Bet_Type", "spread")),
+                }
+
+    if not strong_games:
+        return []
+
+    # Check betting_history.csv for already-logged FanDuel/DraftKings bets
+    target_str = target_date.strftime("%Y-%m-%d")
+    if not os.path.exists(BETTING_HISTORY):
+        return list(strong_games.values())
+
+    try:
+        hist = pd.read_csv(BETTING_HISTORY)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+        return list(strong_games.values())
+
+    logged = hist[
+        (hist["date"] == target_str)
+        & (hist["platform"].isin(["FanDuel", "DraftKings"]))
+    ]
+
+    if logged.empty:
+        return list(strong_games.values())
+
+    # Build list of normalized team pairs from logged games
+    logged_team_pairs = []
+    for game_str in logged["game"].dropna().unique():
+        parts = re.split(r"\s+vs\s+", str(game_str), flags=re.IGNORECASE)
+        if len(parts) == 2:
+            logged_team_pairs.append(
+                tuple(normalize_team_name(p.strip()).upper() for p in parts)
+            )
+
+    def _teams_match(pred_team: str, logged_team: str) -> bool:
+        """Check if two normalized team names refer to the same school."""
+        if pred_team == logged_team:
+            return True
+        # One may be a substring of the other (e.g. "Tulsa" vs "Tulsa Golden Hurricane")
+        return pred_team in logged_team or logged_team in pred_team
+
+    unlogged = []
+    for info in strong_games.values():
+        parts = re.split(r"\s+@\s+", info["matchup"])
+        if len(parts) != 2:
+            unlogged.append(info)
+            continue
+
+        away_norm = normalize_team_name(parts[0].strip()).upper()
+        home_norm = normalize_team_name(parts[1].strip()).upper()
+
+        found = any(
+            (_teams_match(away_norm, t1) and _teams_match(home_norm, t2))
+            or (_teams_match(away_norm, t2) and _teams_match(home_norm, t1))
+            for t1, t2 in logged_team_pairs
+        )
+        if not found:
+            unlogged.append(info)
+
+    return unlogged
+
+
+async def _reminder_check_unlogged(context) -> None:
+    """Daily job: remind user about unlogged STRONG bets from yesterday."""
+    eastern = pytz.timezone("US/Eastern")
+    yesterday = (datetime.now(eastern) - timedelta(days=1)).date()
+
+    try:
+        unlogged = find_unlogged_strong_games(yesterday)
+    except Exception:
+        logger.exception("Error checking for unlogged STRONG games")
+        return
+
+    if not unlogged:
+        return
+
+    lines = [f"Unlogged STRONG bets from {yesterday.strftime('%m/%d')}:\n"]
+    for g in unlogged:
+        league_tag = "[W] " if g["league"] == "womens" else ""
+        lines.append(
+            f"  {league_tag}{g['matchup']}\n"
+            f"    Pick: {g['pick']}  |  {g['std_edge_pct']}  |  {g['std_units']:.1f}U"
+        )
+    lines.append("\nDid you place any FanDuel/DraftKings bets on these? Send a bet slip or log manually.")
+
+    msg = "\n".join(lines)
+
+    for user_id in ALLOWED_USER_IDS:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=msg)
+        except Exception:
+            logger.exception("Failed to send reminder to user %d", user_id)
 
 
 def _parse_single_fd_settled_card(card_text: str) -> dict | None:
@@ -2486,6 +2641,16 @@ def _acquire_instance_lock():
     return lock_fh
 
 
+def _register_scheduled_jobs(job_queue):
+    """Register scheduled jobs on the bot's job queue."""
+    eastern = pytz.timezone("US/Eastern")
+    job_queue.run_daily(
+        _reminder_check_unlogged,
+        time=datetime.strptime("06:00", "%H:%M").time().replace(tzinfo=eastern),
+    )
+    logger.info("Scheduled daily unlogged-bet reminder at 6:00 AM ET")
+
+
 def main():
     """Start the Telegram bot."""
     if not TELEGRAM_BOT_TOKEN:
@@ -2509,6 +2674,15 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Scheduled jobs
+    if app.job_queue is not None:
+        _register_scheduled_jobs(app.job_queue)
+    else:
+        logger.warning(
+            "JobQueue not available -- install python-telegram-bot[job-queue] "
+            "for scheduled reminders"
+        )
 
     print("Bot started. Send /start in Telegram to begin.")
     try:
