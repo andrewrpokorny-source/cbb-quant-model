@@ -7,6 +7,7 @@ import html as html_mod
 import predict
 import backtest
 import settle_bets
+import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
@@ -18,7 +19,7 @@ from league_config import get_league_artifact_paths, get_league_settings, normal
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 
-LEAGUES = ["mens", "womens"]
+LEAGUES = ["mens", "womens", "mlb"]
 
 st.set_page_config(page_title="CBB Quant Edge", layout="wide")
 
@@ -557,10 +558,13 @@ for lg in LEAGUES:
         if not st.session_state.get(loaded_key, False):
             with st.spinner(f"Loading {settings['label']}..."):
                 try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(overrides_key, {}),
-                        league=lg,
-                    )
+                    if lg == "mlb":
+                        mlb_predict.generate_predictions(lg)
+                    else:
+                        predict.main(
+                            spread_overrides=st.session_state.get(overrides_key, {}),
+                            league=lg,
+                        )
                 except Exception as e:
                     st.error(f"Failed to load {settings['label']} predictions: {e}")
             # Only mark loaded if predictions file exists and has content
@@ -592,8 +596,8 @@ for lg in LEAGUES:
         "df": df,
         "spread_df": spread_df,
         "game_df": game_df,
-        "predictions_ls": predict.get_latest_predictions(lg),
-        "games_needing_spreads": predict.get_games_needing_spreads(lg),
+        "predictions_ls": predict.get_latest_predictions(lg) if lg != "mlb" else None,
+        "games_needing_spreads": predict.get_games_needing_spreads(lg) if lg != "mlb" else {},
     }
 
 
@@ -613,10 +617,13 @@ with st.sidebar:
                 continue
             with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
                 try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
-                        league=lg,
-                    )
+                    if lg == "mlb":
+                        mlb_predict.generate_predictions(lg)
+                    else:
+                        predict.main(
+                            spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
+                            league=lg,
+                        )
                 except Exception as e:
                     st.error(f"Failed to refresh {get_league_settings(lg)['label']}: {e}")
                     refresh_ok = False

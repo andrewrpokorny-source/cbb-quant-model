@@ -18,6 +18,7 @@ dependencies = [
     "scipy>=1.10",
     "httpx>=0.24",
     "geopy>=2.4.1",
+    "MLB-StatsAPI>=1.7",
 ]
 
 [project.optional-dependencies]

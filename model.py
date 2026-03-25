@@ -62,13 +62,49 @@ MENS_FEATURES = [
     'spread_abs',
     'spread_squared',
 ]
+MLB_FEATURES = [
+    'is_home',
+    'rest_days',
+    # Starting pitcher (ESPN point-in-time entering ERA)
+    'sp_era',
+    'opp_sp_era',
+    # Starting pitcher (game-log rolling stats, honest lag)
+    'sp_roll_era',
+    'sp_roll_whip',
+    'sp_roll_k9',
+    'sp_roll_ip',
+    'opp_sp_roll_era',
+    # Team rolling stats (game-level, honest lag)
+    'prev_roll10_runs_per_game',
+    'prev_roll10_runs_allowed',
+    'prev_season_runs_per_game',
+    'prev_season_runs_allowed',
+    'prev_games_played',
+    # Opponent quality
+    'opp_win_pct',
+    'prev_win_pct',
+    'prev_roll10_win_pct',
+    # Differentials (all game-derived, no leaky aggregates)
+    'roll10_rpg_diff',
+    'roll10_ra_diff',
+    'sp_era_diff',
+    'sp_roll_era_diff',
+    'prev_volatility',
+]
 FEATURES_BY_LEAGUE = {
     'mens': MENS_FEATURES,
     'womens': FEATURES,
+    'mlb': MLB_FEATURES,
 }
 CALIBRATION_BY_LEAGUE = {
     'mens': False,
     'womens': True,
+    'mlb': True,
+}
+TARGET_BY_LEAGUE = {
+    'mens': 'ats_win',
+    'womens': 'ats_win',
+    'mlb': 'home_win',
 }
 
 
@@ -373,7 +409,7 @@ def train_and_evaluate(league="mens"):
     production_calibrated = use_calibrated_spread_model(league)
     production_label = "GBM + Sigmoid Calibration" if production_calibrated else "GBM"
 
-    print(f"--- TRAINING CBB MODEL ({league}, {production_label}, {len(features)} features) ---")
+    print(f"--- TRAINING MODEL ({league}, {production_label}, {len(features)} features) ---")
 
     if not os.path.exists(data_file):
         print("No processed data found. Run features.py first.")
@@ -383,12 +419,13 @@ def train_and_evaluate(league="mens"):
     df = pd.read_csv(data_file, low_memory=False)
     print(f"Loaded {len(df)} rows.")
 
-    # Compute derived spread features
-    df['spread_abs'] = df['spread'].abs()
-    df['spread_squared'] = df['spread'] ** 2
+    # Compute derived spread features (CBB only)
+    if 'spread' in df.columns and league != 'mlb':
+        df['spread_abs'] = df['spread'].abs()
+        df['spread_squared'] = df['spread'] ** 2
 
     # 2. Define Features
-    target = 'ats_win'
+    target = TARGET_BY_LEAGUE.get(league, 'ats_win')
 
     # 3. Validation: Ensure all columns exist
     missing_cols = [col for col in features if col not in df.columns]
@@ -507,17 +544,20 @@ def train_and_evaluate(league="mens"):
         print(f"  {row['feature']:<20}: {row['importance']:.3f}")
 
     # 14. Compute sigma for CDF-based line shopping
-    # sigma = std(actual_margin - vegas_predicted_margin) where vegas margin = -spread
-    # This measures how much actual outcomes deviate from the spread, used to
-    # project the classifier's probability at the market spread to other spreads
-    # via norm.cdf curves.
-    if 'margin' in df_model.columns:
+    if league == 'mlb':
+        # MLB: sigma = std(run margin), used to project P(win) to P(win by 2+) for run line
+        if 'margin' not in df_model.columns:
+            df_model['margin'] = df_model['team_score'] - df_model['opp_score']
+        sigma = float(np.std(df_model['margin'].values))
+        print(f"\nLine shopping sigma: {sigma:.2f} (std of run margin)")
+    elif 'margin' in df_model.columns and 'spread' in df_model.columns:
+        # CBB: sigma = std(actual_margin - vegas_predicted_margin)
         residuals = df_model['margin'].values - (-df_model['spread'].values)
         sigma = float(np.std(residuals))
         print(f"\nLine shopping sigma: {sigma:.2f} (std of margin vs spread)")
     else:
-        sigma = 11.0  # Reasonable CBB default
-        print(f"\nLine shopping sigma: {sigma:.2f} (default, margin column not found)")
+        sigma = 11.0
+        print(f"\nLine shopping sigma: {sigma:.2f} (default)")
 
     # 15. Fit the production model on the full clean dataset, not just the holdout train split.
     production_model = build_spread_estimator(league)
@@ -537,12 +577,14 @@ def load_model(path=None, league="mens"):
         league = normalize_league(league)
         path = get_league_artifact_paths(BASE_DIR, league)["model_file"]
 
+    league = normalize_league(league)
+    default_sigma = 4.0 if league == 'mlb' else 11.0
     data = joblib.load(path)
     if isinstance(data, dict) and 'model' in data:
-        sigma = data.get('sigma', 11.0)
+        sigma = data.get('sigma', default_sigma)
         return data['model'], float(sigma)
     # Old format: raw model without sigma
-    return data, 11.0
+    return data, default_sigma
 
 
 def get_feature_list(league="mens"):
@@ -580,11 +622,11 @@ def cover_prob_at_spread(classifier_prob, market_spread, alt_spread, sigma):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train CBB spread model.")
+    parser = argparse.ArgumentParser(description="Train prediction model.")
     parser.add_argument(
         "--league",
         default="mens",
-        help="League to train: mens or womens (aliases supported).",
+        help="League to train: mens, womens, or mlb (aliases supported).",
     )
     args = parser.parse_args()
     train_and_evaluate(args.league)
