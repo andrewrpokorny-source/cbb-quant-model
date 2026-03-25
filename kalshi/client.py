@@ -281,9 +281,9 @@ class KalshiClient:
             List of Kalshi market dictionaries for MLB game/spread/total markets.
         """
         series_tickers = [
-            "KXNMLBGAME",
-            "KXNMLBSPREAD",
-            "KXNMLBTOTAL",
+            "KXMLBGAME",
+            "KXMLBSPREAD",
+            "KXMLBTOTAL",
         ]
 
         markets = []
@@ -294,7 +294,7 @@ class KalshiClient:
 
         if not markets:
             all_markets = self.search_markets(status="open", limit=1000)
-            markets = [m for m in all_markets if m.get("ticker", "").startswith("KXNMLB")]
+            markets = [m for m in all_markets if m.get("ticker", "").startswith("KXMLB")]
 
         return markets
 

@@ -1,11 +1,14 @@
 """Map MLB games to Kalshi market tickers.
 
-MLB Kalshi tickers are expected to follow the pattern:
-    KXNMLBGAME-{DATE}{TEAMS}-{SUFFIX}
-where SUFFIX is the YES team abbreviation.
+MLB Kalshi ticker format (confirmed from live markets):
+    KXMLBGAME-{YYMMMDDHHMMAWAY}{HOME}-{YES_ABBR}
+    e.g. KXMLBGAME-26MAR281610BOSCIN-CIN
 
-This mapper is much simpler than CBB because there are only 30 MLB teams
-with stable, standardized abbreviations.
+    KXMLBSPREAD-{YYMMMDDHHMMAWAY}{HOME}-{ABBR}{SPREAD}
+    e.g. KXMLBSPREAD-26MAR271915KCATL-KC2  (KC wins by over 1.5)
+
+    KXMLBTOTAL-{YYMMMDDHHMMAWAY}{HOME}-{THRESHOLD}
+    e.g. KXMLBTOTAL-26MAR271915KCATL-9  (over 9 total runs)
 """
 
 import re
@@ -87,7 +90,7 @@ class MLBMarketMapper:
             return None
 
         date_str = game_date.strftime("%d%b%y").upper()
-        prefix = f"KXNMLB{market_type}"
+        prefix = f"KXMLB{market_type}"
 
         for ticker, market in self._index.items():
             if not ticker.startswith(prefix):
