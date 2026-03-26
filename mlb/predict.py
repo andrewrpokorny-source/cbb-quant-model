@@ -4,10 +4,8 @@ import argparse
 import json
 import os
 import sys
-import threading
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 import pytz
 import requests
@@ -36,11 +34,6 @@ from model import load_model, get_feature_list, TARGET_BY_LEAGUE
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEAGUE = "mlb"
-
-# Module-level storage for app.py access
-_latest_predictions = {}
-_latest_game_predictions = {}
-_RUNTIME_LOCK = threading.Lock()
 
 # MLB team name map -- ESPN display names are stable for 30 teams
 MLB_TEAM_MAP_FILE = os.path.join(os.path.dirname(__file__), "team_map.json")
@@ -140,6 +133,9 @@ def fetch_schedule(league=LEAGUE):
             data = res.json()
         except requests.RequestException as e:
             print(f"      WARNING: Failed to fetch {date_str}: {e}")
+            continue
+        except ValueError as e:
+            print(f"      WARNING: Invalid JSON from ESPN for {date_str}: {e}")
             continue
 
         for event in data.get("events", []):
@@ -315,58 +311,61 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
     if not mapper or not client:
         return result
 
+    # Market lookup -- catch API/network errors only
     try:
         market = mapper.find_market(home_team, away_team, game_date, "GAME")
-        if not market:
-            return result
+    except (requests.RequestException, KeyError) as e:
+        print(f"      Kalshi market lookup error for {away_team} @ {home_team}: {e}")
+        return result
 
-        ticker = market.get("ticker", "")
-        yes_team = mapper.get_yes_team(ticker)
+    if not market:
+        return result
 
-        if not yes_team:
-            return result
+    ticker = market.get("ticker", "")
+    yes_team = mapper.get_yes_team(ticker)
+    if not yes_team:
+        return result
 
-        prices = client.get_market_prices(ticker) if hasattr(client, 'get_market_prices') else client._extract_market_prices(market)
-        yes_price = prices.get("yes_price")
-        no_price = prices.get("no_price")
+    try:
+        prices = client.get_market_prices(ticker)
+    except (requests.RequestException, KeyError) as e:
+        print(f"      Kalshi price fetch error for {ticker}: {e}")
+        return result
 
-        if yes_price is None:
-            return result
+    yes_price = prices.get("yes_price")
+    no_price = prices.get("no_price")
+    if yes_price is None:
+        return result
 
-        # Determine our side
-        if pick == yes_team:
-            our_price = yes_price
-            our_side = "YES"
-        else:
-            our_price = no_price if no_price else (100 - yes_price)
-            our_side = "NO"
+    # Determine our side
+    if pick == yes_team:
+        our_price = yes_price
+        our_side = "YES"
+    else:
+        our_price = no_price if no_price else (100 - yes_price)
+        our_side = "NO"
 
-        if our_price is None or our_price <= 0:
-            return result
+    if our_price is None or our_price <= 0:
+        return result
 
-        # Our model probability for the picked team
-        model_prob = prob_home_win if pick == home_team else (1.0 - prob_home_win)
+    # Edge calculation -- let bugs propagate here (no catch)
+    model_prob = prob_home_win if pick == home_team else (1.0 - prob_home_win)
+    implied_prob = kalshi_implied_prob(our_price)
+    fee = kalshi_fee_cents(our_price) / 100.0
 
-        # Implied probability from Kalshi price
-        implied_prob = kalshi_implied_prob(our_price)
-        fee = kalshi_fee_cents(our_price) / 100.0
+    edge = calculate_edge(model_prob, implied_prob)
+    rating_enum = get_rating(edge)
+    rating = rating_enum.value
+    units = recommended_units(edge, implied_prob)
 
-        edge = calculate_edge(model_prob, implied_prob)
-        rating_enum = get_rating(edge)
-        rating = rating_enum.value if hasattr(rating_enum, 'value') else str(rating_enum)
-        units = recommended_units(edge, implied_prob)
-
-        result["Kalshi_Ticker"] = ticker
-        result["Kalshi_Side"] = our_side
-        result["Kalshi_Price"] = our_price
-        result["Kalshi_Fee"] = round(fee, 4)
-        result["Edge"] = round(edge, 4)
-        result["Edge_Pct"] = f"{edge:.1%}"
-        result["Rating"] = rating
-        result["Units"] = units
-
-    except Exception as e:
-        print(f"      Kalshi edge error for {away_team} @ {home_team}: {e}")
+    result["Kalshi_Ticker"] = ticker
+    result["Kalshi_Side"] = our_side
+    result["Kalshi_Price"] = our_price
+    result["Kalshi_Fee"] = round(fee, 4)
+    result["Edge"] = round(edge, 4)
+    result["Edge_Pct"] = f"{edge:.1%}"
+    result["Rating"] = rating
+    result["Units"] = units
 
     return result
 
@@ -403,21 +402,21 @@ def generate_predictions(league=LEAGUE):
     # Fetch Kalshi markets
     kalshi_client = None
     kalshi_mapper = None
-    try:
-        api_key = os.environ.get("KALSHI_API_KEY")
-        if api_key:
-            from kalshi import KalshiClient, MLBMarketMapper
-            kalshi_client = KalshiClient(api_key)
+    api_key = os.environ.get("KALSHI_API_KEY")
+    if not api_key:
+        print("   Kalshi: KALSHI_API_KEY not set, skipping")
+    else:
+        from kalshi import KalshiClient, MLBMarketMapper
+        kalshi_client = KalshiClient(api_key)
+        try:
             markets = kalshi_client.get_mlb_markets()
             if markets:
                 kalshi_mapper = MLBMarketMapper(markets)
                 print(f"   Kalshi: {len(markets)} MLB markets loaded")
             else:
                 print("   Kalshi: no MLB markets found")
-        else:
-            print("   Kalshi: KALSHI_API_KEY not set, skipping")
-    except Exception as e:
-        print(f"   Kalshi: error loading markets: {e}")
+        except requests.RequestException as e:
+            print(f"   Kalshi: API error loading markets: {e}")
 
     # Fetch schedule
     games = fetch_schedule(league)
@@ -489,23 +488,7 @@ def generate_predictions(league=LEAGUE):
         pred_df.to_csv(output_file, index=False)
         print(f"\n   Saved {len(predictions)} predictions to {output_file}")
 
-        with _RUNTIME_LOCK:
-            _latest_predictions.clear()
-            _latest_game_predictions.clear()
-            for p in predictions:
-                _latest_game_predictions[p["Matchup"]] = p
-
     return predictions
-
-
-def load_predictions_csv(league=LEAGUE):
-    """Load the latest predictions CSV for dashboard display."""
-    league = normalize_league(league)
-    paths = get_league_artifact_paths(BASE_DIR, league)
-    pred_file = paths["predictions_file"]
-    if os.path.exists(pred_file):
-        return pd.read_csv(pred_file)
-    return pd.DataFrame()
 
 
 def main():

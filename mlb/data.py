@@ -20,19 +20,6 @@ from league_config import (
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEAGUE = "mlb"
 
-# MLB team abbreviation -> statsapi team ID mapping
-MLB_TEAM_IDS = {
-    "ARI": 109, "ATL": 144, "BAL": 110, "BOS": 111, "CHC": 112,
-    "CWS": 145, "CIN": 113, "CLE": 114, "COL": 115, "DET": 116,
-    "HOU": 117, "KC": 118, "LAA": 108, "LAD": 119, "MIA": 146,
-    "MIL": 158, "MIN": 142, "NYM": 121, "NYY": 147, "OAK": 133,
-    "PHI": 143, "PIT": 134, "SD": 135, "SF": 137, "SEA": 136,
-    "STL": 138, "TB": 139, "TEX": 140, "TOR": 141, "WSH": 120,
-}
-
-# Reverse lookup: team ID -> abbreviation
-TEAM_ID_TO_ABBR = {v: k for k, v in MLB_TEAM_IDS.items()}
-
 
 def _safe_float(value):
     try:
@@ -325,7 +312,8 @@ def _resolve_pitcher_id(statsapi, pitcher_name, season):
             if r.get("primaryPosition", {}).get("abbreviation", "") == "P":
                 return r["id"]
         return results[0]["id"]
-    except Exception:
+    except (requests.RequestException, KeyError, TypeError, ValueError) as e:
+        print(f"      WARNING: Could not resolve pitcher '{pitcher_name}': {type(e).__name__}: {e}")
         return None
 
 
@@ -341,9 +329,14 @@ def _fetch_game_log(player_id, season):
     try:
         resp = requests.get(url, timeout=10)
         if not resp.ok:
+            print(f"      WARNING: MLB Stats API returned {resp.status_code} for player {player_id}")
             return {}
         data = resp.json()
-    except (requests.RequestException, ValueError):
+    except requests.RequestException as e:
+        print(f"      WARNING: MLB Stats API request failed for player {player_id}: {e}")
+        return {}
+    except ValueError as e:
+        print(f"      WARNING: Invalid JSON from MLB Stats API for player {player_id}: {e}")
         return {}
 
     logs = {}
@@ -373,8 +366,8 @@ def get_last_recorded_date(data_file, season_start_date):
         df = pd.read_csv(data_file)
         df["date"] = pd.to_datetime(df["date"])
         return df["date"].max().to_pydatetime()
-    except Exception as e:
-        print(f"WARNING: Could not read {data_file}: {e}")
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, KeyError, ValueError) as e:
+        print(f"WARNING: Could not parse {data_file} ({type(e).__name__}: {e}), re-downloading from season start")
         return season_start_date
 
 
@@ -392,7 +385,9 @@ def update_database(data_file, start_date, end_date, base_url=None):
 
     if not all_games:
         print("No new games found.")
-        return
+        if os.path.exists(data_file):
+            return pd.read_csv(data_file, low_memory=False)
+        return None
 
     new_df = pd.DataFrame(all_games)
     new_df["date"] = pd.to_datetime(new_df["date"]).dt.strftime("%Y-%m-%d")

@@ -11,7 +11,6 @@ MLB Kalshi ticker format (confirmed from live markets):
     e.g. KXMLBTOTAL-26MAR271915KCATL-9  (over 9 total runs)
 """
 
-import re
 from datetime import datetime
 from typing import Optional
 

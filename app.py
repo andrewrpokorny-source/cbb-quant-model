@@ -6,7 +6,6 @@ import altair as alt
 import html as html_mod
 import predict
 import backtest
-import settle_bets
 import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
