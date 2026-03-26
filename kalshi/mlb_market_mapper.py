@@ -64,6 +64,34 @@ class MLBMarketMapper:
             ticker = m.get("ticker", "")
             self._index[ticker] = m
 
+    @staticmethod
+    def _parse_ticker_teams(ticker: str) -> tuple:
+        """Extract (away_abbr, home_abbr) from a Kalshi MLB ticker.
+
+        Ticker format: KXMLB{TYPE}-{YYMMMDDHHMMAWAYABBRHOMEABBR}-{YES_ABBR}
+        e.g. KXMLBGAME-26MAR282040DETSD-SD -> (DET, SD)
+
+        The teams portion starts after the 4-digit time (positions 9+) in the
+        middle segment. We match against known abbreviations to split correctly.
+        """
+        parts = ticker.split("-")
+        if len(parts) < 2:
+            return ("", "")
+        middle = parts[1]
+        # Skip date (YYMMMDD = 7 chars) + time (HHMM = 4 chars) = 11 chars
+        teams_str = middle[11:] if len(middle) > 11 else ""
+        if not teams_str:
+            return ("", "")
+
+        # Try all known abbreviations to find the split point
+        all_abbrs = sorted(MLB_ABBREVIATIONS.values(), key=len, reverse=True)
+        for away in all_abbrs:
+            if teams_str.startswith(away):
+                home = teams_str[len(away):]
+                if home in MLB_ABBREVIATIONS.values():
+                    return (away, home)
+        return ("", "")
+
     def find_market(
         self,
         home_team: str,
@@ -88,17 +116,17 @@ class MLBMarketMapper:
         if not home_abbr or not away_abbr:
             return None
 
-        date_str = game_date.strftime("%d%b%y").upper()
+        date_str = game_date.strftime("%y%b%d").upper()  # 26MAR28 format
         prefix = f"KXMLB{market_type}"
 
         for ticker, market in self._index.items():
             if not ticker.startswith(prefix):
                 continue
-            ticker_upper = ticker.upper()
-            # Check if both team abbreviations appear in the ticker
-            if home_abbr in ticker_upper and away_abbr in ticker_upper:
-                # Check date if encoded in ticker
-                if date_str in ticker_upper or not date_str:
+            # Parse teams from ticker structure (not substring matching)
+            t_away, t_home = self._parse_ticker_teams(ticker)
+            if t_away == away_abbr and t_home == home_abbr:
+                # Verify date matches
+                if date_str in ticker.upper():
                     return market
 
         # Fallback: match on title text

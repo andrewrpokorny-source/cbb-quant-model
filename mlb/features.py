@@ -198,6 +198,8 @@ def merge_opponent_stats(df):
             rename_map[src] = dest
 
     opp_lookup = df[req_cols].copy().rename(columns=rename_map)
+    # Deduplicate to prevent row explosion on doubleheader days
+    opp_lookup = opp_lookup.drop_duplicates(subset=["date", "opponent_name"], keep="last")
 
     df = pd.merge(
         df, opp_lookup,
@@ -228,6 +230,7 @@ def merge_opponent_stats(df):
 
     if len(opp_sp_req) > 2:
         opp_sp_lookup = df[opp_sp_req].copy().rename(columns=opp_sp_rename)
+        opp_sp_lookup = opp_sp_lookup.drop_duplicates(subset=["date", "opp_sp_name"], keep="last")
         df = pd.merge(
             df, opp_sp_lookup,
             left_on=["date", "opponent"],
