@@ -294,6 +294,83 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     return row
 
 
+def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
+                     prob_home_win, pick):
+    """Calculate edge against Kalshi GAME market prices.
+
+    For moneyline, each game has two GAME tickers (one YES per team).
+    We find the one matching our pick and calculate edge.
+    """
+    result = {
+        "Kalshi_Ticker": None,
+        "Kalshi_Side": None,
+        "Kalshi_Price": None,
+        "Kalshi_Fee": None,
+        "Edge": None,
+        "Edge_Pct": None,
+        "Rating": None,
+        "Units": None,
+    }
+
+    if not mapper or not client:
+        return result
+
+    try:
+        market = mapper.find_market(home_team, away_team, game_date, "GAME")
+        if not market:
+            return result
+
+        ticker = market.get("ticker", "")
+        yes_team = mapper.get_yes_team(ticker)
+
+        if not yes_team:
+            return result
+
+        prices = client.get_market_prices(ticker) if hasattr(client, 'get_market_prices') else client._extract_market_prices(market)
+        yes_price = prices.get("yes_price")
+        no_price = prices.get("no_price")
+
+        if yes_price is None:
+            return result
+
+        # Determine our side
+        if pick == yes_team:
+            our_price = yes_price
+            our_side = "YES"
+        else:
+            our_price = no_price if no_price else (100 - yes_price)
+            our_side = "NO"
+
+        if our_price is None or our_price <= 0:
+            return result
+
+        # Our model probability for the picked team
+        model_prob = prob_home_win if pick == home_team else (1.0 - prob_home_win)
+
+        # Implied probability from Kalshi price
+        implied_prob = kalshi_implied_prob(our_price)
+        fee = kalshi_fee_cents(our_price) / 100.0
+
+        edge = calculate_edge(model_prob, implied_prob)
+        rating_enum = get_rating(edge)
+        rating = rating_enum.value if hasattr(rating_enum, 'value') else str(rating_enum)
+        units = recommended_units(edge, implied_prob)
+
+        result["Kalshi_Ticker"] = ticker
+        result["Kalshi_Side"] = our_side
+        result["Kalshi_Price"] = our_price
+        result["Kalshi_Fee"] = round(fee, 4)
+        result["Edge"] = round(edge, 4)
+        result["Edge_Pct"] = f"{edge:.1%}"
+        result["Rating"] = rating
+        result["Units"] = units
+
+    except Exception as e:
+        print(f"      Kalshi edge error for {away_team} @ {home_team}: {e}")
+
+    return result
+
+
 def generate_predictions(league=LEAGUE):
     """Generate daily MLB predictions."""
     league = normalize_league(league)
@@ -322,6 +399,25 @@ def generate_predictions(league=LEAGUE):
     pitcher_stats = get_latest_pitcher_stats(df)
     known_teams = set(latest_stats.keys())
     print(f"   Stats loaded for {len(known_teams)} teams, {len(pitcher_stats)} pitchers")
+
+    # Fetch Kalshi markets
+    kalshi_client = None
+    kalshi_mapper = None
+    try:
+        api_key = os.environ.get("KALSHI_API_KEY")
+        if api_key:
+            from kalshi import KalshiClient, MLBMarketMapper
+            kalshi_client = KalshiClient(api_key)
+            markets = kalshi_client.get_mlb_markets()
+            if markets:
+                kalshi_mapper = MLBMarketMapper(markets)
+                print(f"   Kalshi: {len(markets)} MLB markets loaded")
+            else:
+                print("   Kalshi: no MLB markets found")
+        else:
+            print("   Kalshi: KALSHI_API_KEY not set, skipping")
+    except Exception as e:
+        print(f"   Kalshi: error loading markets: {e}")
 
     # Fetch schedule
     games = fetch_schedule(league)
@@ -356,8 +452,17 @@ def generate_predictions(league=LEAGUE):
         conf = max(prob_home_win, prob_away_win)
         pick = game["home_team"] if prob_home_win > 0.5 else game["away_team"]
 
+        # Kalshi edge calculation
+        kalshi_data = _get_kalshi_edge(
+            kalshi_client, kalshi_mapper,
+            game["home_team"], game["away_team"],
+            game["game_date"],
+            prob_home_win, pick,
+        )
+
         pred = {
-            "Date": game["game_date"].strftime("%Y-%m-%d %H:%M"),
+            "Bet_Type": "game",
+            "Date/Time": game["game_date"].strftime("%Y-%m-%d %H:%M"),
             "Matchup": f"{game['away_team']} @ {game['home_team']}",
             "Home_SP": game["home_sp"],
             "Away_SP": game["away_sp"],
@@ -366,13 +471,18 @@ def generate_predictions(league=LEAGUE):
             "Prob_Away": round(prob_away_win, 3),
             "Conf": round(conf, 3),
             "Venue": game["venue"],
+            **kalshi_data,
         }
         predictions.append(pred)
 
+        edge_str = ""
+        if kalshi_data.get("Edge") is not None:
+            edge_str = f" | Edge: {kalshi_data['Edge']:.1%} ({kalshi_data['Rating']})"
         label = "HOME" if prob_home_win > 0.5 else "AWAY"
         print(f"   {game['away_abbr']} @ {game['home_abbr']}: "
               f"{label} {conf:.1%} "
-              f"(SP: {game['away_sp']} vs {game['home_sp']})")
+              f"(SP: {game['away_sp']} vs {game['home_sp']})"
+              f"{edge_str}")
 
     if predictions:
         pred_df = pd.DataFrame(predictions)

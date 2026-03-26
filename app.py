@@ -468,6 +468,9 @@ _KALSHI_SERIES_SLUGS = {
     "KXNCAAMBGAME": "mens-college-basketball-mens-game",
     "KXNCAAWBSPREAD": "womens-college-basketball-spread",
     "KXNCAAWBGAME": "college-basketball-womens-game",
+    "KXMLBGAME": "baseball-game",
+    "KXMLBSPREAD": "baseball-spread",
+    "KXMLBTOTAL": "baseball-total",
 }
 
 
@@ -899,9 +902,10 @@ _render_spread_bets(col_spread_w, "womens")
 st.markdown("<hr>", unsafe_allow_html=True)
 
 st.markdown('<div class="section-title">Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
-col_game_m, col_game_w = st.columns(2)
+col_game_m, col_game_w, col_game_mlb = st.columns(3)
 _render_game_bets(col_game_m, "mens")
 _render_game_bets(col_game_w, "womens")
+_render_game_bets(col_game_mlb, "mlb")
 
 
 # ==========================================
@@ -1142,6 +1146,40 @@ with col_perf:
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
 
+def _render_mlb_slate(game_df, lg):
+    """Render the MLB full slate with moneyline picks and Kalshi links."""
+    show_filter = st.selectbox(
+        "Show",
+        ["All Games", "Value Bets Only"],
+        label_visibility="collapsed",
+        key=f"slate_filter_{lg}",
+    )
+
+    if show_filter == "Value Bets Only" and "Rating" in game_df.columns:
+        display_df = game_df[game_df["Rating"].isin(VALUE_RATINGS)].copy()
+    else:
+        display_df = game_df.copy()
+
+    if display_df.empty:
+        st.caption("No matching picks.")
+        return
+
+    if "Conf" in display_df.columns:
+        display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+
+    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
+                 "Confidence", "Rating", "Edge_Pct", "Units",
+                 "Kalshi_Side", "Kalshi_Price"]
+    show_cols = [c for c in show_cols if c in display_df.columns]
+
+    if "Edge_Pct" in display_df.columns:
+        sort_col = "_edge_sort"
+        display_df[sort_col] = _parse_edge(display_df["Edge_Pct"])
+        display_df = display_df.sort_values(sort_col, ascending=False).drop(columns=[sort_col])
+
+    st.dataframe(display_df[show_cols], use_container_width=True, hide_index=True)
+
+
 slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
 for i, lg in enumerate(LEAGUES):
@@ -1149,8 +1187,13 @@ for i, lg in enumerate(LEAGUES):
         spread_df = league_data[lg]["spread_df"]
         game_df = league_data[lg]["game_df"]
 
+        # For MLB, all predictions are game type (moneyline)
+        if spread_df.empty and not game_df.empty:
+            _render_mlb_slate(game_df, lg)
+            continue
+
         if spread_df.empty:
-            st.caption("No spread picks on this slate.")
+            st.caption("No picks on this slate.")
             continue
 
         show_filter = st.selectbox(
