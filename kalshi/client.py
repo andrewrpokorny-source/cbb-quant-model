@@ -435,6 +435,76 @@ class KalshiClient:
 
         return all_trades
 
+    def get_positions(
+        self,
+        settlement_status: str = "unsettled",
+    ) -> list[dict]:
+        """Fetch positions from the user's portfolio.
+
+        Paginates through all results (API max 200 per page).
+
+        Args:
+            settlement_status: Filter by settlement status (e.g. 'unsettled', 'settled').
+
+        Returns:
+            List of position dicts from the API.
+        """
+        all_positions: list[dict] = []
+        cursor: Optional[str] = None
+
+        while True:
+            params: dict = {"limit": 200, "settlement_status": settlement_status}
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/portfolio/positions", params)
+            if not result:
+                raise RuntimeError("Kalshi API request failed fetching positions")
+            positions = result.get("market_positions", [])
+            all_positions.extend(positions)
+
+            cursor = result.get("cursor")
+            if not cursor or len(positions) < 200:
+                break
+
+        return all_positions
+
+    def get_fills(
+        self,
+        ticker: Optional[str] = None,
+    ) -> list[dict]:
+        """Fetch trade fills from the user's portfolio.
+
+        Paginates through all results (API max 200 per page).
+
+        Args:
+            ticker: Filter to a specific market ticker.
+
+        Returns:
+            List of fill dicts from the API.
+        """
+        all_fills: list[dict] = []
+        cursor: Optional[str] = None
+
+        while True:
+            params: dict = {"limit": 200}
+            if ticker:
+                params["ticker"] = ticker
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._get("/portfolio/fills", params)
+            if not result:
+                raise RuntimeError("Kalshi API request failed fetching fills")
+            fills = result.get("fills", [])
+            all_fills.extend(fills)
+
+            cursor = result.get("cursor")
+            if not cursor or len(fills) < 200:
+                break
+
+        return all_fills
+
     def get_settlements(
         self,
         ticker: Optional[str] = None,

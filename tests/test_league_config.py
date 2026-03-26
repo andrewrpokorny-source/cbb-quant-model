@@ -27,6 +27,8 @@ def test_artifact_paths_include_womens_files(tmp_path):
     assert paths["odds_archive_file"].endswith("odds_history.csv")
     assert paths["predictions_archive_prefix"] == "predictions_wbb"
     assert paths["torvik_snapshot_file"] is None
+    assert paths["womens_net_snapshot_file"].endswith("womens_net_snapshots.csv")
+    assert paths["womens_net_map_file"].endswith("womens_net_team_map.csv")
 
 
 def test_artifact_paths_include_torvik_files_for_mens(tmp_path):

@@ -43,6 +43,7 @@ from telegram.ext import (
 from ocrmac import ocrmac
 
 from betting import VALUE_RATINGS
+from kalshi.market_mapper import normalize_team_name
 from settle_bets import settle_pending_bets
 from settle_kalshi import settle_to_csv
 
@@ -1114,6 +1115,167 @@ def _resolve_game_date(team_name: str) -> str:
     return ""
 
 
+def find_unlogged_strong_games(target_date) -> list[dict]:
+    """Find STRONG-rated games on target_date that have no FanDuel/DraftKings bet logged.
+
+    Scans prediction archives for both men's and women's leagues.
+    Returns list of dicts with matchup, pick, edge, units, league info.
+    """
+    target_mm = target_date.month
+    target_dd = target_date.day
+
+    def _archive_sort_key_local(path: str) -> str:
+        match = re.search(r"(\d{8})", os.path.basename(path))
+        return match.group(1) if match else ""
+
+    # Collect STRONG games from prediction archives, keyed by matchup to deduplicate
+    strong_games = {}
+
+    league_prefixes = [
+        ("predictions", "mens"),
+        ("predictions_wbb", "womens"),
+    ]
+
+    for prefix, league in league_prefixes:
+        archive_files = glob.glob(os.path.join(BASE_DIR, f"{prefix}_*.csv"))
+        # Exclude wbb files from men's glob (predictions_*.csv also matches predictions_wbb_*)
+        if prefix == "predictions":
+            archive_files = [f for f in archive_files if "_wbb_" not in os.path.basename(f)]
+        archive_files.sort(key=_archive_sort_key_local, reverse=True)
+
+        for fpath in archive_files[:7]:
+            try:
+                df = pd.read_csv(fpath)
+            except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+                logger.warning("Skipping unreadable prediction archive: %s", fpath, exc_info=True)
+                continue
+            if "Date/Time" not in df.columns:
+                continue
+
+            for _, row in df.iterrows():
+                dt_str = str(row.get("Date/Time", "")).strip()
+                m = re.match(r"(\d{1,2})/(\d{1,2})", dt_str)
+                if not m:
+                    continue
+                month, day = int(m.group(1)), int(m.group(2))
+                if (month, day) != (target_mm, target_dd):
+                    continue
+
+                std_rating = str(row.get("Std_Rating", "")).strip()
+                kalshi_rating = str(row.get("Rating", "")).strip()
+                if std_rating != "STRONG" and kalshi_rating != "STRONG":
+                    continue
+
+                matchup = str(row.get("Matchup", "")).strip()
+                matchup_key = matchup.upper()
+
+                new_entry = {
+                    "matchup": matchup,
+                    "pick": str(row.get("Pick", "")),
+                    "std_edge_pct": str(row.get("Std_Edge_Pct", "")),
+                    "std_units": float(row.get("Std_Units", 0) or 0),
+                    "league": league,
+                    "bet_type": str(row.get("Bet_Type", "spread")),
+                }
+
+                # Prefer rows with actual Std edge data (spread rows over Kalshi game rows)
+                existing = strong_games.get(matchup_key)
+                if existing and existing["std_units"] > 0 and new_entry["std_units"] == 0:
+                    continue
+
+                strong_games[matchup_key] = new_entry
+
+    if not strong_games:
+        return []
+
+    # Check betting_history.csv for already-logged FanDuel/DraftKings bets
+    target_str = target_date.strftime("%Y-%m-%d")
+    if not os.path.exists(BETTING_HISTORY):
+        return list(strong_games.values())
+
+    try:
+        hist = pd.read_csv(BETTING_HISTORY)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError):
+        logger.warning("Could not read %s -- treating all STRONG games as unlogged", BETTING_HISTORY, exc_info=True)
+        return list(strong_games.values())
+
+    logged = hist[
+        (hist["date"] == target_str)
+        & (hist["platform"].isin(["FanDuel", "DraftKings"]))
+    ]
+
+    if logged.empty:
+        return list(strong_games.values())
+
+    # Build list of normalized team pairs from logged games
+    logged_team_pairs = []
+    for game_str in logged["game"].dropna().unique():
+        parts = re.split(r"\s+vs\s+", str(game_str), flags=re.IGNORECASE)
+        if len(parts) == 2:
+            logged_team_pairs.append(
+                tuple(normalize_team_name(p.strip()).upper() for p in parts)
+            )
+
+    def _teams_match(pred_team: str, logged_team: str) -> bool:
+        """Check if two normalized team names refer to the same school."""
+        if pred_team == logged_team:
+            return True
+        # One may be a substring of the other (e.g. "Tulsa" vs "Tulsa Golden Hurricane")
+        return pred_team in logged_team or logged_team in pred_team
+
+    unlogged = []
+    for info in strong_games.values():
+        parts = re.split(r"\s+@\s+", info["matchup"])
+        if len(parts) != 2:
+            unlogged.append(info)
+            continue
+
+        away_norm = normalize_team_name(parts[0].strip()).upper()
+        home_norm = normalize_team_name(parts[1].strip()).upper()
+
+        found = any(
+            (_teams_match(away_norm, t1) and _teams_match(home_norm, t2))
+            or (_teams_match(away_norm, t2) and _teams_match(home_norm, t1))
+            for t1, t2 in logged_team_pairs
+        )
+        if not found:
+            unlogged.append(info)
+
+    return unlogged
+
+
+async def _reminder_check_unlogged(context) -> None:
+    """Daily job: remind user about unlogged STRONG bets from yesterday."""
+    eastern = pytz.timezone("US/Eastern")
+    yesterday = (datetime.now(eastern) - timedelta(days=1)).date()
+
+    try:
+        unlogged = find_unlogged_strong_games(yesterday)
+    except Exception:
+        logger.exception("Error checking for unlogged STRONG games")
+        return
+
+    if not unlogged:
+        return
+
+    lines = [f"Unlogged STRONG bets from {yesterday.strftime('%m/%d')}:\n"]
+    for g in unlogged:
+        league_tag = "[W] " if g["league"] == "womens" else ""
+        lines.append(
+            f"  {league_tag}{g['matchup']}\n"
+            f"    Pick: {g['pick']}  |  {g['std_edge_pct']}  |  {g['std_units']:.1f}U"
+        )
+    lines.append("\nDid you place any FanDuel/DraftKings bets on these? Send a bet slip or log manually.")
+
+    msg = "\n".join(lines)
+
+    for user_id in ALLOWED_USER_IDS:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=msg)
+        except Exception:
+            logger.exception("Failed to send reminder to user %d", user_id)
+
+
 def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     """Parse a single FanDuel settled card from raw OCR text."""
     # 1. Extract BET ID (before cleaning)
@@ -1332,6 +1494,24 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     # 7. Result-specific payout override
     if result == "win":
+        # Sanity check: a winning payout must exceed the wager. If OCR
+        # produced a bogus second dollar amount, recalculate from odds.
+        if payout <= wager and odds and wager > 0:
+            try:
+                odds_val = int(float(odds))
+                if odds_val < 0:
+                    calc_profit = wager * 100.0 / abs(odds_val)
+                else:
+                    calc_profit = wager * odds_val / 100.0
+                payout = round(wager + calc_profit, 2)
+                logger.warning(
+                    "FD settled card: OCR payout ($%.2f) <= wager ($%.2f), "
+                    "recalculated from odds %s -> $%.2f (bet_id=%s)",
+                    raw_amounts[1] if len(raw_amounts) >= 2 else 0.0,
+                    wager, odds, payout, bet_id,
+                )
+            except (ValueError, TypeError):
+                pass
         profit = round(payout - wager, 2)
     elif result == "void":
         payout = wager  # void = wager refunded; override raw $0.00 from OCR
@@ -1965,41 +2145,39 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 1) Settle pending (FanDuel etc.) bets via score lookup
         summary = settle_pending_bets()
 
-        msg_parts = [
-            f"Pending settled: {summary['settled']}",
-            f"Still pending: {summary['still_pending']}",
-        ]
-        if summary["details"]:
-            msg_parts.append("")
+        msg_parts = []
+        if summary["settled"]:
+            msg_parts.append(f"Settled {summary['settled']}:")
             msg_parts.extend(summary["details"][:20])
+        if summary["still_pending"]:
+            msg_parts.append(f"Still pending: {summary['still_pending']}")
 
         # 2) Import settled Kalshi positions (uses persisted sync cursor)
         try:
             kalshi_result = settle_to_csv()
             logged = kalshi_result["logged"]
             kalshi_settled = kalshi_result["settled"]
-            skipped = kalshi_result["skipped"]
             if kalshi_result["error"]:
-                msg_parts.append(f"\nKalshi: {kalshi_result['error']}")
+                msg_parts.append(f"Kalshi: {kalshi_result['error']}")
             elif logged or kalshi_settled:
                 parts = []
                 if logged:
-                    profit = sum(float(r["profit"]) for r in logged)
+                    total_profit = sum(float(r["profit"]) for r in logged)
                     wins = sum(1 for r in logged if r["result"] == "win")
                     losses = sum(1 for r in logged if r["result"] == "loss")
-                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {profit:+.2f}U)")
+                    parts.append(f"+{len(logged)} new ({wins}W-{losses}L, {total_profit:+.2f}U)")
                 if kalshi_settled:
                     parts.append(f"{kalshi_settled} pending settled")
-                msg_parts.append(f"\nKalshi: {', '.join(parts)}")
-            elif skipped:
-                msg_parts.append(f"\nKalshi: all {skipped} already logged")
-            else:
-                msg_parts.append("\nKalshi: no recent settlements")
+                msg_parts.append(f"Kalshi: {', '.join(parts)}")
+                for r in logged:
+                    icon = {"win": "W", "loss": "L"}.get(r.get("result", ""), "?")
+                    p = float(r.get("profit", 0))
+                    msg_parts.append(f"  [{icon}] {r.get('line', '?')} ({r.get('game', '?')}) {p:+.2f}U")
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
-            msg_parts.append("\nKalshi: fetch failed")
+            msg_parts.append("Kalshi: fetch failed")
 
-        await update.message.reply_text("\n".join(msg_parts))
+        await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.")
 
 
 @authorized_only
@@ -2470,6 +2648,17 @@ def _acquire_instance_lock():
     return lock_fh
 
 
+def _register_scheduled_jobs(job_queue):
+    """Register scheduled jobs on the bot's job queue."""
+    eastern = pytz.timezone("US/Eastern")
+    job_queue.run_daily(
+        _reminder_check_unlogged,
+        time=datetime.strptime("06:00", "%H:%M").time().replace(tzinfo=eastern),
+        job_kwargs={"misfire_grace_time": None},
+    )
+    logger.info("Scheduled daily unlogged-bet reminder at 6:00 AM ET")
+
+
 def main():
     """Start the Telegram bot."""
     if not TELEGRAM_BOT_TOKEN:
@@ -2493,6 +2682,15 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Scheduled jobs
+    if app.job_queue is not None:
+        _register_scheduled_jobs(app.job_queue)
+    else:
+        logger.warning(
+            "JobQueue not available -- install python-telegram-bot[job-queue] "
+            "for scheduled reminders"
+        )
 
     print("Bot started. Send /start in Telegram to begin.")
     try:

@@ -22,23 +22,19 @@ HIGH_CONF_THRESHOLD = 0.53
 if __name__ == "__main__":
     sys.modules.setdefault("model", sys.modules[__name__])
 
-FEATURES = [
+WOMENS_FEATURES = [
     'is_home',
     'is_neutral',
-    'spread',
     'rest_days',
-    'diff_eFG',
-    'diff_Rebound',
-    'diff_TO',
-    'momentum_gap',
-    'roll5_cover_margin',
     'prev_games_played',
     'opp_win_pct',
     'prev_blowout_rate',
     'prev_roll5_margin',
     'prev_volatility',
-    'spread_abs',
-    'spread_squared',
+    'prev_win_pct',
+    'distance_advantage',
+    'prev_season_team_score',
+    'prev_roll3_team_score',
 ]
 MENS_FEATURES = [
     'is_home',
@@ -91,14 +87,15 @@ MLB_FEATURES = [
     'sp_roll_era_diff',
     'prev_volatility',
 ]
+FEATURES = MENS_FEATURES
 FEATURES_BY_LEAGUE = {
     'mens': MENS_FEATURES,
-    'womens': FEATURES,
+    'womens': WOMENS_FEATURES,
     'mlb': MLB_FEATURES,
 }
 CALIBRATION_BY_LEAGUE = {
     'mens': False,
-    'womens': True,
+    'womens': False,
     'mlb': True,
 }
 TARGET_BY_LEAGUE = {
@@ -193,14 +190,12 @@ TimeAwareCalibratedGBM.__module__ = "model"
 
 
 def _build_game_keys(df_model):
-    return (
-        df_model["_model_date"].dt.strftime("%Y-%m-%d")
-        + "::"
-        + df_model[["team", "opponent"]].fillna("").apply(
-            lambda row: "||".join(sorted(row.tolist())),
-            axis=1,
-        )
+    pair_keys = (
+        df_model.loc[:, ["team", "opponent"]]
+        .fillna("")
+        .apply(lambda row: "||".join(sorted(map(str, row.tolist()))), axis=1)
     )
+    return df_model["_model_date"].dt.strftime("%Y-%m-%d") + "::" + pair_keys
 
 
 def _home_row_mask(df_model):
@@ -462,8 +457,7 @@ def train_and_evaluate(league="mens"):
     uncal_acc = accuracy_score(y_test, uncal_preds)
     uncal_brier = brier_score_loss(y_test, uncal_probs)
 
-    # 8. Train CALIBRATED model using cross-validation
-    # CalibratedClassifierCV with cv=5 will handle calibration internally
+    # 8. Train the calibrated walk-forward production model.
     calibrated_clf = TimeAwareCalibratedGBM(
         n_estimators=150,
         learning_rate=0.05,

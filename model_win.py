@@ -18,22 +18,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # Works even when no market spread is available.
-FEATURES_NO_LINE = [
+WOMENS_FEATURES_NO_LINE = [
+    "is_neutral",
     "rest_days",
-    "diff_eFG",
-    "diff_Rebound",
-    "diff_TO",
-    "momentum_gap",
-    "roll5_cover_margin",
     "prev_games_played",
     "opp_win_pct",
     "prev_blowout_rate",
     "prev_roll5_margin",
     "prev_volatility",
     "prev_win_pct",
-    "prev_season_off_rating",
-    "opp_season_off_rating",
-    "off_rating_gap",
+    "distance_advantage",
+    "prev_season_team_score",
+    "prev_roll3_team_score",
 ]
 MENS_FEATURES_NO_LINE = [
     "is_neutral",
@@ -47,11 +43,11 @@ MENS_FEATURES_NO_LINE = [
 ]
 WIN_FEATURES_NO_LINE_BY_LEAGUE = {
     "mens": MENS_FEATURES_NO_LINE,
-    "womens": FEATURES_NO_LINE,
+    "womens": WOMENS_FEATURES_NO_LINE,
 }
 
 # Adds market context where available.
-FEATURES_WITH_LINE = FEATURES_NO_LINE + [
+WOMENS_FEATURES_WITH_LINE = WOMENS_FEATURES_NO_LINE + [
     "spread",
     "spread_abs",
     "spread_squared",
@@ -63,7 +59,7 @@ MENS_FEATURES_WITH_LINE = MENS_FEATURES_NO_LINE + [
 ]
 WIN_FEATURES_WITH_LINE_BY_LEAGUE = {
     "mens": MENS_FEATURES_WITH_LINE,
-    "womens": FEATURES_WITH_LINE,
+    "womens": WOMENS_FEATURES_WITH_LINE,
 }
 
 
@@ -81,6 +77,11 @@ DEFAULT_FILL = {
     "prev_roll5_margin": 0.0,
     "prev_volatility": 10.0,
     "prev_win_pct": 0.5,
+    "distance_advantage": 0.0,
+    "prev_season_team_score": 70.0,
+    "prev_roll3_team_score": 70.0,
+    "diff_prev_season_team_score": 0.0,
+    "diff_prev_roll3_team_score": 0.0,
     "prev_season_off_rating": 100.0,
     "opp_season_off_rating": 100.0,
     "off_rating_gap": 0.0,
@@ -305,13 +306,17 @@ def predict_home_win_prob(
 
     if use_with_line:
         model = bundle["model_with_line"]
-        features = bundle.get("features_with_line", FEATURES_WITH_LINE)
+        features = bundle.get("features_with_line")
+        if not features:
+            raise ValueError("Win model bundle missing features_with_line.")
         variant = "with_line"
     else:
         model = bundle.get("model_no_line")
         if model is None:
             raise ValueError("No available no-line model in bundle.")
-        features = bundle.get("features_no_line", FEATURES_NO_LINE)
+        features = bundle.get("features_no_line")
+        if not features:
+            raise ValueError("Win model bundle missing features_no_line.")
         variant = "no_line"
 
     frame = pd.DataFrame([row_data])
