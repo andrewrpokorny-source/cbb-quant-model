@@ -16,6 +16,10 @@ performance_log_wbb.csv
 daily_predictions_wbb.csv
 wbb_training_data_processed.csv
 wbb_model_v2.pkl
+mlb_training_data_processed.csv
+mlb_win_model_v1.pkl
+daily_predictions_mlb.csv
+performance_log_mlb.csv
 odds_history.csv
 kalshi_game_history.csv
 telegram_bot.log
