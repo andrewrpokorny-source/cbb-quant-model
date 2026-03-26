@@ -47,7 +47,11 @@ def clean_stale_data(df):
 def calculate_rolling_stats(df):
     """Compute rolling and season stats with honest lag (.shift(1))."""
     print("   -> Generating rolling averages (honest lag)...")
-    df = df.sort_values(["team", "date"]).reset_index(drop=True)
+    # Sort by game_time too so doubleheader games are ordered correctly
+    sort_cols = ["team", "date"]
+    if "game_time" in df.columns:
+        sort_cols.append("game_time")
+    df = df.sort_values(sort_cols).reset_index(drop=True)
 
     # Ensure numeric types
     for col in ["team_score", "opp_score", "team_hits", "opp_hits",
@@ -138,7 +142,10 @@ def calculate_pitcher_rolling_stats(df):
             df[col] = float("nan")
         return df
 
-    df = df.sort_values(["starting_pitcher", "date"]).reset_index(drop=True)
+    sort_cols = ["starting_pitcher", "date"]
+    if "game_time" in df.columns:
+        sort_cols.append("game_time")
+    df = df.sort_values(sort_cols).reset_index(drop=True)
 
     # Cumulative sums per pitcher for computing rolling rates
     grp = df.groupby("starting_pitcher")
@@ -168,8 +175,11 @@ def calculate_pitcher_rolling_stats(df):
     temp_cols = [c for c in df.columns if c.startswith("_roll_") or c.startswith("_sp_roll_")]
     df = df.drop(columns=temp_cols)
 
-    # Re-sort by team+date for the rest of the pipeline
-    df = df.sort_values(["team", "date"]).reset_index(drop=True)
+    # Re-sort by team+date+time for the rest of the pipeline
+    resort_cols = ["team", "date"]
+    if "game_time" in df.columns:
+        resort_cols.append("game_time")
+    df = df.sort_values(resort_cols).reset_index(drop=True)
 
     matched = df["sp_roll_era"].notna().sum()
     print(f"      Pitcher rolling stats computed: {matched}/{len(df)} rows with prior start data")
@@ -190,7 +200,19 @@ def merge_opponent_stats(df):
         "prev_roll10_win_pct": "opp_prev_roll10_win_pct",
     }
 
+    # Use game_time in the join key when available to handle doubleheaders
+    has_game_time = "game_time" in df.columns
+    join_keys_left = ["date", "opponent"]
+    join_keys_right = ["date", "opponent_name"]
+    dedup_keys = ["date", "opponent_name"]
+    if has_game_time:
+        join_keys_left.append("game_time")
+        join_keys_right.append("game_time")
+        dedup_keys.append("game_time")
+
     req_cols = ["date", "team"]
+    if has_game_time:
+        req_cols.append("game_time")
     rename_map = {"team": "opponent_name"}
     for src, dest in opp_cols.items():
         if src in df.columns:
@@ -198,13 +220,12 @@ def merge_opponent_stats(df):
             rename_map[src] = dest
 
     opp_lookup = df[req_cols].copy().rename(columns=rename_map)
-    # Deduplicate to prevent row explosion on doubleheader days
-    opp_lookup = opp_lookup.drop_duplicates(subset=["date", "opponent_name"], keep="last")
+    opp_lookup = opp_lookup.drop_duplicates(subset=dedup_keys, keep="last")
 
     df = pd.merge(
         df, opp_lookup,
-        left_on=["date", "opponent"],
-        right_on=["date", "opponent_name"],
+        left_on=join_keys_left,
+        right_on=join_keys_right,
         how="left",
         suffixes=("", "_dupe"),
     )
@@ -222,19 +243,30 @@ def merge_opponent_stats(df):
         "sp_roll_ip": "opp_sp_roll_ip",
     }
     opp_sp_req = ["date", "team"]
+    if has_game_time:
+        opp_sp_req.append("game_time")
     opp_sp_rename = {"team": "opp_sp_name"}
     for src, dest in sp_cols.items():
         if src in df.columns:
             opp_sp_req.append(src)
             opp_sp_rename[src] = dest
 
-    if len(opp_sp_req) > 2:
+    min_cols = 3 if has_game_time else 2
+    if len(opp_sp_req) > min_cols:
         opp_sp_lookup = df[opp_sp_req].copy().rename(columns=opp_sp_rename)
-        opp_sp_lookup = opp_sp_lookup.drop_duplicates(subset=["date", "opp_sp_name"], keep="last")
+        sp_dedup_keys = ["date", "opp_sp_name"]
+        if has_game_time:
+            sp_dedup_keys.append("game_time")
+        opp_sp_lookup = opp_sp_lookup.drop_duplicates(subset=sp_dedup_keys, keep="last")
+        sp_left = ["date", "opponent"]
+        sp_right = ["date", "opp_sp_name"]
+        if has_game_time:
+            sp_left.append("game_time")
+            sp_right.append("game_time")
         df = pd.merge(
             df, opp_sp_lookup,
-            left_on=["date", "opponent"],
-            right_on=["date", "opp_sp_name"],
+            left_on=sp_left,
+            right_on=sp_right,
             how="left",
             suffixes=("", "_dupe2"),
         )

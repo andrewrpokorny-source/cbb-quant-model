@@ -120,14 +120,15 @@ class TestPitcherRollingStats:
 
 
 class TestDoubleheaderHandling:
-    """Verify merge doesn't duplicate rows on doubleheader days."""
+    """Verify merge handles doubleheader days correctly."""
 
     def test_merge_opponent_stats_no_row_explosion(self):
         # Two games on the same date between the same teams (doubleheader)
         rows = []
-        for game_num in range(2):
+        for game_num, time in enumerate(["13:05", "19:05"]):
             rows.append({
-                "date": "2025-04-15", "team": "TeamA", "opponent": "TeamB",
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamA", "opponent": "TeamB",
                 "is_home": 1, "team_score": 5 + game_num, "opp_score": 3,
                 "prev_win_pct": 0.6, "prev_roll10_runs_per_game": 4.5,
                 "prev_roll10_runs_allowed": 3.5,
@@ -136,7 +137,8 @@ class TestDoubleheaderHandling:
                 "prev_roll10_win_pct": 0.55,
             })
             rows.append({
-                "date": "2025-04-15", "team": "TeamB", "opponent": "TeamA",
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamB", "opponent": "TeamA",
                 "is_home": 0, "team_score": 3, "opp_score": 5 + game_num,
                 "prev_win_pct": 0.4, "prev_roll10_runs_per_game": 3.5,
                 "prev_roll10_runs_allowed": 4.5,
@@ -148,6 +150,41 @@ class TestDoubleheaderHandling:
         original_len = len(df)
         merged = merge_opponent_stats(df)
         assert len(merged) == original_len
+
+    def test_each_doubleheader_game_gets_own_opponent_stats(self):
+        """Game 1 and game 2 of a doubleheader should get distinct opp stats."""
+        rows = []
+        for game_num, time in enumerate(["13:05", "19:05"]):
+            win_pct = 0.5 + game_num * 0.1  # 0.5 for game 1, 0.6 for game 2
+            rows.append({
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamA", "opponent": "TeamB",
+                "is_home": 1, "team_score": 5, "opp_score": 3,
+                "prev_win_pct": win_pct,
+                "prev_roll10_runs_per_game": 4.0 + game_num,
+                "prev_roll10_runs_allowed": 3.0,
+                "prev_season_runs_per_game": 4.0,
+                "prev_season_runs_allowed": 3.0,
+                "prev_roll10_win_pct": win_pct,
+            })
+            rows.append({
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamB", "opponent": "TeamA",
+                "is_home": 0, "team_score": 3, "opp_score": 5,
+                "prev_win_pct": 0.4 + game_num * 0.1,
+                "prev_roll10_runs_per_game": 3.0 + game_num,
+                "prev_roll10_runs_allowed": 4.0,
+                "prev_season_runs_per_game": 3.0,
+                "prev_season_runs_allowed": 4.0,
+                "prev_roll10_win_pct": 0.4 + game_num * 0.1,
+            })
+        df = pd.DataFrame(rows)
+        merged = merge_opponent_stats(df)
+        # TeamA's game 1 row should get TeamB's game-1 opp_win_pct (0.4)
+        # TeamA's game 2 row should get TeamB's game-2 opp_win_pct (0.5)
+        team_a = merged[merged["team"] == "TeamA"].sort_values("game_time")
+        assert team_a.iloc[0]["opp_win_pct"] == pytest.approx(0.4)
+        assert team_a.iloc[1]["opp_win_pct"] == pytest.approx(0.5)
 
 
 class TestDoubleheaderDataDedup:
@@ -212,6 +249,61 @@ class TestComputeDifferentials:
         assert result["sp_era_diff"].iloc[0] == pytest.approx(2.0)
         assert result["roll10_rpg_diff"].iloc[0] == pytest.approx(0.5)
         assert result["roll10_ra_diff"].iloc[0] == pytest.approx(1.0)
+
+
+class TestDoubleheaderRollingOrder:
+    """Verify rolling stats respect game_time ordering within same day."""
+
+    def test_earlier_game_does_not_see_later_game(self):
+        rows = []
+        # Day 1: single game
+        rows.append({
+            "date": "2025-04-14", "game_time": "19:00",
+            "team": "TeamA", "team_abbr": "TA", "opponent": "TeamC",
+            "opp_abbr": "TC", "location": "Home", "is_home": 1,
+            "team_score": 10, "opp_score": 0,
+            "starting_pitcher": "Ace", "sp_era": 3.0,
+            "opp_starting_pitcher": "Other", "opp_sp_era": 4.0,
+            "sp_espn_id": "", "opp_sp_espn_id": "",
+            "venue_name": "", "venue_city": "", "venue_state": "",
+            "venue_indoor": 0, "moneyline": float("nan"),
+            "run_line": float("nan"), "total_line": float("nan"),
+            "team_hits": 10, "team_errors": 0,
+            "opp_hits": 3, "opp_errors": 0,
+            "opp_runs": float("nan"), "team_runs": float("nan"),
+        })
+        # Day 2: doubleheader -- game 1 at 13:05, game 2 at 19:05
+        for time, score in [("13:05", 2), ("19:05", 8)]:
+            rows.append({
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamA", "team_abbr": "TA", "opponent": "TeamB",
+                "opp_abbr": "TB", "location": "Home", "is_home": 1,
+                "team_score": score, "opp_score": 3,
+                "starting_pitcher": "Ace", "sp_era": 3.0,
+                "opp_starting_pitcher": "Other", "opp_sp_era": 4.0,
+                "sp_espn_id": "", "opp_sp_espn_id": "",
+                "venue_name": "", "venue_city": "", "venue_state": "",
+                "venue_indoor": 0, "moneyline": float("nan"),
+                "run_line": float("nan"), "total_line": float("nan"),
+                "team_hits": 8, "team_errors": 0,
+                "opp_hits": 5, "opp_errors": 0,
+                "opp_runs": float("nan"), "team_runs": float("nan"),
+            })
+        df = pd.DataFrame(rows)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values(["date", "game_time"])
+
+        # The 13:05 game's prev_season_runs_per_game should only reflect day 1 (score=10)
+        game1_prev = team_a.iloc[1]["prev_season_runs_per_game"]
+        assert game1_prev == pytest.approx(10.0), (
+            f"13:05 game saw runs_per_game={game1_prev}, expected 10.0 (day 1 only)"
+        )
+
+        # The 19:05 game should reflect day 1 + the 13:05 game: (10+2)/2 = 6.0
+        game2_prev = team_a.iloc[2]["prev_season_runs_per_game"]
+        assert game2_prev == pytest.approx(6.0), (
+            f"19:05 game saw runs_per_game={game2_prev}, expected 6.0 (day1 + game1)"
+        )
 
 
 class TestRestDays:
