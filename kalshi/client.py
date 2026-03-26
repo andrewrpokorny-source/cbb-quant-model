@@ -274,6 +274,30 @@ class KalshiClient:
 
         return markets
 
+    def get_mlb_markets(self) -> list:
+        """Get all open MLB markets from Kalshi.
+
+        Returns:
+            List of Kalshi market dictionaries for MLB game/spread/total markets.
+        """
+        series_tickers = [
+            "KXMLBGAME",
+            "KXMLBSPREAD",
+            "KXMLBTOTAL",
+        ]
+
+        markets = []
+        for series in series_tickers:
+            result = self.search_markets(series_ticker=series, status="open", limit=200)
+            if result:
+                markets.extend(result)
+
+        if not markets:
+            all_markets = self.search_markets(status="open", limit=1000)
+            markets = [m for m in all_markets if m.get("ticker", "").startswith("KXMLB")]
+
+        return markets
+
     def get_market_prices(self, ticker: str) -> dict:
         """
         Get current Yes/No prices for a market.

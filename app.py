@@ -7,7 +7,7 @@ import altair as alt
 import html as html_mod
 import predict
 import backtest
-import settle_bets
+import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
@@ -24,9 +24,9 @@ from dashboard_helpers import filter_recent_kalshi
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 
-LEAGUES = ["mens", "womens"]
+LEAGUES = ["mens", "womens", "mlb"]
 
-st.set_page_config(page_title="CBB Quant Edge", layout="wide")
+st.set_page_config(page_title="Quant Edge", layout="wide")
 
 # --- CUSTOM STYLING ---
 st.markdown("""
@@ -76,8 +76,9 @@ st.markdown("""
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background: var(--green-900);
+    background: #f2f1ec;
     width: 240px !important;
+    border-right: 1px solid #e0dfd8;
 }
 
 section[data-testid="stSidebar"] .block-container {
@@ -91,21 +92,45 @@ section[data-testid="stSidebar"] span:not([data-testid="stIconMaterial"]),
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] .stMarkdown {
     font-family: var(--font-body);
-    color: rgba(255,255,255,0.8) !important;
+    color: var(--neutral-700) !important;
 }
 
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 {
-    color: #ffffff !important;
+    color: var(--neutral-900) !important;
     font-family: var(--font-body) !important;
+}
+
+/* Sidebar widget overrides for light background */
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stTextInput label,
+section[data-testid="stSidebar"] .stCaption,
+section[data-testid="stSidebar"] small {
+    color: var(--neutral-500) !important;
+}
+
+section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"],
+section[data-testid="stSidebar"] .stTextInput input {
+    background: white;
+    color: var(--neutral-900);
+    border-color: var(--neutral-200);
+}
+
+section[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border-color: var(--neutral-200);
+    background: white;
+}
+
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary span {
+    color: var(--neutral-700) !important;
 }
 
 section[data-testid="stSidebar"] .stButton > button {
     width: 100%;
     background: var(--green-700);
     color: white;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: none;
     font-family: var(--font-body);
     font-weight: 600;
     font-size: 0.82rem;
@@ -116,24 +141,22 @@ section[data-testid="stSidebar"] .stButton > button {
 
 section[data-testid="stSidebar"] .stButton > button:hover {
     background: var(--green-600);
-    border-color: rgba(255,255,255,0.2);
 }
 
 .sidebar-brand {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 600;
-    font-style: italic;
-    color: #ffffff;
+    font-family: var(--font-body);
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--green-800);
     margin-bottom: 0.25rem;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     line-height: 1.1;
 }
 
 .sidebar-sub {
     font-family: var(--font-mono);
     font-size: 0.6rem;
-    color: rgba(255,255,255,0.35);
+    color: var(--neutral-400);
     text-transform: uppercase;
     letter-spacing: 0.12em;
     margin-bottom: 1.5rem;
@@ -141,7 +164,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .sidebar-divider {
     border: none;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid var(--neutral-200);
     margin: 1rem 0;
 }
 
@@ -178,14 +201,19 @@ p, span, div, .stMarkdown {
 }
 
 /* Section headers */
+.section-title, .league-header {
+    scroll-margin-top: 4rem;
+}
 .section-title {
     font-family: var(--font-body);
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: var(--neutral-500);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin: 1rem 0 0.5rem 0;
+    margin: 1.5rem 0 0.5rem 0;
+    padding-top: 0.5rem;
+    border-top: 2px solid var(--neutral-200);
 }
 
 /* Value bet cards */
@@ -605,6 +633,9 @@ _KALSHI_SERIES_SLUGS = {
     "KXNCAAMBGAME": "mens-college-basketball-mens-game",
     "KXNCAAWBSPREAD": "womens-college-basketball-spread",
     "KXNCAAWBGAME": "college-basketball-womens-game",
+    "KXMLBGAME": "baseball-game",
+    "KXMLBSPREAD": "baseball-spread",
+    "KXMLBTOTAL": "baseball-total",
 }
 
 
@@ -870,10 +901,13 @@ for lg in LEAGUES:
             with st.spinner(f"Loading {settings['label']}..."):
                 load_succeeded = False
                 try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(overrides_key, {}),
-                        league=lg,
-                    )
+                    if lg == "mlb":
+                        mlb_predict.generate_predictions(lg)
+                    else:
+                        predict.main(
+                            spread_overrides=st.session_state.get(overrides_key, {}),
+                            league=lg,
+                        )
                     load_succeeded = True
                 except Exception as e:
                     st.error(f"Failed to load {settings['label']} predictions: {e}")
@@ -910,8 +944,8 @@ for lg in LEAGUES:
         "df": df,
         "spread_df": spread_df,
         "game_df": game_df,
-        "predictions_ls": predict.get_latest_predictions(lg),
-        "games_needing_spreads": predict.get_games_needing_spreads(lg),
+        "predictions_ls": predict.get_latest_predictions(lg) if lg != "mlb" else None,
+        "games_needing_spreads": predict.get_games_needing_spreads(lg) if lg != "mlb" else {},
     }
 
 
@@ -919,54 +953,47 @@ for lg in LEAGUES:
 # SIDEBAR
 # ==========================================
 with st.sidebar:
-    st.markdown('<div class="sidebar-brand">CBB Quant Edge</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-sub">Spread + Kalshi Markets</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-brand">Quant Edge</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-sub">CBB + MLB | Kalshi Markets</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-    if st.button("Refresh All"):
-        refresh_ok = True
-        for lg in LEAGUES:
-            lg_paths = get_league_artifact_paths(BASE_DIR, lg)
-            if not (os.path.exists(lg_paths["model_file"]) and os.path.exists(lg_paths["data_file"])):
-                continue
-            with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
-                try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
-                        league=lg,
-                    )
-                except Exception as e:
-                    st.error(f"Failed to refresh {get_league_settings(lg)['label']}: {e}")
-                    refresh_ok = False
-                    continue
-                # Only mark loaded if predictions file was actually produced
-                pf = lg_paths["predictions_file"]
-                if os.path.exists(pf) and os.path.getsize(pf) > 0:
-                    st.session_state[f"predictions_loaded_{lg}"] = True
-                else:
-                    refresh_ok = False
-        if refresh_ok:
-            st.rerun()
-
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-
-    settle_league = st.selectbox(
-        "Settle league",
-        LEAGUES,
-        format_func=lambda x: get_league_settings(x)["label"],
-    )
-    if st.button("Settle Bets"):
-        with st.spinner(f"Settling {get_league_settings(settle_league)['label']}..."):
-            summary = settle_bets.settle_pending_bets(league=settle_league)
-        st.session_state["settle_result"] = f"{summary['settled']} settled, {summary['still_pending']} pending"
-        if summary["details"]:
-            st.session_state["settle_details"] = summary["details"]
-        st.rerun()
-
-    if st.session_state.get("settle_result"):
-        st.caption(st.session_state.pop("settle_result"))
-        for d in st.session_state.pop("settle_details", []):
-            st.caption(d)
+    st.markdown("""
+<style>
+.nav-link, .nav-link:visited, .nav-link:link {
+    display: block;
+    padding: 5px 10px;
+    margin: 1px 0;
+    color: #4a5a4a !important;
+    text-decoration: none !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+    border-radius: 5px;
+    transition: background 0.15s, color 0.15s;
+}
+.nav-link:hover {
+    background: rgba(0,0,0,0.05);
+    color: #1a4d2e !important;
+    text-decoration: none !important;
+}
+.nav-section-label {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #aab5aa;
+    padding: 0 10px 4px;
+}
+</style>
+<div class="nav-section-label">Navigate</div>
+<a href="#cbb-spread-bets" class="nav-link">CBB Spread Bets</a>
+<a href="#cbb-game-bets" class="nav-link">CBB Game Bets</a>
+<a href="#mlb-moneyline" class="nav-link">MLB Moneyline</a>
+<a href="#full-slates" class="nav-link">Full Slates</a>
+<a href="#performance" class="nav-link">Performance</a>
+<a href="#betting-history" class="nav-link">Betting History</a>
+""", unsafe_allow_html=True)
 
     # Missing spreads per league
     for lg in LEAGUES:
@@ -1343,17 +1370,18 @@ if _recent_kalshi:
     ''', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Spread Bets</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title" id="cbb-spread-bets">CBB -- Spread Bets</div>', unsafe_allow_html=True)
 col_spread_m, col_spread_w = st.columns(2)
 _render_spread_bets(col_spread_m, "mens")
 _render_spread_bets(col_spread_w, "womens")
 
-st.markdown("<hr>", unsafe_allow_html=True)
-
-st.markdown('<div class="section-title">Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title" id="cbb-game-bets">CBB -- Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
 col_game_m, col_game_w = st.columns(2)
 _render_game_bets(col_game_m, "mens")
 _render_game_bets(col_game_w, "womens")
+
+st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
+_render_game_bets(st.container(), "mlb")
 
 
 # ==========================================
@@ -1434,7 +1462,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 col_record, col_perf = st.columns(2)
 
 with col_record:
-    st.markdown('<div class="league-header mens">Betting Record</div>', unsafe_allow_html=True)
+    st.markdown('<div class="league-header mens" id="betting-history">Betting Record</div>', unsafe_allow_html=True)
 
     if os.path.exists(BET_HIST_FILE):
         try:
@@ -1479,7 +1507,7 @@ with col_record:
         st.caption("No betting history file found.")
 
 with col_perf:
-    st.markdown('<div class="league-header mens">Model Performance</div>', unsafe_allow_html=True)
+    st.markdown('<div class="league-header mens" id="performance">Model Performance</div>', unsafe_allow_html=True)
 
     def get_metrics(df_subset):
         if len(df_subset) == 0:
@@ -1592,7 +1620,41 @@ with col_perf:
 # BOTTOM: Spread Slates (full width, tabs)
 # ==========================================
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title" id="full-slates">Full Slates</div>', unsafe_allow_html=True)
+
+def _render_mlb_slate(game_df, lg):
+    """Render the MLB full slate with moneyline picks and Kalshi links."""
+    show_filter = st.selectbox(
+        "Show",
+        ["All Games", "Value Bets Only"],
+        label_visibility="collapsed",
+        key=f"slate_filter_{lg}",
+    )
+
+    if show_filter == "Value Bets Only" and "Rating" in game_df.columns:
+        display_df = game_df[game_df["Rating"].isin(VALUE_RATINGS)].copy()
+    else:
+        display_df = game_df.copy()
+
+    if display_df.empty:
+        st.caption("No matching picks.")
+        return
+
+    if "Conf" in display_df.columns:
+        display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+
+    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
+                 "Confidence", "Rating", "Edge_Pct", "Units",
+                 "Kalshi_Side", "Kalshi_Price"]
+    show_cols = [c for c in show_cols if c in display_df.columns]
+
+    if "Edge_Pct" in display_df.columns:
+        sort_col = "_edge_sort"
+        display_df[sort_col] = _parse_edge(display_df["Edge_Pct"])
+        display_df = display_df.sort_values(sort_col, ascending=False).drop(columns=[sort_col])
+
+    st.dataframe(display_df[show_cols], use_container_width=True, hide_index=True)
+
 
 slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
@@ -1601,8 +1663,13 @@ for i, lg in enumerate(LEAGUES):
         spread_df = league_data[lg]["spread_df"]
         game_df = league_data[lg]["game_df"]
 
+        # For MLB, all predictions are game type (moneyline)
+        if spread_df.empty and not game_df.empty:
+            _render_mlb_slate(game_df, lg)
+            continue
+
         if spread_df.empty:
-            st.caption("No spread picks on this slate.")
+            st.caption("No picks on this slate.")
             continue
 
         show_filter = st.selectbox(

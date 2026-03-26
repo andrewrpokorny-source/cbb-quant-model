@@ -27,11 +27,15 @@ CSV_HEADERS = [
 ]
 
 CBB_PREFIXES = ("KXNCAAMB", "KXNCAAWB")
+MLB_PREFIXES = ("KXMLB",)
+ALL_PREFIXES = CBB_PREFIXES + MLB_PREFIXES
 
 
 def _league_from_ticker(ticker: str) -> str:
     if ticker.startswith("KXNCAAWB"):
         return "womens"
+    if ticker.startswith("KXMLB"):
+        return "mlb"
     return "mens"
 
 
@@ -473,7 +477,7 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     except RuntimeError as e:
         return {"logged": [], "settled": 0, "skipped": 0, "error": str(e)}
 
-    cbb = [s for s in settlements if any(s.get("ticker", "").startswith(p) for p in CBB_PREFIXES)]
+    cbb = [s for s in settlements if any(s.get("ticker", "").startswith(p) for p in ALL_PREFIXES)]
     if not cbb:
         if not dry_run:
             _write_sync_ts(now_ts)

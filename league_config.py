@@ -1,4 +1,4 @@
-"""Shared league configuration for men's and women's CBB workflows."""
+"""Shared league configuration for men's/women's CBB and MLB workflows."""
 
 import os
 
@@ -12,6 +12,9 @@ LEAGUE_ALIASES = {
     "women": "womens",
     "w": "womens",
     "wcbb": "womens",
+    "mlb": "mlb",
+    "baseball": "mlb",
+    "b": "mlb",
 }
 
 
@@ -44,6 +47,18 @@ LEAGUE_SETTINGS = {
         "predictions_archive_prefix": "predictions_wbb",
         "performance_file": "performance_log_wbb.csv",
     },
+    "mlb": {
+        "label": "MLB",
+        "sport": "baseball",
+        "sport_path": "mlb",
+        "season_start_date": "2026-03-25",
+        "data_file": "mlb_training_data_processed.csv",
+        "model_file": "mlb_win_model_v1.pkl",
+        "win_model_file": "mlb_win_model_v1.pkl",
+        "predictions_file": "daily_predictions_mlb.csv",
+        "predictions_archive_prefix": "predictions_mlb",
+        "performance_file": "performance_log_mlb.csv",
+    },
 }
 
 
@@ -51,7 +66,7 @@ def normalize_league(league):
     """Normalize league aliases to canonical keys."""
     normalized = LEAGUE_ALIASES.get(str(league or "").strip().lower())
     if normalized is None:
-        raise ValueError(f"Unsupported league '{league}'. Use 'mens' or 'womens'.")
+        raise ValueError(f"Unsupported league '{league}'. Use 'mens', 'womens', or 'mlb'.")
     return normalized
 
 
@@ -94,6 +109,12 @@ def get_league_artifact_paths(base_dir, league):
 def get_scoreboard_base_url(league):
     """Return ESPN scoreboard URL root for the target league."""
     settings = get_league_settings(league)
+    sport = settings.get("sport", "basketball")
+    if sport == "baseball":
+        return (
+            "https://site.api.espn.com/apis/site/v2/sports/baseball/"
+            f"{settings['sport_path']}/scoreboard?limit=200"
+        )
     return (
         "https://site.api.espn.com/apis/site/v2/sports/basketball/"
         f"{settings['sport_path']}/scoreboard?groups=50&limit=1000"
