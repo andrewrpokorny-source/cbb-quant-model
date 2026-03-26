@@ -65,32 +65,40 @@ class MLBMarketMapper:
             self._index[ticker] = m
 
     @staticmethod
-    def _parse_ticker_teams(ticker: str) -> tuple:
-        """Extract (away_abbr, home_abbr) from a Kalshi MLB ticker.
+    def _parse_ticker_middle(ticker: str) -> dict:
+        """Parse the middle segment of a Kalshi MLB ticker.
 
         Ticker format: KXMLB{TYPE}-{YYMMMDDHHMMAWAYABBRHOMEABBR}-{YES_ABBR}
-        e.g. KXMLBGAME-26MAR282040DETSD-SD -> (DET, SD)
+        e.g. KXMLBGAME-26MAR282040DETSD-SD
 
-        The teams portion starts after the 4-digit time (positions 9+) in the
-        middle segment. We match against known abbreviations to split correctly.
+        Returns dict with keys: away, home, hhmm (all strings, empty on failure).
         """
         parts = ticker.split("-")
         if len(parts) < 2:
-            return ("", "")
+            return {"away": "", "home": "", "hhmm": ""}
         middle = parts[1]
-        # Skip date (YYMMMDD = 7 chars) + time (HHMM = 4 chars) = 11 chars
-        teams_str = middle[11:] if len(middle) > 11 else ""
-        if not teams_str:
-            return ("", "")
+        # Date = YYMMMDD (7 chars), time = HHMM (4 chars), teams = rest
+        if len(middle) < 12:
+            return {"away": "", "home": "", "hhmm": ""}
 
-        # Try all known abbreviations to find the split point
+        hhmm = middle[7:11]
+        teams_str = middle[11:]
+        if not teams_str:
+            return {"away": "", "home": "", "hhmm": hhmm}
+
         all_abbrs = sorted(MLB_ABBREVIATIONS.values(), key=len, reverse=True)
         for away in all_abbrs:
             if teams_str.startswith(away):
                 home = teams_str[len(away):]
                 if home in MLB_ABBREVIATIONS.values():
-                    return (away, home)
-        return ("", "")
+                    return {"away": away, "home": home, "hhmm": hhmm}
+        return {"away": "", "home": "", "hhmm": hhmm}
+
+    @classmethod
+    def _parse_ticker_teams(cls, ticker: str) -> tuple:
+        """Extract (away_abbr, home_abbr) from a Kalshi MLB ticker."""
+        parsed = cls._parse_ticker_middle(ticker)
+        return (parsed["away"], parsed["home"])
 
     def find_market(
         self,
@@ -98,14 +106,16 @@ class MLBMarketMapper:
         away_team: str,
         game_date: datetime,
         market_type: str = "GAME",
+        game_time: str = "",
     ) -> Optional[dict]:
         """Find a Kalshi market matching an MLB game.
 
         Args:
             home_team: Full team name (e.g., "New York Yankees")
             away_team: Full team name
-            game_date: Game date
+            game_date: Game datetime (date used for matching, time for doubleheaders)
             market_type: "GAME", "SPREAD", or "TOTAL"
+            game_time: Optional "HH:MM" UTC time to disambiguate doubleheaders
 
         Returns:
             Market dict if found, None otherwise.
@@ -117,29 +127,46 @@ class MLBMarketMapper:
             return None
 
         date_str = game_date.strftime("%y%b%d").upper()  # 26MAR28 format
+        # Normalize game_time to HHMM for ticker matching
+        time_hhmm = game_time.replace(":", "")[:4] if game_time else ""
         prefix = f"KXMLB{market_type}"
 
+        candidates = []
         for ticker, market in self._index.items():
             if not ticker.startswith(prefix):
                 continue
-            # Parse teams from ticker structure (not substring matching)
-            t_away, t_home = self._parse_ticker_teams(ticker)
-            if t_away == away_abbr and t_home == home_abbr:
-                # Verify date matches
+            parsed = self._parse_ticker_middle(ticker)
+            if parsed["away"] == away_abbr and parsed["home"] == home_abbr:
                 if date_str in ticker.upper():
+                    candidates.append((ticker, market, parsed["hhmm"]))
+
+        if not candidates:
+            # Fallback: match on title text
+            for ticker, market in self._index.items():
+                if not ticker.startswith(prefix):
+                    continue
+                title = market.get("title", "").lower()
+                home_check = home_team.lower() in title or home_abbr.lower() in title
+                away_check = away_team.lower() in title or away_abbr.lower() in title
+                if home_check and away_check:
                     return market
+            return None
 
-        # Fallback: match on title text
-        for ticker, market in self._index.items():
-            if not ticker.startswith(prefix):
-                continue
-            title = market.get("title", "").lower()
-            home_check = home_team.lower() in title or home_abbr.lower() in title
-            away_check = away_team.lower() in title or away_abbr.lower() in title
-            if home_check and away_check:
-                return market
+        # Single match -- return it
+        if len(candidates) == 1:
+            return candidates[0][1]
 
-        return None
+        # Multiple matches (doubleheader) -- use game_time to disambiguate
+        if time_hhmm:
+            for ticker, market, ticker_hhmm in candidates:
+                if ticker_hhmm == time_hhmm:
+                    return market
+            # No exact time match -- pick closest
+            best = min(candidates, key=lambda c: abs(int(c[2] or "0") - int(time_hhmm or "0")))
+            return best[1]
+
+        # No time provided -- return first match
+        return candidates[0][1]
 
     def get_yes_team(self, ticker: str) -> Optional[str]:
         """Determine which team is YES from the ticker suffix."""

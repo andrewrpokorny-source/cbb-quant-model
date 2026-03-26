@@ -1,5 +1,7 @@
 """Tests for MLB prediction pipeline."""
 
+from datetime import datetime
+
 import pandas as pd
 import pytest
 
@@ -85,6 +87,41 @@ class TestBuildFeatureRow:
         )
         # home 4.5 - away 3.8 = 0.7
         assert row["roll10_rpg_diff"] == pytest.approx(0.7)
+
+
+class TestRestDaysUsesGameDate:
+    """Verify rest_days is relative to the scheduled game, not datetime.now()."""
+
+    def test_future_game_gets_correct_rest_days(self):
+        stats = {"last_game_date": pd.Timestamp("2026-03-24")}
+        # Game on March 26 -- 2 days rest
+        row_mar26 = build_feature_row(
+            stats, {}, home_sp_era=4.0, away_sp_era=4.0,
+            game_date=datetime(2026, 3, 26),
+        )
+        # Game on March 28 -- 4 days rest
+        row_mar28 = build_feature_row(
+            stats, {}, home_sp_era=4.0, away_sp_era=4.0,
+            game_date=datetime(2026, 3, 28),
+        )
+        assert row_mar26["rest_days"] == 2
+        assert row_mar28["rest_days"] == 4
+
+    def test_same_day_game_gets_zero_rest(self):
+        stats = {"last_game_date": pd.Timestamp("2026-03-25")}
+        row = build_feature_row(
+            stats, {}, home_sp_era=4.0, away_sp_era=4.0,
+            game_date=datetime(2026, 3, 25),
+        )
+        assert row["rest_days"] == 0
+
+    def test_rest_days_capped_at_seven(self):
+        stats = {"last_game_date": pd.Timestamp("2026-03-01")}
+        row = build_feature_row(
+            stats, {}, home_sp_era=4.0, away_sp_era=4.0,
+            game_date=datetime(2026, 3, 25),
+        )
+        assert row["rest_days"] == 7
 
 
 class TestFindBestMatch:

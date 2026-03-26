@@ -104,12 +104,15 @@ def fetch_games_for_date(target_date, base_url=None):
             home_stats = _extract_team_game_stats(home)
             away_stats = _extract_team_game_stats(away)
 
-            # Determine season from date
+            # Determine season and game time for doubleheader disambiguation
             season = target_date.year
+            event_dt = pd.to_datetime(event.get("date", ""), utc=True, errors="coerce")
+            game_time = event_dt.strftime("%H:%M") if pd.notna(event_dt) else ""
 
             # Home row
             g_home = {
                 "date": game_date_str,
+                "game_time": game_time,
                 "season": season,
                 "team": home["team"]["displayName"],
                 "team_abbr": home["team"].get("abbreviation", ""),
@@ -140,6 +143,7 @@ def fetch_games_for_date(target_date, base_url=None):
             # Away row (mirror)
             g_away = {
                 "date": game_date_str,
+                "game_time": game_time,
                 "season": season,
                 "team": away["team"]["displayName"],
                 "team_abbr": away["team"].get("abbreviation", ""),
@@ -397,7 +401,7 @@ def update_database(data_file, start_date, end_date, base_url=None):
         existing_df["date"] = pd.to_datetime(existing_df["date"]).dt.strftime("%Y-%m-%d")
 
         # Deduplicate on date + team + opponent + is_home
-        merge_keys = ["date", "team", "opponent", "is_home"]
+        merge_keys = ["date", "game_time", "team", "opponent", "is_home"]
         combined = pd.concat([existing_df, new_df], ignore_index=True)
         combined = combined.drop_duplicates(subset=merge_keys, keep="last")
     else:

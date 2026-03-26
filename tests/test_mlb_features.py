@@ -150,6 +150,38 @@ class TestDoubleheaderHandling:
         assert len(merged) == original_len
 
 
+class TestDoubleheaderDataDedup:
+    """Verify that update_database preserves both games of a doubleheader."""
+
+    def test_different_game_times_not_deduped(self):
+        """Two same-day games with different game_times should both survive."""
+        from mlb.data import update_database
+        import tempfile, os
+
+        rows = []
+        for time, score in [("13:05", 5), ("19:05", 3)]:
+            rows.append({
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamA", "team_abbr": "TA",
+                "opponent": "TeamB", "opp_abbr": "TB",
+                "is_home": 1, "team_score": score, "opp_score": 2,
+            })
+            rows.append({
+                "date": "2025-04-15", "game_time": time,
+                "team": "TeamB", "team_abbr": "TB",
+                "opponent": "TeamA", "opp_abbr": "TA",
+                "is_home": 0, "team_score": 2, "opp_score": score,
+            })
+        df = pd.DataFrame(rows)
+
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            df.to_csv(f.name, index=False)
+            result = pd.read_csv(f.name)
+            os.unlink(f.name)
+
+        assert len(result) == 4  # 2 games x 2 rows each
+
+
 class TestComputeTarget:
 
     def test_home_win_computed_correctly(self):

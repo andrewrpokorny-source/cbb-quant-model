@@ -132,6 +132,51 @@ class TestFindMarket:
         assert "SPREAD" in spread["ticker"]
 
 
+class TestDoubleheaderDisambiguation:
+    """Verify that doubleheader games (same teams, same day) are matched by time."""
+
+    def test_picks_correct_game_by_time(self):
+        markets = [
+            _make_market("KXMLBGAME-26MAR261305BOSNYM-NYM", "Game 1"),
+            _make_market("KXMLBGAME-26MAR261905BOSNYM-NYM", "Game 2"),
+        ]
+        mapper = MLBMarketMapper(markets)
+        # Request the 19:05 game
+        result = mapper.find_market(
+            "New York Mets", "Boston Red Sox",
+            datetime(2026, 3, 26), "GAME",
+            game_time="19:05",
+        )
+        assert result is not None
+        assert result["ticker"] == "KXMLBGAME-26MAR261905BOSNYM-NYM"
+
+    def test_picks_first_game_by_time(self):
+        markets = [
+            _make_market("KXMLBGAME-26MAR261305BOSNYM-NYM", "Game 1"),
+            _make_market("KXMLBGAME-26MAR261905BOSNYM-NYM", "Game 2"),
+        ]
+        mapper = MLBMarketMapper(markets)
+        result = mapper.find_market(
+            "New York Mets", "Boston Red Sox",
+            datetime(2026, 3, 26), "GAME",
+            game_time="13:05",
+        )
+        assert result is not None
+        assert result["ticker"] == "KXMLBGAME-26MAR261305BOSNYM-NYM"
+
+    def test_no_time_returns_first_match(self):
+        markets = [
+            _make_market("KXMLBGAME-26MAR261305BOSNYM-NYM", "Game 1"),
+            _make_market("KXMLBGAME-26MAR261905BOSNYM-NYM", "Game 2"),
+        ]
+        mapper = MLBMarketMapper(markets)
+        result = mapper.find_market(
+            "New York Mets", "Boston Red Sox",
+            datetime(2026, 3, 26), "GAME",
+        )
+        assert result is not None  # Returns something, doesn't crash
+
+
 class TestGetYesTeam:
 
     def test_resolves_abbreviation_to_full_name(self):

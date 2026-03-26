@@ -14,7 +14,7 @@ LEAGUE = "mlb"
 
 # Columns expected in the raw data from mlb/data.py
 BASE_COLUMNS = [
-    "date", "season", "team", "team_abbr", "opponent", "opp_abbr",
+    "date", "game_time", "season", "team", "team_abbr", "opponent", "opp_abbr",
     "location", "is_home", "team_score", "opp_score",
     "venue_name", "venue_city", "venue_state", "venue_indoor",
     "starting_pitcher", "sp_espn_id", "sp_era",

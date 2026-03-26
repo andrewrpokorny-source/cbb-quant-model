@@ -208,24 +208,32 @@ def _extract_sp(competitor):
 
 
 def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
-                      home_sp_name="", away_sp_name="", pitcher_stats=None):
+                      home_sp_name="", away_sp_name="", pitcher_stats=None,
+                      game_date=None):
     """Build a feature row for model inference from entering team stats.
 
     pitcher_stats: dict of {pitcher_name: {sp_roll_era, sp_roll_whip, ...}}
     from the latest training data, representing their entering rolling stats.
+    game_date: scheduled game datetime, used for rest day calculation.
     """
     if pitcher_stats is None:
         pitcher_stats = {}
+    if game_date is None:
+        game_date = datetime.now()
     features = get_feature_list(LEAGUE)
     row = {}
 
     row["is_home"] = 1
 
-    # Rest days (approximation -- use last game date from stats)
+    # Rest days relative to the scheduled game date (not "now")
     home_last = home_stats.get("last_game_date")
     if home_last is not None:
-        rest = (datetime.now() - pd.to_datetime(home_last)).days
-        row["rest_days"] = min(rest, 7)
+        ref_date = pd.to_datetime(game_date).tz_localize(None) if hasattr(pd.to_datetime(game_date), 'tz') else pd.to_datetime(game_date)
+        last_date = pd.to_datetime(home_last)
+        if hasattr(last_date, 'tz') and last_date.tz is not None:
+            last_date = last_date.tz_localize(None)
+        rest = (ref_date - last_date).days
+        row["rest_days"] = min(max(rest, 0), 7)
     else:
         row["rest_days"] = 1  # MLB teams play almost daily
 
@@ -291,7 +299,7 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
 
 
 def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
-                     prob_home_win, pick):
+                     prob_home_win, pick, game_time=""):
     """Calculate edge against Kalshi GAME market prices.
 
     For moneyline, each game has two GAME tickers (one YES per team).
@@ -313,7 +321,7 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
 
     # Market lookup -- catch API/network errors only
     try:
-        market = mapper.find_market(home_team, away_team, game_date, "GAME")
+        market = mapper.find_market(home_team, away_team, game_date, "GAME", game_time=game_time)
     except (requests.RequestException, KeyError) as e:
         print(f"      Kalshi market lookup error for {away_team} @ {home_team}: {e}")
         return result
@@ -441,6 +449,7 @@ def generate_predictions(league=LEAGUE):
             home_sp_name=game["home_sp"],
             away_sp_name=game["away_sp"],
             pitcher_stats=pitcher_stats,
+            game_date=game["game_date"],
         )
 
         # Run inference
@@ -451,12 +460,14 @@ def generate_predictions(league=LEAGUE):
         conf = max(prob_home_win, prob_away_win)
         pick = game["home_team"] if prob_home_win > 0.5 else game["away_team"]
 
-        # Kalshi edge calculation
+        # Kalshi edge calculation -- pass game_time for doubleheader disambiguation
+        game_time_utc = game["game_date"].strftime("%H:%M") if hasattr(game["game_date"], "strftime") else ""
         kalshi_data = _get_kalshi_edge(
             kalshi_client, kalshi_mapper,
             game["home_team"], game["away_team"],
             game["game_date"],
             prob_home_win, pick,
+            game_time=game_time_utc,
         )
 
         pred = {
