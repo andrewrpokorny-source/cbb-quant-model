@@ -497,6 +497,16 @@ def generate_predictions(league=LEAGUE):
     if predictions:
         pred_df = pd.DataFrame(predictions)
         pred_df.to_csv(output_file, index=False)
+
+        # Save dated archive for next-day grading
+        eastern = pytz.timezone("US/Eastern")
+        archive_prefix = paths["predictions_archive_prefix"]
+        archive_file = os.path.join(
+            BASE_DIR,
+            f"{archive_prefix}_{datetime.now(eastern).strftime('%Y%m%d')}.csv",
+        )
+        pred_df.to_csv(archive_file, index=False)
+
         print(f"\n   Saved {len(predictions)} predictions to {output_file}")
 
     return predictions
