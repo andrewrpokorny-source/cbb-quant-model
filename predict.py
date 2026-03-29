@@ -1080,7 +1080,7 @@ def main(spread_overrides=None, league="mens"):
                         )
                     )
 
-                    if game_kalshi.get("Rating") in VALUE_RATINGS:
+                    if game_kalshi.get("Rating") in VALUE_RATINGS and side_prob >= GAME_GOOD_MIN_PROB:
                         game_predictions.append({
                             "Bet_Type": "game",
                             "Date/Time": time_str,
