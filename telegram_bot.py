@@ -32,7 +32,7 @@ import httpx
 import pytz
 import pandas as pd
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -2094,6 +2094,12 @@ def parse_shorthand(text: str) -> dict:
 # --- Command handlers ---
 
 
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [["/today", "/record"], ["/settle", "/pending"]],
+    resize_keyboard=True,
+)
+
+
 @authorized_only
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
@@ -2107,7 +2113,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/settle - Settle pending bets\n"
         "/today - Today's model picks\n"
         "/record - W-L record and profit\n"
-        "/delete N - Delete Nth pending bet"
+        "/delete N - Delete Nth pending bet",
+        reply_markup=MAIN_KEYBOARD,
     )
 
 
