@@ -2136,7 +2136,7 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for _, row in pending.iterrows():
         lines.append(f"  {row['date']} | {row['line']} | ${row['wager']:.2f} | {row['platform']}")
 
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text("\n".join(lines), reply_markup=MAIN_KEYBOARD)
 
 
 @authorized_only
@@ -2184,7 +2184,7 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.exception("Kalshi settlement fetch failed")
             msg_parts.append("Kalshi: fetch failed")
 
-        await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.")
+        await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.", reply_markup=MAIN_KEYBOARD)
 
 
 @authorized_only
@@ -2233,7 +2233,7 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(msg) > 4000:
         msg = msg[:4000] + "\n..."
 
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg, reply_markup=MAIN_KEYBOARD)
 
 
 @authorized_only
@@ -2277,7 +2277,7 @@ async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"  Pending: {pending_count}",
     ]
 
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text("\n".join(lines), reply_markup=MAIN_KEYBOARD)
 
 
 @authorized_only
