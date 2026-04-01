@@ -27,6 +27,7 @@ PITCHER_GAME_LOG_COLUMNS = [
     "sp_ip", "sp_er", "sp_h", "sp_bb", "sp_k",
     "sp_throws_left",
     "bullpen_era",
+    "temperature", "wind_speed",
 ]
 
 # Game-level stat columns from ESPN

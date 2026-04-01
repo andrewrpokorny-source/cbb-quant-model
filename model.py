@@ -92,8 +92,10 @@ MLB_FEATURES = [
     # Bullpen
     'bullpen_era',
     'opp_bullpen_era',
-    # Ballpark
+    # Ballpark + weather
     'park_factor',
+    'temperature',
+    'wind_speed',
     # Opponent quality
     'opp_win_pct',
     'prev_win_pct',
