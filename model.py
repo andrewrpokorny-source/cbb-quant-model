@@ -70,46 +70,29 @@ MLB_FEATURES = [
     'sp_roll_k9',
     'sp_roll_ip',
     'opp_sp_roll_era',
-    'opp_sp_roll_whip',
-    'opp_sp_roll_k9',
-    'opp_sp_roll_ip',
     # Team rolling stats (game-level, honest lag)
     'prev_roll10_runs_per_game',
     'prev_roll10_runs_allowed',
     'prev_season_runs_per_game',
     'prev_season_runs_allowed',
     'prev_games_played',
-    # Short-term form (5-game window)
-    'prev_roll5_runs_per_game',
-    'prev_roll5_runs_allowed',
-    'prev_roll5_margin',
-    # Pythagorean expected win%
-    'prev_season_pyth_wpct',
-    'prev_roll10_pyth_wpct',
-    # Pitcher handedness
-    'sp_throws_left',
-    'opp_sp_throws_left',
-    # Bullpen
-    'bullpen_era',
-    'opp_bullpen_era',
-    # Ballpark + weather
-    'park_factor',
-    'temperature',
-    'wind_speed',
     # Opponent quality
     'opp_win_pct',
     'prev_win_pct',
     'prev_roll10_win_pct',
-    # Differentials (all game-derived, no leaky aggregates)
+    # Differentials
     'roll10_rpg_diff',
     'roll10_ra_diff',
-    'roll5_rpg_diff',
-    'roll5_ra_diff',
     'sp_era_diff',
     'sp_roll_era_diff',
-    'pyth_wpct_diff',
-    'bullpen_era_diff',
     'prev_volatility',
+    # New features (Pythagorean, bullpen, weather, short-term form)
+    'prev_season_pyth_wpct',
+    'prev_roll10_pyth_wpct',
+    'pyth_wpct_diff',
+    'wind_speed',
+    'bullpen_era_diff',
+    'roll5_rpg_diff',
 ]
 FEATURES = MENS_FEATURES
 FEATURES_BY_LEAGUE = {
