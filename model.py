@@ -86,6 +86,14 @@ MLB_FEATURES = [
     # Pythagorean expected win%
     'prev_season_pyth_wpct',
     'prev_roll10_pyth_wpct',
+    # Pitcher handedness
+    'sp_throws_left',
+    'opp_sp_throws_left',
+    # Bullpen
+    'bullpen_era',
+    'opp_bullpen_era',
+    # Ballpark
+    'park_factor',
     # Opponent quality
     'opp_win_pct',
     'prev_win_pct',
@@ -98,6 +106,7 @@ MLB_FEATURES = [
     'sp_era_diff',
     'sp_roll_era_diff',
     'pyth_wpct_diff',
+    'bullpen_era_diff',
     'prev_volatility',
 ]
 FEATURES = MENS_FEATURES

@@ -25,6 +25,8 @@ BASE_COLUMNS = [
 # Per-game pitcher line columns from fetch_pitcher_game_logs()
 PITCHER_GAME_LOG_COLUMNS = [
     "sp_ip", "sp_er", "sp_h", "sp_bb", "sp_k",
+    "sp_throws_left",
+    "bullpen_era",
 ]
 
 # Game-level stat columns from ESPN
@@ -231,6 +233,7 @@ def merge_opponent_stats(df):
         "prev_roll5_runs_per_game": "opp_prev_roll5_rpg",
         "prev_roll5_runs_allowed": "opp_prev_roll5_ra",
         "prev_season_pyth_wpct": "opp_prev_season_pyth_wpct",
+        "bullpen_era": "opp_bullpen_era",
     }
 
     # Use game_time in the join key when available to handle doubleheaders
@@ -274,6 +277,7 @@ def merge_opponent_stats(df):
         "sp_roll_whip": "opp_sp_roll_whip",
         "sp_roll_k9": "opp_sp_roll_k9",
         "sp_roll_ip": "opp_sp_roll_ip",
+        "sp_throws_left": "opp_sp_throws_left",
     }
     opp_sp_req = ["date", "team"]
     if has_game_time:
@@ -306,6 +310,17 @@ def merge_opponent_stats(df):
         if "opp_sp_name" in df.columns:
             df = df.drop(columns=["opp_sp_name"])
 
+    return df
+
+
+def add_park_factor(df):
+    """Add ballpark run factor from venue_name."""
+    from mlb.ballpark_factors import get_park_factor
+    print("   -> Adding ballpark factors...")
+    if "venue_name" in df.columns:
+        df["park_factor"] = df["venue_name"].map(get_park_factor).fillna(1.0)
+    else:
+        df["park_factor"] = 1.0
     return df
 
 
@@ -375,6 +390,15 @@ def compute_differentials(df):
     else:
         df["roll5_ra_diff"] = 0.0
 
+    # Bullpen ERA differential (opponent worse = positive for us)
+    if "bullpen_era" in df.columns and "opp_bullpen_era" in df.columns:
+        df["bullpen_era_diff"] = (
+            df["opp_bullpen_era"].fillna(4.0)
+            - df["bullpen_era"].fillna(4.0)
+        )
+    else:
+        df["bullpen_era_diff"] = 0.0
+
     return df
 
 
@@ -405,6 +429,7 @@ def run_features(league=LEAGUE):
     df = clean_stale_data(df)
     df = calculate_rolling_stats(df)
     df = calculate_pitcher_rolling_stats(df)
+    df = add_park_factor(df)
     df = merge_opponent_stats(df)
     df = compute_differentials(df)
     df = compute_target(df)
