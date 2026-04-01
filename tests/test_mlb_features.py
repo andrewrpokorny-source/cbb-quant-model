@@ -316,3 +316,77 @@ class TestRestDays:
         assert team_a.iloc[0]["rest_days"] == 3.0
         # Subsequent games: 1 day apart
         assert team_a.iloc[1]["rest_days"] == 1.0
+
+
+# === Phase 1 new feature tests ===
+
+
+class TestPythagoreanWinPct:
+    """Pythagorean expected win% from run scoring/allowed."""
+
+    def test_formula_correct(self):
+        from mlb.features import compute_pythagorean_wpct
+        # 5 RPG scored, 4 RPG allowed -> ~0.597
+        result = compute_pythagorean_wpct(5.0, 4.0, exponent=1.83)
+        assert result == pytest.approx(0.597, abs=0.01)
+
+    def test_equal_runs_gives_500(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(4.0, 4.0) == pytest.approx(0.5)
+
+    def test_zero_runs_allowed_gives_1(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(4.0, 0.0) == pytest.approx(1.0)
+
+    def test_zero_runs_scored_gives_0(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(0.0, 4.0) == pytest.approx(0.0)
+
+    def test_both_zero_gives_500(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(0.0, 0.0) == pytest.approx(0.5)
+
+    def test_pyth_columns_in_rolling_stats(self):
+        df = _make_games(5)
+        df = calculate_rolling_stats(df)
+        assert "prev_season_pyth_wpct" in df.columns
+        assert "prev_roll10_pyth_wpct" in df.columns
+
+    def test_pyth_honest_lag(self):
+        df = _make_games(5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # First game: no prior data
+        assert pd.isna(team_a.iloc[0]["prev_season_pyth_wpct"])
+        # Second game: value based on first game only
+        val = team_a.iloc[1]["prev_season_pyth_wpct"]
+        assert pd.notna(val)
+        assert 0.0 <= val <= 1.0
+
+    def test_pyth_values_bounded(self):
+        df = _make_games(10)
+        df = calculate_rolling_stats(df)
+        pyth = df["prev_season_pyth_wpct"].dropna()
+        assert (pyth >= 0.0).all()
+        assert (pyth <= 1.0).all()
+
+
+class TestNewDifferentials:
+    """Pythagorean diff and roll5 diffs."""
+
+    def test_pyth_diff_computed(self):
+        df = _make_games(6)
+        df = calculate_rolling_stats(df)
+        df = calculate_pitcher_rolling_stats(df)
+        df = merge_opponent_stats(df)
+        df = compute_differentials(df)
+        assert "pyth_wpct_diff" in df.columns
+
+    def test_roll5_diffs_computed(self):
+        df = _make_games(6)
+        df = calculate_rolling_stats(df)
+        df = calculate_pitcher_rolling_stats(df)
+        df = merge_opponent_stats(df)
+        df = compute_differentials(df)
+        assert "roll5_rpg_diff" in df.columns
+        assert "roll5_ra_diff" in df.columns
