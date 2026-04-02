@@ -2,10 +2,26 @@
 
 from datetime import datetime, timezone, timedelta
 
+import pytz
 import requests
 import pandas as pd
 
 from mlb.ballpark_factors import STADIUM_COORDINATES, INDOOR_STADIUMS
+
+_EASTERN = pytz.timezone("US/Eastern")
+
+
+def _utc_hour_to_eastern(date_str, utc_hour):
+    """Convert a UTC hour on a given date to Eastern local hour.
+
+    Handles DST transitions correctly via pytz.
+    """
+    utc_dt = datetime(
+        int(date_str[:4]), int(date_str[5:7]), int(date_str[8:10]),
+        utc_hour, 0, tzinfo=pytz.utc,
+    )
+    eastern_dt = utc_dt.astimezone(_EASTERN)
+    return eastern_dt.hour
 
 # Default values for indoor stadiums or missing data
 INDOOR_DEFAULTS = {"temperature": 72.0, "wind_speed": 0.0}
@@ -72,9 +88,7 @@ def fetch_game_weather(venue_name, date_str, game_time_utc=None):
     if game_time_utc:
         try:
             utc_hour = int(str(game_time_utc)[:2])
-            month = int(date_str[5:7]) if len(date_str) >= 7 else 7
-            offset = 4 if 3 <= month <= 10 else 5
-            target_hour = (utc_hour - offset) % 24
+            target_hour = _utc_hour_to_eastern(date_str, utc_hour)
         except (ValueError, IndexError):
             pass
 
@@ -139,16 +153,12 @@ def add_weather_features(df):
         for idx, row in venue_rows.iterrows():
             date_str = str(row["date"])[:10]
             game_time = str(row.get("game_time", ""))
-            # game_time is UTC (e.g. "23:00"); convert to Eastern (UTC-4/-5)
-            # since Open-Meteo data is in America/New_York
+            # game_time is UTC; convert to Eastern (Open-Meteo data is Eastern)
             target_hour = 19  # default: 7 PM ET
             if game_time and len(game_time) >= 2:
                 try:
                     utc_hour = int(game_time[:2])
-                    # Approximate Eastern offset: -4 during DST (Apr-Oct), -5 otherwise
-                    month = int(date_str[5:7]) if len(date_str) >= 7 else 7
-                    offset = 4 if 3 <= month <= 10 else 5
-                    target_hour = (utc_hour - offset) % 24
+                    target_hour = _utc_hour_to_eastern(date_str, utc_hour)
                 except ValueError:
                     pass
 

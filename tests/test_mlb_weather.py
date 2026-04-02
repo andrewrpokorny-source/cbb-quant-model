@@ -10,21 +10,35 @@ from mlb.ballpark_factors import STADIUM_COORDINATES, INDOOR_STADIUMS
 class TestUTCToEasternConversion:
     """Verify game_time (UTC) is properly converted to Eastern for weather lookups."""
 
-    def test_summer_utc_to_eastern(self):
-        """23:00 UTC in July = 19:00 ET (UTC-4 during DST)."""
-        # fetch_game_weather receives UTC time and should convert internally
-        # We test indirectly by checking the target_hour logic
-        from mlb.weather import fetch_game_weather
-        # Chase Field is indoor so won't hit the API -- use for logic check
-        result = fetch_game_weather("Wrigley Field", "2025-07-04", "23:10")
-        # Should not crash and should return reasonable values
-        assert "temperature" in result
-        assert "wind_speed" in result
+    def test_summer_dst_conversion(self):
+        """23:00 UTC on July 4 = 19:00 EDT (UTC-4)."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-07-04", 23) == 19
 
-    def test_winter_utc_to_eastern(self):
-        """23:00 UTC in November = 18:00 ET (UTC-5 outside DST)."""
-        result = fetch_game_weather("Wrigley Field", "2025-11-01", "23:00")
-        assert "temperature" in result
+    def test_winter_est_conversion(self):
+        """23:00 UTC on January 15 = 18:00 EST (UTC-5)."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-01-15", 23) == 18
+
+    def test_march_before_dst_starts(self):
+        """March 1, 2025 is still EST (DST starts March 9). 23:00 UTC = 18:00 EST."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-03-01", 23) == 18
+
+    def test_march_after_dst_starts(self):
+        """March 10, 2025 is EDT (DST started March 9). 23:00 UTC = 19:00 EDT."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-03-10", 23) == 19
+
+    def test_november_before_dst_ends(self):
+        """November 1, 2025 is still EDT (DST ends November 2). 23:00 UTC = 19:00 EDT."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-11-01", 23) == 19
+
+    def test_november_after_dst_ends(self):
+        """November 3, 2025 is EST (DST ended November 2). 23:00 UTC = 18:00 EST."""
+        from mlb.weather import _utc_hour_to_eastern
+        assert _utc_hour_to_eastern("2025-11-03", 23) == 18
 
 
 class TestIndoorDefaults:
