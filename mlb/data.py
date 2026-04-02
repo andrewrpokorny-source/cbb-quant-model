@@ -532,6 +532,14 @@ def run_pipeline(start=None, end=None, enrich=True):
     if enrich and df is not None:
         print("Fetching pitcher game logs from MLB-StatsAPI...")
         df = fetch_pitcher_game_logs(df)
+
+        print("Fetching team bullpen ERA...")
+        df = enrich_bullpen_era(df)
+
+        print("Fetching weather data...")
+        from mlb.weather import add_weather_features
+        df = add_weather_features(df)
+
         df.to_csv(data_file, index=False)
         print(f"Enriched data saved: {len(df)} rows")
 

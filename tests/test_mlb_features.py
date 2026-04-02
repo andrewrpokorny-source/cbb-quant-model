@@ -390,3 +390,40 @@ class TestNewDifferentials:
         df = compute_differentials(df)
         assert "roll5_rpg_diff" in df.columns
         assert "roll5_ra_diff" in df.columns
+
+
+class TestBuildFeatureRowNewFeatures:
+    """Verify build_feature_row populates new features from stats, not fallbacks."""
+
+    def test_pyth_wpct_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"prev_season_pyth_wpct": 0.6, "prev_roll10_pyth_wpct": 0.55}
+        away_stats = {"prev_season_pyth_wpct": 0.45}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["prev_season_pyth_wpct"] == 0.6
+        assert row["prev_roll10_pyth_wpct"] == 0.55
+        assert row["pyth_wpct_diff"] == pytest.approx(0.15)
+
+    def test_bullpen_era_diff_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"bullpen_era": 3.5}
+        away_stats = {"bullpen_era": 4.2}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["bullpen_era_diff"] == pytest.approx(0.7)
+
+    def test_bullpen_era_diff_defaults_to_zero_when_missing(self):
+        from mlb.predict import build_feature_row
+        row = build_feature_row({}, {}, 3.5, 4.0)
+        assert row["bullpen_era_diff"] == 0.0
+
+    def test_roll5_rpg_diff_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"prev_roll5_runs_per_game": 5.0}
+        away_stats = {"prev_roll5_runs_per_game": 3.5}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["roll5_rpg_diff"] == pytest.approx(1.5)
+
+    def test_wind_speed_defaults_for_indoor(self):
+        from mlb.predict import build_feature_row
+        row = build_feature_row({}, {}, 3.5, 4.0, venue_name="Chase Field", venue_indoor=1)
+        assert row["wind_speed"] == 0.0

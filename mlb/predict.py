@@ -59,7 +59,7 @@ def get_latest_stats(df):
         last_game = df[df["team"] == team].iloc[-1]
         stats = {}
         for col in df.columns:
-            if any(x in col for x in ["season_", "roll", "prev_", "opp_win_pct"]):
+            if any(x in col for x in ["season_", "roll", "prev_", "opp_win_pct", "bullpen_era", "pyth_wpct"]):
                 stats[col] = last_game[col]
         stats["last_game_date"] = last_game["date"]
         stats["prev_games_played"] = last_game.get("prev_games_played", 10)
@@ -209,12 +209,14 @@ def _extract_sp(competitor):
 
 def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
                       home_sp_name="", away_sp_name="", pitcher_stats=None,
-                      game_date=None):
+                      game_date=None, venue_name="", venue_indoor=0):
     """Build a feature row for model inference from entering team stats.
 
     pitcher_stats: dict of {pitcher_name: {sp_roll_era, sp_roll_whip, ...}}
     from the latest training data, representing their entering rolling stats.
     game_date: scheduled game datetime, used for rest day calculation.
+    venue_name: stadium name for weather lookup.
+    venue_indoor: 1 if dome/retractable, 0 if outdoor.
     """
     if pitcher_stats is None:
         pitcher_stats = {}
@@ -260,6 +262,37 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     # Opponent quality
     row["opp_win_pct"] = away_stats.get("prev_win_pct", 0.5)
 
+    # Pythagorean win% (from entering team stats)
+    home_pyth_season = home_stats.get("prev_season_pyth_wpct", float("nan"))
+    away_pyth_season = away_stats.get("prev_season_pyth_wpct", float("nan"))
+    row["prev_season_pyth_wpct"] = home_pyth_season if not pd.isna(home_pyth_season) else 0.5
+    row["prev_roll10_pyth_wpct"] = home_stats.get("prev_roll10_pyth_wpct", 0.5)
+    row["pyth_wpct_diff"] = (
+        float(row["prev_season_pyth_wpct"]) - (float(away_pyth_season) if not pd.isna(away_pyth_season) else 0.5)
+    )
+
+    # Bullpen ERA differential
+    home_bp = home_stats.get("bullpen_era", float("nan"))
+    away_bp = away_stats.get("bullpen_era", float("nan"))
+    row["bullpen_era_diff"] = (
+        (float(away_bp) - float(home_bp))
+        if not (pd.isna(home_bp) or pd.isna(away_bp))
+        else 0.0
+    )
+
+    # Wind speed from venue + game date
+    if venue_name and not venue_indoor and game_date is not None:
+        try:
+            from mlb.weather import fetch_game_weather
+            date_str = pd.to_datetime(game_date).strftime("%Y-%m-%d")
+            game_time_str = pd.to_datetime(game_date).strftime("%H:%M") if game_date else None
+            weather = fetch_game_weather(venue_name, date_str, game_time_str)
+            row["wind_speed"] = weather.get("wind_speed", 0.0)
+        except Exception:
+            row["wind_speed"] = 0.0
+    else:
+        row["wind_speed"] = 0.0
+
     # Differentials (game-derived, no leaky aggregates)
     home_rpg = home_stats.get("prev_roll10_runs_per_game", 0)
     away_rpg = away_stats.get("prev_roll10_runs_per_game", 0)
@@ -268,6 +301,11 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     home_ra = home_stats.get("prev_roll10_runs_allowed", 0)
     away_ra = away_stats.get("prev_roll10_runs_allowed", 0)
     row["roll10_ra_diff"] = float(away_ra or 0) - float(home_ra or 0)
+
+    # Roll5 short-term form differential
+    home_rpg5 = home_stats.get("prev_roll5_runs_per_game", 0)
+    away_rpg5 = away_stats.get("prev_roll5_runs_per_game", 0)
+    row["roll5_rpg_diff"] = float(home_rpg5 or 0) - float(away_rpg5 or 0)
 
     row["sp_era_diff"] = (
         (float(away_sp_era) - float(home_sp_era))
@@ -282,7 +320,11 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     # Fill any missing features with neutral defaults
     for f in features:
         if f not in row or pd.isna(row.get(f)):
-            if "win_pct" in f:
+            if "pyth_wpct" in f:
+                row[f] = 0.5
+            elif "bullpen_era_diff" in f:
+                row[f] = 0.0
+            elif "win_pct" in f:
                 row[f] = 0.5
             elif "era" in f:
                 row[f] = 4.50
@@ -450,6 +492,8 @@ def generate_predictions(league=LEAGUE):
             away_sp_name=game["away_sp"],
             pitcher_stats=pitcher_stats,
             game_date=game["game_date"],
+            venue_name=game.get("venue", ""),
+            venue_indoor=game.get("venue_indoor", 0),
         )
 
         # Run inference

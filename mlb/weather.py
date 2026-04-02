@@ -1,5 +1,7 @@
 """Historical weather data for MLB games via Open-Meteo API."""
 
+from datetime import datetime, timezone, timedelta
+
 import requests
 import pandas as pd
 
@@ -65,11 +67,14 @@ def fetch_game_weather(venue_name, date_str, game_time_utc=None):
     weather = fetch_weather_batch(lat, lon, date_str, date_str)
     day_data = weather.get(date_str, {})
 
-    # Use game time hour if available, otherwise default to 7 PM (19:00)
-    target_hour = 19
+    # Convert UTC game time to Eastern (Open-Meteo returns Eastern data)
+    target_hour = 19  # default: 7 PM ET
     if game_time_utc:
         try:
-            target_hour = int(str(game_time_utc)[:2])
+            utc_hour = int(str(game_time_utc)[:2])
+            month = int(date_str[5:7]) if len(date_str) >= 7 else 7
+            offset = 4 if 3 <= month <= 10 else 5
+            target_hour = (utc_hour - offset) % 24
         except (ValueError, IndexError):
             pass
 
@@ -134,10 +139,16 @@ def add_weather_features(df):
         for idx, row in venue_rows.iterrows():
             date_str = str(row["date"])[:10]
             game_time = str(row.get("game_time", ""))
-            target_hour = 19
+            # game_time is UTC (e.g. "23:00"); convert to Eastern (UTC-4/-5)
+            # since Open-Meteo data is in America/New_York
+            target_hour = 19  # default: 7 PM ET
             if game_time and len(game_time) >= 2:
                 try:
-                    target_hour = int(game_time[:2])
+                    utc_hour = int(game_time[:2])
+                    # Approximate Eastern offset: -4 during DST (Apr-Oct), -5 otherwise
+                    month = int(date_str[5:7]) if len(date_str) >= 7 else 7
+                    offset = 4 if 3 <= month <= 10 else 5
+                    target_hour = (utc_hour - offset) % 24
                 except ValueError:
                     pass
 
