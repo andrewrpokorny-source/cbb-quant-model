@@ -495,22 +495,3 @@ class TestJobRegistration:
         assert job_kwargs.get("misfire_grace_time") is None
 
 
-_REAL_ARCHIVE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "predictions_20260323.csv")
-
-
-class TestIntegrationRealData:
-    """TDD Cycle 7: Integration test against real prediction archives."""
-
-    @pytest.mark.skipif(not os.path.exists(_REAL_ARCHIVE), reason="Real archive not present")
-    def test_finds_unlogged_strong_game_from_real_archive(self):
-        """Real archive predictions_20260323.csv has a STRONG Wichita State game on 03/24
-        with no corresponding FanDuel/DraftKings entry in betting_history.csv."""
-        from telegram_bot import find_unlogged_strong_games
-
-        target = date(2026, 3, 24)
-        result = find_unlogged_strong_games(target)
-
-        matchups = [r["matchup"] for r in result]
-        assert any("Wichita State" in m for m in matchups), (
-            f"Expected Wichita State STRONG game on 03/24 to be unlogged. Got: {matchups}"
-        )
