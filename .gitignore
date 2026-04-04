@@ -25,6 +25,12 @@ telegram_bot.log
 .kalshi_sync_state.json
 
 .cache/
+.claude/
+.playwright-mcp/
 IMPROVEMENT_PLAN.md
 betting_history.csv
 screenshots/
+telegram_bot.log.*
+telegram_parse_audit.jsonl
+draft_results.csv
+*-check.png
