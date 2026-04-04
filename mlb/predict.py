@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -127,87 +128,101 @@ def find_best_match(name, known_teams):
     return None
 
 
+def _fetch_mlb_espn_date(base_url, date_str):
+    """Fetch ESPN MLB schedule for a single date. Returns (date_str, events, error)."""
+    url = f"{base_url}&dates={date_str}"
+    print(f"      Querying ESPN for: {date_str}")
+    try:
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
+        return date_str, res.json().get("events", []), None
+    except requests.RequestException as e:
+        print(f"      WARNING: Failed to fetch {date_str}: {e}")
+        return date_str, [], e
+    except ValueError as e:
+        print(f"      WARNING: Invalid JSON from ESPN for {date_str}: {e}")
+        return date_str, [], e
+
+
 def fetch_schedule(league=LEAGUE):
-    """Fetch upcoming MLB games from ESPN."""
+    """Fetch upcoming MLB games from ESPN. Fetches all dates in parallel."""
     print("   -> Fetching MLB schedule...")
     base_url = get_scoreboard_base_url(league)
     eastern = pytz.timezone("US/Eastern")
     now_eastern = datetime.now(eastern)
 
+    # Fetch all dates in parallel
+    date_strs = [
+        (now_eastern + timedelta(days=d)).strftime("%Y%m%d")
+        for d in range(3)
+    ]
+    all_events = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_fetch_mlb_espn_date, base_url, ds): ds
+            for ds in date_strs
+        }
+        for future in as_completed(futures):
+            _, events, _ = future.result()
+            all_events.extend(events)
+
     games = []
-    for days_ahead in range(3):
-        target_date = now_eastern + timedelta(days=days_ahead)
-        date_str = target_date.strftime("%Y%m%d")
-        url = f"{base_url}&dates={date_str}"
-        print(f"      Querying ESPN for: {date_str}")
-
-        try:
-            res = requests.get(url, timeout=15)
-            res.raise_for_status()
-            data = res.json()
-        except requests.RequestException as e:
-            print(f"      WARNING: Failed to fetch {date_str}: {e}")
-            continue
-        except ValueError as e:
-            print(f"      WARNING: Invalid JSON from ESPN for {date_str}: {e}")
+    for event in all_events:
+        comp = event.get("competitions", [{}])[0]
+        if not comp.get("competitors"):
             continue
 
-        for event in data.get("events", []):
-            comp = event.get("competitions", [{}])[0]
-            if not comp.get("competitors"):
-                continue
+        home = away = None
+        for c in comp["competitors"]:
+            if c.get("homeAway") == "home":
+                home = c
+            elif c.get("homeAway") == "away":
+                away = c
 
-            home = away = None
-            for c in comp["competitors"]:
-                if c.get("homeAway") == "home":
-                    home = c
-                elif c.get("homeAway") == "away":
-                    away = c
+        if home is None or away is None:
+            continue
 
-            if home is None or away is None:
-                continue
+        # Skip completed games
+        state = event.get("status", {}).get("type", {}).get("state", "")
+        if state == "post":
+            continue
 
-            # Skip completed games
-            state = event.get("status", {}).get("type", {}).get("state", "")
-            if state == "post":
-                continue
+        game_date = pd.to_datetime(event["date"])
+        home_name = home["team"]["displayName"]
+        away_name = away["team"]["displayName"]
+        home_abbr = home["team"].get("abbreviation", "")
+        away_abbr = away["team"].get("abbreviation", "")
 
-            game_date = pd.to_datetime(event["date"])
-            home_name = home["team"]["displayName"]
-            away_name = away["team"]["displayName"]
-            home_abbr = home["team"].get("abbreviation", "")
-            away_abbr = away["team"].get("abbreviation", "")
+        # Starting pitchers
+        home_sp = _extract_sp(home)
+        away_sp = _extract_sp(away)
 
-            # Starting pitchers
-            home_sp = _extract_sp(home)
-            away_sp = _extract_sp(away)
+        # Venue
+        venue = comp.get("venue", {})
 
-            # Venue
-            venue = comp.get("venue", {})
+        # Moneyline odds from ESPN/DraftKings
+        odds_block = comp.get("odds", [{}])[0] if comp.get("odds") else {}
+        ml_block = odds_block.get("moneyline", {})
+        home_ml_odds = (ml_block.get("home", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("home", {}).get("open", {}).get("odds", ""))
+        away_ml_odds = (ml_block.get("away", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("away", {}).get("open", {}).get("odds", ""))
 
-            # Moneyline odds from ESPN/DraftKings
-            odds_block = comp.get("odds", [{}])[0] if comp.get("odds") else {}
-            ml_block = odds_block.get("moneyline", {})
-            home_ml_odds = (ml_block.get("home", {}).get("close", {}).get("odds", "")
-                            or ml_block.get("home", {}).get("open", {}).get("odds", ""))
-            away_ml_odds = (ml_block.get("away", {}).get("close", {}).get("odds", "")
-                            or ml_block.get("away", {}).get("open", {}).get("odds", ""))
-
-            games.append({
-                "game_date": game_date,
-                "home_team": home_name,
-                "away_team": away_name,
-                "home_abbr": home_abbr,
-                "away_abbr": away_abbr,
-                "home_sp": home_sp.get("name", "TBD"),
-                "home_sp_era": home_sp.get("era", float("nan")),
-                "away_sp": away_sp.get("name", "TBD"),
-                "away_sp_era": away_sp.get("era", float("nan")),
-                "venue": venue.get("fullName", ""),
-                "venue_indoor": int(venue.get("indoor", False)),
-                "home_ml_odds": home_ml_odds,
-                "away_ml_odds": away_ml_odds,
-            })
+        games.append({
+            "game_date": game_date,
+            "home_team": home_name,
+            "away_team": away_name,
+            "home_abbr": home_abbr,
+            "away_abbr": away_abbr,
+            "home_sp": home_sp.get("name", "TBD"),
+            "home_sp_era": home_sp.get("era", float("nan")),
+            "away_sp": away_sp.get("name", "TBD"),
+            "away_sp_era": away_sp.get("era", float("nan")),
+            "venue": venue.get("fullName", ""),
+            "venue_indoor": int(venue.get("indoor", False)),
+            "home_ml_odds": home_ml_odds,
+            "away_ml_odds": away_ml_odds,
+        })
 
     print(f"      Found {len(games)} upcoming games")
     return games
