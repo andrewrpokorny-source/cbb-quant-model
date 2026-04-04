@@ -24,6 +24,7 @@ from betting import (
     get_rating,
     recommended_units,
     kalshi_implied_prob,
+    STANDARD_IMPLIED_PROB,
 )
 from betting.ev_calculator import kalshi_fee_cents
 from league_config import (
@@ -530,7 +531,7 @@ def generate_predictions(league=LEAGUE):
         ml_odds_str = game.get("home_ml_odds") if is_home_pick else game.get("away_ml_odds")
         std_implied = american_odds_to_implied_prob(ml_odds_str) if ml_odds_str else None
         if std_implied is None:
-            std_implied = 0.525  # fallback: ~5% ML vig
+            std_implied = STANDARD_IMPLIED_PROB
         std_edge = conf - std_implied
         std_rating = get_rating(std_edge).value
         std_units = recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0

@@ -1245,6 +1245,9 @@ def main(spread_overrides=None, league="mens"):
                 recommendations=[],
             )
 
+        std_implied = _get_std_implied_prob(g, is_home_pick, "spread")
+        std_edge = conf - std_implied
+
         prediction_row = {
             "Bet_Type": "spread",
             "Date/Time": time_str,
@@ -1267,14 +1270,11 @@ def main(spread_overrides=None, league="mens"):
             "Kalshi_Ticker": kalshi_data.get("Kalshi_Ticker"),
             "Breakeven_Spread": line_shopping.breakeven_spread,
             "Line_Shopping_Data": line_shopping,
-            "Std_Edge": _compute_std_edge(conf, g, prob > 0.5, "spread"),
-            "Std_Edge_Pct": f"{_compute_std_edge(conf, g, prob > 0.5, 'spread') * 100:+.1f}%",
-            "Std_Rating": get_rating(_compute_std_edge(conf, g, prob > 0.5, "spread")).value,
-            "Std_Units": recommended_units(
-                _compute_std_edge(conf, g, prob > 0.5, "spread"),
-                _get_std_implied_prob(g, prob > 0.5, "spread"),
-            ),
-            "Std_Odds": g.get("home_spread_odds", "") if prob > 0.5 else g.get("away_spread_odds", ""),
+            "Std_Edge": std_edge,
+            "Std_Edge_Pct": f"{std_edge * 100:+.1f}%",
+            "Std_Rating": get_rating(std_edge).value,
+            "Std_Units": recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0,
+            "Std_Odds": g.get("home_spread_odds", "") if is_home_pick else g.get("away_spread_odds", ""),
         }
 
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:

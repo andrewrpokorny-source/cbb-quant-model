@@ -116,7 +116,7 @@ def american_odds_to_implied_prob(odds_str):
         odds = float(str(odds_str).replace("+", ""))
     except (TypeError, ValueError):
         return None
-    if odds == 0:
+    if odds == 0 or math.isnan(odds):
         return None
     if odds < 0:
         return abs(odds) / (abs(odds) + 100.0)

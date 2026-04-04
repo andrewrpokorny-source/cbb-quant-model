@@ -36,6 +36,16 @@ class TestStdImpliedProbFromRealOdds:
         result = _get_std_implied_prob(game, is_home_pick=True)
         assert result == STANDARD_IMPLIED_PROB
 
+    def test_falls_back_on_unparseable_odds(self):
+        game = {"home_spread_odds": "EVEN"}
+        result = _get_std_implied_prob(game, is_home_pick=True)
+        assert result == STANDARD_IMPLIED_PROB
+
+    def test_falls_back_on_nan_odds(self):
+        game = {"home_spread_odds": "NaN"}
+        result = _get_std_implied_prob(game, is_home_pick=True)
+        assert result == STANDARD_IMPLIED_PROB
+
     def test_moneyline_odds_used_for_ml_bet_type(self):
         game = {"home_ml_odds": "-150", "away_ml_odds": "+130"}
         # Home ML at -150: 150/250 = 0.600

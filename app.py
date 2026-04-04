@@ -693,6 +693,16 @@ def _filter_not_started(df):
     return df[parsed.isna() | (parsed > now)].copy()
 
 
+def _format_odds_display(x):
+    """Format American odds for display, preserving +/- sign."""
+    try:
+        if pd.isna(x) or str(x).strip().lower() in ('', 'nan'):
+            return ''
+        return f"{int(float(x)):+d}"
+    except (ValueError, TypeError):
+        return ''
+
+
 def _parse_edge(series):
     """Parse edge percentage strings like '+5.2%' into floats."""
     cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
@@ -1093,12 +1103,7 @@ def _render_spread_bets(col, lg):
                 breakeven = row.get('Breakeven_Spread', None)
                 breakeven_str = f"{breakeven:+.1f}" if breakeven and pd.notna(breakeven) else "---"
 
-                std_odds_raw = row.get('Std_Odds', '')
-                try:
-                    odds_val = int(float(std_odds_raw)) if pd.notna(std_odds_raw) and str(std_odds_raw).strip() not in ('', 'nan') else None
-                    odds_str = f"{odds_val:+d}" if odds_val else "---"
-                except (ValueError, TypeError):
-                    odds_str = "---"
+                odds_str = _format_odds_display(row.get('Std_Odds', '')) or "---"
 
                 kalshi_side = row.get('Kalshi_Side')
                 kalshi_price = row.get('Kalshi_Price')
@@ -1720,9 +1725,7 @@ for i, lg in enumerate(LEAGUES):
 
             # Format odds column for display
             if 'Std_Odds' in display_df.columns:
-                display_df['Odds'] = display_df['Std_Odds'].apply(
-                    lambda x: str(int(float(x))) if pd.notna(x) and str(x).strip() not in ('', 'nan') else ''
-                )
+                display_df['Odds'] = display_df['Std_Odds'].apply(_format_odds_display)
             else:
                 display_df['Odds'] = ''
 

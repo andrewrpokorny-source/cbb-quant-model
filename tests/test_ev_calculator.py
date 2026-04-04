@@ -196,3 +196,8 @@ class TestAmericanOddsToImpliedProb:
 
     def test_zero_returns_none(self):
         assert american_odds_to_implied_prob("0") is None
+
+    def test_nan_string_returns_none(self):
+        assert american_odds_to_implied_prob("NaN") is None
+        assert american_odds_to_implied_prob("nan") is None
+        assert american_odds_to_implied_prob(float("nan")) is None
