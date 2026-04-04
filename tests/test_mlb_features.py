@@ -316,3 +316,114 @@ class TestRestDays:
         assert team_a.iloc[0]["rest_days"] == 3.0
         # Subsequent games: 1 day apart
         assert team_a.iloc[1]["rest_days"] == 1.0
+
+
+# === Phase 1 new feature tests ===
+
+
+class TestPythagoreanWinPct:
+    """Pythagorean expected win% from run scoring/allowed."""
+
+    def test_formula_correct(self):
+        from mlb.features import compute_pythagorean_wpct
+        # 5 RPG scored, 4 RPG allowed -> ~0.597
+        result = compute_pythagorean_wpct(5.0, 4.0, exponent=1.83)
+        assert result == pytest.approx(0.597, abs=0.01)
+
+    def test_equal_runs_gives_500(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(4.0, 4.0) == pytest.approx(0.5)
+
+    def test_zero_runs_allowed_gives_1(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(4.0, 0.0) == pytest.approx(1.0)
+
+    def test_zero_runs_scored_gives_0(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(0.0, 4.0) == pytest.approx(0.0)
+
+    def test_both_zero_gives_500(self):
+        from mlb.features import compute_pythagorean_wpct
+        assert compute_pythagorean_wpct(0.0, 0.0) == pytest.approx(0.5)
+
+    def test_pyth_columns_in_rolling_stats(self):
+        df = _make_games(5)
+        df = calculate_rolling_stats(df)
+        assert "prev_season_pyth_wpct" in df.columns
+        assert "prev_roll10_pyth_wpct" in df.columns
+
+    def test_pyth_honest_lag(self):
+        df = _make_games(5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # First game: no prior data
+        assert pd.isna(team_a.iloc[0]["prev_season_pyth_wpct"])
+        # Second game: value based on first game only
+        val = team_a.iloc[1]["prev_season_pyth_wpct"]
+        assert pd.notna(val)
+        assert 0.0 <= val <= 1.0
+
+    def test_pyth_values_bounded(self):
+        df = _make_games(10)
+        df = calculate_rolling_stats(df)
+        pyth = df["prev_season_pyth_wpct"].dropna()
+        assert (pyth >= 0.0).all()
+        assert (pyth <= 1.0).all()
+
+
+class TestNewDifferentials:
+    """Pythagorean diff and roll5 diffs."""
+
+    def test_pyth_diff_computed(self):
+        df = _make_games(6)
+        df = calculate_rolling_stats(df)
+        df = calculate_pitcher_rolling_stats(df)
+        df = merge_opponent_stats(df)
+        df = compute_differentials(df)
+        assert "pyth_wpct_diff" in df.columns
+
+    def test_roll5_diffs_computed(self):
+        df = _make_games(6)
+        df = calculate_rolling_stats(df)
+        df = calculate_pitcher_rolling_stats(df)
+        df = merge_opponent_stats(df)
+        df = compute_differentials(df)
+        assert "roll5_rpg_diff" in df.columns
+        assert "roll5_ra_diff" in df.columns
+
+
+class TestBuildFeatureRowNewFeatures:
+    """Verify build_feature_row populates new features from stats, not fallbacks."""
+
+    def test_pyth_wpct_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"prev_season_pyth_wpct": 0.6, "prev_roll10_pyth_wpct": 0.55}
+        away_stats = {"prev_season_pyth_wpct": 0.45}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["prev_season_pyth_wpct"] == 0.6
+        assert row["prev_roll10_pyth_wpct"] == 0.55
+        assert row["pyth_wpct_diff"] == pytest.approx(0.15)
+
+    def test_bullpen_era_diff_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"bullpen_era": 3.5}
+        away_stats = {"bullpen_era": 4.2}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["bullpen_era_diff"] == pytest.approx(0.7)
+
+    def test_bullpen_era_diff_defaults_to_zero_when_missing(self):
+        from mlb.predict import build_feature_row
+        row = build_feature_row({}, {}, 3.5, 4.0)
+        assert row["bullpen_era_diff"] == 0.0
+
+    def test_roll5_rpg_diff_from_stats(self):
+        from mlb.predict import build_feature_row
+        home_stats = {"prev_roll5_runs_per_game": 5.0}
+        away_stats = {"prev_roll5_runs_per_game": 3.5}
+        row = build_feature_row(home_stats, away_stats, 3.5, 4.0)
+        assert row["roll5_rpg_diff"] == pytest.approx(1.5)
+
+    def test_wind_speed_defaults_for_indoor(self):
+        from mlb.predict import build_feature_row
+        row = build_feature_row({}, {}, 3.5, 4.0, venue_name="Chase Field", venue_indoor=1)
+        assert row["wind_speed"] == 0.0

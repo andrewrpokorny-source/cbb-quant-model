@@ -25,6 +25,9 @@ BASE_COLUMNS = [
 # Per-game pitcher line columns from fetch_pitcher_game_logs()
 PITCHER_GAME_LOG_COLUMNS = [
     "sp_ip", "sp_er", "sp_h", "sp_bb", "sp_k",
+    "sp_throws_left",
+    "bullpen_era",
+    "temperature", "wind_speed",
 ]
 
 # Game-level stat columns from ESPN
@@ -32,6 +35,21 @@ GAME_STAT_COLUMNS = [
     "team_hits", "team_errors", "team_runs",
     "opp_hits", "opp_errors", "opp_runs",
 ]
+
+
+def compute_pythagorean_wpct(rs, ra, exponent=1.83):
+    """Pythagorean expected win% from runs scored and allowed per game.
+
+    Returns 0.5 when both are zero.
+    """
+    if rs == 0 and ra == 0:
+        return 0.5
+    rs_pow = rs ** exponent
+    ra_pow = ra ** exponent
+    denom = rs_pow + ra_pow
+    if denom == 0:
+        return 0.5
+    return rs_pow / denom
 
 
 def clean_stale_data(df):
@@ -86,6 +104,21 @@ def calculate_rolling_stats(df):
         df[f"season_{col}"] = grp.expanding().mean().reset_index(level=0, drop=True)
         df[f"roll5_{col}"] = grp.rolling(5, min_periods=1).mean().reset_index(level=0, drop=True)
         df[f"roll10_{col}"] = grp.rolling(10, min_periods=3).mean().reset_index(level=0, drop=True)
+
+    # --- Pythagorean win% from run averages ---
+    rs_season = df["season_runs_per_game"]
+    ra_season = df["season_runs_allowed"]
+    rs_pow = rs_season ** 1.83
+    ra_pow = ra_season ** 1.83
+    denom = rs_pow + ra_pow
+    df["season_pyth_wpct"] = (rs_pow / denom).where(denom > 0, 0.5)
+
+    rs_r10 = df["roll10_runs_per_game"]
+    ra_r10 = df["roll10_runs_allowed"]
+    rs_r10_pow = rs_r10 ** 1.83
+    ra_r10_pow = ra_r10 ** 1.83
+    denom_r10 = rs_r10_pow + ra_r10_pow
+    df["roll10_pyth_wpct"] = (rs_r10_pow / denom_r10).where(denom_r10 > 0, 0.5)
 
     # Apply honest lag: shift all rolling/season stats by 1 within each team
     lag_prefixes = ["season_", "roll5_", "roll10_"]
@@ -198,6 +231,10 @@ def merge_opponent_stats(df):
         "prev_season_runs_per_game": "opp_prev_season_rpg",
         "prev_season_runs_allowed": "opp_prev_season_ra",
         "prev_roll10_win_pct": "opp_prev_roll10_win_pct",
+        "prev_roll5_runs_per_game": "opp_prev_roll5_rpg",
+        "prev_roll5_runs_allowed": "opp_prev_roll5_ra",
+        "prev_season_pyth_wpct": "opp_prev_season_pyth_wpct",
+        "bullpen_era": "opp_bullpen_era",
     }
 
     # Use game_time in the join key when available to handle doubleheaders
@@ -241,6 +278,7 @@ def merge_opponent_stats(df):
         "sp_roll_whip": "opp_sp_roll_whip",
         "sp_roll_k9": "opp_sp_roll_k9",
         "sp_roll_ip": "opp_sp_roll_ip",
+        "sp_throws_left": "opp_sp_throws_left",
     }
     opp_sp_req = ["date", "team"]
     if has_game_time:
@@ -273,6 +311,17 @@ def merge_opponent_stats(df):
         if "opp_sp_name" in df.columns:
             df = df.drop(columns=["opp_sp_name"])
 
+    return df
+
+
+def add_park_factor(df):
+    """Add ballpark run factor from venue_name."""
+    from mlb.ballpark_factors import get_park_factor
+    print("   -> Adding ballpark factors...")
+    if "venue_name" in df.columns:
+        df["park_factor"] = df["venue_name"].map(get_park_factor).fillna(1.0)
+    else:
+        df["park_factor"] = 1.0
     return df
 
 
@@ -316,6 +365,41 @@ def compute_differentials(df):
     else:
         df["sp_roll_era_diff"] = 0.0
 
+    # Pythagorean win% differential
+    if "prev_season_pyth_wpct" in df.columns and "opp_prev_season_pyth_wpct" in df.columns:
+        df["pyth_wpct_diff"] = (
+            df["prev_season_pyth_wpct"].fillna(0.5)
+            - df["opp_prev_season_pyth_wpct"].fillna(0.5)
+        )
+    else:
+        df["pyth_wpct_diff"] = 0.0
+
+    # Roll5 differentials (short-term form)
+    if "prev_roll5_runs_per_game" in df.columns and "opp_prev_roll5_rpg" in df.columns:
+        df["roll5_rpg_diff"] = (
+            df["prev_roll5_runs_per_game"].fillna(0)
+            - df["opp_prev_roll5_rpg"].fillna(0)
+        )
+    else:
+        df["roll5_rpg_diff"] = 0.0
+
+    if "prev_roll5_runs_allowed" in df.columns and "opp_prev_roll5_ra" in df.columns:
+        df["roll5_ra_diff"] = (
+            df["opp_prev_roll5_ra"].fillna(0)
+            - df["prev_roll5_runs_allowed"].fillna(0)
+        )
+    else:
+        df["roll5_ra_diff"] = 0.0
+
+    # Bullpen ERA differential (opponent worse = positive for us)
+    if "bullpen_era" in df.columns and "opp_bullpen_era" in df.columns:
+        df["bullpen_era_diff"] = (
+            df["opp_bullpen_era"].fillna(4.0)
+            - df["bullpen_era"].fillna(4.0)
+        )
+    else:
+        df["bullpen_era_diff"] = 0.0
+
     return df
 
 
@@ -346,6 +430,7 @@ def run_features(league=LEAGUE):
     df = clean_stale_data(df)
     df = calculate_rolling_stats(df)
     df = calculate_pitcher_rolling_stats(df)
+    df = add_park_factor(df)
     df = merge_opponent_stats(df)
     df = compute_differentials(df)
     df = compute_target(df)

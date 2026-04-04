@@ -80,12 +80,19 @@ MLB_FEATURES = [
     'opp_win_pct',
     'prev_win_pct',
     'prev_roll10_win_pct',
-    # Differentials (all game-derived, no leaky aggregates)
+    # Differentials
     'roll10_rpg_diff',
     'roll10_ra_diff',
     'sp_era_diff',
     'sp_roll_era_diff',
     'prev_volatility',
+    # New features (Pythagorean, bullpen, weather, short-term form)
+    'prev_season_pyth_wpct',
+    'prev_roll10_pyth_wpct',
+    'pyth_wpct_diff',
+    'wind_speed',
+    'bullpen_era_diff',
+    'roll5_rpg_diff',
 ]
 FEATURES = MENS_FEATURES
 FEATURES_BY_LEAGUE = {

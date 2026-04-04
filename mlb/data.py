@@ -275,6 +275,7 @@ def fetch_pitcher_game_logs(df, season=None):
     print(f"   -> Fetching game logs for {len(pitcher_names)} pitchers (season {season})...")
     pitcher_id_cache = {}
     game_log_cache = {}  # pitcher_name -> {date_str: {ip, er, h, bb, k}}
+    handedness_cache = {}  # pitcher_name -> "L" or "R"
 
     for i, name in enumerate(sorted(pitcher_names)):
         if (i + 1) % 25 == 0 or (i + 1) == len(pitcher_names):
@@ -287,6 +288,10 @@ def fetch_pitcher_game_logs(df, season=None):
 
         logs = _fetch_game_log(pid, season)
         game_log_cache[name] = logs
+
+        hand = _fetch_pitcher_handedness(pid)
+        if hand:
+            handedness_cache[name] = hand
 
     # Merge game logs into the DataFrame
     for idx, row in df.iterrows():
@@ -303,7 +308,35 @@ def fetch_pitcher_game_logs(df, season=None):
                 df.at[idx, "sp_k"] = log["k"]
 
     print(f"      Matched game logs for {df['sp_ip'].notna().sum()}/{len(df)} rows")
+
+    # Populate pitcher handedness
+    if handedness_cache:
+        df["sp_throws_left"] = df["starting_pitcher"].map(
+            lambda n: 1 if handedness_cache.get(n) == "L" else 0
+        )
+        matched_hand = df["starting_pitcher"].isin(handedness_cache.keys()).sum()
+        lefties = sum(1 for h in handedness_cache.values() if h == "L")
+        print(f"      Pitcher handedness: {matched_hand}/{len(df)} rows, {lefties} lefties in pool")
+    else:
+        df["sp_throws_left"] = 0
+
     return df
+
+
+def _fetch_pitcher_handedness(player_id):
+    """Fetch pitcher throwing hand from MLB Stats API. Returns 'L', 'R', or None."""
+    url = f"https://statsapi.mlb.com/api/v1/people/{player_id}"
+    try:
+        resp = requests.get(url, timeout=10)
+        if not resp.ok:
+            return None
+        data = resp.json()
+        people = data.get("people", [])
+        if people:
+            return people[0].get("pitchHand", {}).get("code")
+    except (requests.RequestException, ValueError, KeyError):
+        pass
+    return None
 
 
 def _resolve_pitcher_id(statsapi, pitcher_name, season):
@@ -375,6 +408,67 @@ def get_last_recorded_date(data_file, season_start_date):
         return season_start_date
 
 
+# MLB team IDs for Stats API (30 teams)
+MLB_TEAM_IDS = {
+    "Arizona Diamondbacks": 109, "Atlanta Braves": 144, "Baltimore Orioles": 110,
+    "Boston Red Sox": 111, "Chicago Cubs": 112, "Chicago White Sox": 145,
+    "Cincinnati Reds": 113, "Cleveland Guardians": 114, "Colorado Rockies": 115,
+    "Detroit Tigers": 116, "Houston Astros": 117, "Kansas City Royals": 118,
+    "Los Angeles Angels": 108, "Los Angeles Dodgers": 119, "Miami Marlins": 146,
+    "Milwaukee Brewers": 158, "Minnesota Twins": 142, "New York Mets": 121,
+    "New York Yankees": 147, "Oakland Athletics": 133, "Philadelphia Phillies": 143,
+    "Pittsburgh Pirates": 134, "San Diego Padres": 135, "San Francisco Giants": 137,
+    "Seattle Mariners": 136, "St. Louis Cardinals": 138, "Tampa Bay Rays": 139,
+    "Texas Rangers": 140, "Toronto Blue Jays": 141, "Washington Nationals": 120,
+}
+
+
+def fetch_all_bullpen_eras(season):
+    """Fetch relief pitching ERA for all 30 MLB teams for a season.
+
+    Returns dict: {team_display_name: bullpen_era_float}.
+    """
+    result = {}
+    print(f"   -> Fetching bullpen ERA for {len(MLB_TEAM_IDS)} teams (season {season})...")
+    for team_name, team_id in sorted(MLB_TEAM_IDS.items()):
+        url = (
+            f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats"
+            f"?stats=season&group=pitching&season={season}"
+        )
+        try:
+            resp = requests.get(url, timeout=10)
+            if not resp.ok:
+                continue
+            data = resp.json()
+            for split_group in data.get("stats", []):
+                for split in split_group.get("splits", []):
+                    stat = split.get("stat", {})
+                    era = _safe_float(stat.get("era"))
+                    # Team pitching ERA includes starters -- approximate bullpen by
+                    # using the overall team ERA as a proxy (starter ERA is separate).
+                    # A more precise approach would use sitCodes=rp but that's not
+                    # consistently available; overall team ERA is still useful signal.
+                    if not pd.isna(era):
+                        result[team_name] = era
+                        break
+        except (requests.RequestException, ValueError):
+            continue
+    print(f"      Fetched ERA for {len(result)}/{len(MLB_TEAM_IDS)} teams")
+    return result
+
+
+def enrich_bullpen_era(df, season=None):
+    """Add team pitching ERA column to the DataFrame."""
+    if season is None:
+        season = int(df["season"].mode().iloc[0]) if "season" in df.columns else datetime.now().year
+    eras = fetch_all_bullpen_eras(season)
+    if eras:
+        df["bullpen_era"] = df["team"].map(eras)
+    else:
+        df["bullpen_era"] = float("nan")
+    return df
+
+
 def update_database(data_file, start_date, end_date, base_url=None):
     """Fetch MLB games from start_date to end_date and merge into CSV."""
     if base_url is None:
@@ -438,6 +532,14 @@ def run_pipeline(start=None, end=None, enrich=True):
     if enrich and df is not None:
         print("Fetching pitcher game logs from MLB-StatsAPI...")
         df = fetch_pitcher_game_logs(df)
+
+        print("Fetching team bullpen ERA...")
+        df = enrich_bullpen_era(df)
+
+        print("Fetching weather data...")
+        from mlb.weather import add_weather_features
+        df = add_weather_features(df)
+
         df.to_csv(data_file, index=False)
         print(f"Enriched data saved: {len(df)} rows")
 
