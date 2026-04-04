@@ -1274,6 +1274,7 @@ def main(spread_overrides=None, league="mens"):
                 _compute_std_edge(conf, g, prob > 0.5, "spread"),
                 _get_std_implied_prob(g, prob > 0.5, "spread"),
             ),
+            "Std_Odds": g.get("home_spread_odds", "") if prob > 0.5 else g.get("away_spread_odds", ""),
         }
 
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:

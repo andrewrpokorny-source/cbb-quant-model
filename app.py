@@ -1707,7 +1707,15 @@ for i, lg in enumerate(LEAGUES):
             display_df['Best_Edge'] = k_edge.where(kalshi_better, std_edge).apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
             display_df['Best_Units'] = k_units.where(kalshi_better, std_units)
 
-            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
+            # Format odds column for display
+            if 'Std_Odds' in display_df.columns:
+                display_df['Odds'] = display_df['Std_Odds'].apply(
+                    lambda x: str(int(float(x))) if pd.notna(x) and str(x).strip() not in ('', 'nan') else ''
+                )
+            else:
+                display_df['Odds'] = ''
+
+            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Odds', 'Best_Edge', 'Best_Units']
             valid_cols = [c for c in table_cols if c in display_df.columns]
             table_df = display_df[valid_cols].rename(columns={
                 'Date/Time': 'Time', 'Best_Edge': 'Edge', 'Best_Units': 'Units'
@@ -1722,6 +1730,7 @@ for i, lg in enumerate(LEAGUES):
                     "Time": st.column_config.TextColumn("Time", width="small"),
                     "Pick": st.column_config.TextColumn("Pick", width="large"),
                     "Confidence": st.column_config.TextColumn("Conf", width="small"),
+                    "Odds": st.column_config.TextColumn("Odds", width="small"),
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                 }
