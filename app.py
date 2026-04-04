@@ -693,6 +693,16 @@ def _filter_not_started(df):
     return df[parsed.isna() | (parsed > now)].copy()
 
 
+def _format_odds_display(x):
+    """Format American odds for display, preserving +/- sign."""
+    try:
+        if pd.isna(x) or str(x).strip().lower() in ('', 'nan'):
+            return ''
+        return f"{int(float(x)):+d}"
+    except (ValueError, TypeError):
+        return ''
+
+
 def _parse_edge(series):
     """Parse edge percentage strings like '+5.2%' into floats."""
     cleaned = series.fillna('').astype(str).str.rstrip('%').str.lstrip('+')
@@ -1093,6 +1103,8 @@ def _render_spread_bets(col, lg):
                 breakeven = row.get('Breakeven_Spread', None)
                 breakeven_str = f"{breakeven:+.1f}" if breakeven and pd.notna(breakeven) else "---"
 
+                odds_str = _format_odds_display(row.get('Std_Odds', '')) or "---"
+
                 kalshi_side = row.get('Kalshi_Side')
                 kalshi_price = row.get('Kalshi_Price')
                 has_kalshi = pd.notna(kalshi_side) and kalshi_side
@@ -1126,6 +1138,10 @@ def _render_spread_bets(col, lg):
                         <div class="stat-item">
                             <span class="stat-label">{_esc(edge_source)}</span>
                             <span class="stat-value positive">{_esc(display_edge)}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Odds</span>
+                            <span class="stat-value">{_esc(odds_str)}</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Units</span>
@@ -1707,7 +1723,13 @@ for i, lg in enumerate(LEAGUES):
             display_df['Best_Edge'] = k_edge.where(kalshi_better, std_edge).apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
             display_df['Best_Units'] = k_units.where(kalshi_better, std_units)
 
-            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
+            # Format odds column for display
+            if 'Std_Odds' in display_df.columns:
+                display_df['Odds'] = display_df['Std_Odds'].apply(_format_odds_display)
+            else:
+                display_df['Odds'] = ''
+
+            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Odds', 'Best_Edge', 'Best_Units']
             valid_cols = [c for c in table_cols if c in display_df.columns]
             table_df = display_df[valid_cols].rename(columns={
                 'Date/Time': 'Time', 'Best_Edge': 'Edge', 'Best_Units': 'Units'
@@ -1722,6 +1744,7 @@ for i, lg in enumerate(LEAGUES):
                     "Time": st.column_config.TextColumn("Time", width="small"),
                     "Pick": st.column_config.TextColumn("Pick", width="large"),
                     "Confidence": st.column_config.TextColumn("Conf", width="small"),
+                    "Odds": st.column_config.TextColumn("Odds", width="small"),
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                 }

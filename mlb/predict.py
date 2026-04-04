@@ -19,10 +19,12 @@ except ImportError:
     pass
 
 from betting import (
+    american_odds_to_implied_prob,
     calculate_edge,
     get_rating,
     recommended_units,
     kalshi_implied_prob,
+    STANDARD_IMPLIED_PROB,
 )
 from betting.ev_calculator import kalshi_fee_cents
 from league_config import (
@@ -171,6 +173,14 @@ def fetch_schedule(league=LEAGUE):
             # Venue
             venue = comp.get("venue", {})
 
+            # Moneyline odds from ESPN/DraftKings
+            odds_block = comp.get("odds", [{}])[0] if comp.get("odds") else {}
+            ml_block = odds_block.get("moneyline", {})
+            home_ml_odds = (ml_block.get("home", {}).get("close", {}).get("odds", "")
+                            or ml_block.get("home", {}).get("open", {}).get("odds", ""))
+            away_ml_odds = (ml_block.get("away", {}).get("close", {}).get("odds", "")
+                            or ml_block.get("away", {}).get("open", {}).get("odds", ""))
+
             games.append({
                 "game_date": game_date,
                 "home_team": home_name,
@@ -183,6 +193,8 @@ def fetch_schedule(league=LEAGUE):
                 "away_sp_era": away_sp.get("era", float("nan")),
                 "venue": venue.get("fullName", ""),
                 "venue_indoor": int(venue.get("indoor", False)),
+                "home_ml_odds": home_ml_odds,
+                "away_ml_odds": away_ml_odds,
             })
 
     print(f"      Found {len(games)} upcoming games")
@@ -514,6 +526,16 @@ def generate_predictions(league=LEAGUE):
             game_time=game_time_utc,
         )
 
+        # Standard book (FanDuel/DraftKings) edge from real ESPN moneyline odds
+        is_home_pick = prob_home_win > 0.5
+        ml_odds_str = game.get("home_ml_odds") if is_home_pick else game.get("away_ml_odds")
+        std_implied = american_odds_to_implied_prob(ml_odds_str) if ml_odds_str else None
+        if std_implied is None:
+            std_implied = STANDARD_IMPLIED_PROB
+        std_edge = conf - std_implied
+        std_rating = get_rating(std_edge).value
+        std_units = recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0
+
         pred = {
             "Bet_Type": "game",
             "Date/Time": game["game_date"].strftime("%Y-%m-%d %H:%M"),
@@ -525,6 +547,11 @@ def generate_predictions(league=LEAGUE):
             "Prob_Away": round(prob_away_win, 3),
             "Conf": round(conf, 3),
             "Venue": game["venue"],
+            "Std_Edge": round(std_edge, 4),
+            "Std_Edge_Pct": f"{std_edge * 100:+.1f}%",
+            "Std_Rating": std_rating,
+            "Std_Units": round(std_units, 1),
+            "Std_Odds": ml_odds_str or "",
             **kalshi_data,
         }
         predictions.append(pred)
