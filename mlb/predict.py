@@ -574,15 +574,18 @@ def generate_predictions(league=LEAGUE):
             game_time=game_time_utc,
         )
 
-        # Standard book (FanDuel/DraftKings) edge from real ESPN moneyline odds
+        # Standard book (DraftKings) edge from real ESPN moneyline odds
         is_home_pick = prob_home_win > 0.5
         ml_odds_str = game.get("home_ml_odds") if is_home_pick else game.get("away_ml_odds")
         std_implied = american_odds_to_implied_prob(ml_odds_str) if ml_odds_str else None
-        if std_implied is None:
-            std_implied = STANDARD_IMPLIED_PROB
-        std_edge = conf - std_implied
-        std_rating = get_rating(std_edge).value
-        std_units = recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0
+        if std_implied is not None:
+            std_edge = conf - std_implied
+            std_rating = get_rating(std_edge).value
+            std_units = recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0
+        else:
+            std_edge = None
+            std_rating = None
+            std_units = 0.0
 
         pred = {
             "Bet_Type": "game",
@@ -595,8 +598,8 @@ def generate_predictions(league=LEAGUE):
             "Prob_Away": round(prob_away_win, 3),
             "Conf": round(conf, 3),
             "Venue": game["venue"],
-            "Std_Edge": round(std_edge, 4),
-            "Std_Edge_Pct": f"{std_edge * 100:+.1f}%",
+            "Std_Edge": round(std_edge, 4) if std_edge is not None else None,
+            "Std_Edge_Pct": f"{std_edge * 100:+.1f}%" if std_edge is not None else "",
             "Std_Rating": std_rating,
             "Std_Units": round(std_units, 1),
             "Std_Odds": ml_odds_str or "",
