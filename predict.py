@@ -19,7 +19,7 @@ except ImportError:
     print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob, american_odds_to_implied_prob
 from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
@@ -144,6 +144,28 @@ def get_latest_stats(df):
 
     return latest_stats
 
+def _get_std_implied_prob(game, is_home_pick, bet_type="spread"):
+    """Get the implied probability for the picked side from real ESPN odds.
+
+    Falls back to STANDARD_IMPLIED_PROB if odds aren't available.
+    """
+    if bet_type == "spread":
+        odds_str = game.get("home_spread_odds") if is_home_pick else game.get("away_spread_odds")
+    else:
+        odds_str = game.get("home_ml_odds") if is_home_pick else game.get("away_ml_odds")
+
+    if odds_str:
+        implied = american_odds_to_implied_prob(odds_str)
+        if implied is not None:
+            return implied
+    return STANDARD_IMPLIED_PROB
+
+
+def _compute_std_edge(conf, game, is_home_pick, bet_type="spread"):
+    """Compute edge vs real sportsbook odds (not the fixed -110 assumption)."""
+    return conf - _get_std_implied_prob(game, is_home_pick, bet_type)
+
+
 def fetch_schedule():
     """
     Fetch today's and tomorrow's games with TIMEZONE AWARENESS.
@@ -214,6 +236,18 @@ def fetch_schedule():
                     print(f"         Could not parse spread from: {details!r}")
                     spread_val = 0.0
 
+                # Extract per-side spread odds and moneyline odds
+                point_spread = odds.get('pointSpread', {})
+                home_spread_odds = (point_spread.get('home', {}).get('close', {}).get('odds', '')
+                                    or point_spread.get('home', {}).get('open', {}).get('odds', ''))
+                away_spread_odds = (point_spread.get('away', {}).get('close', {}).get('odds', '')
+                                    or point_spread.get('away', {}).get('open', {}).get('odds', ''))
+                ml_block = odds.get('moneyline', {})
+                home_ml_odds = (ml_block.get('home', {}).get('close', {}).get('odds', '')
+                                or ml_block.get('home', {}).get('open', {}).get('odds', ''))
+                away_ml_odds = (ml_block.get('away', {}).get('close', {}).get('odds', '')
+                                or ml_block.get('away', {}).get('open', {}).get('odds', ''))
+
                 # Neutral site + venue
                 is_neutral = int(comp.get('neutralSite', False))
                 venue = comp.get('venue', {})
@@ -231,7 +265,11 @@ def fetch_schedule():
                         'has_espn_spread': spread_val != 0.0,
                         'is_neutral': is_neutral,
                         'venue_city': venue_addr.get('city', ''),
-                        'venue_state': venue_addr.get('state', '')
+                        'venue_state': venue_addr.get('state', ''),
+                        'home_spread_odds': home_spread_odds,
+                        'away_spread_odds': away_spread_odds,
+                        'home_ml_odds': home_ml_odds,
+                        'away_ml_odds': away_ml_odds,
                     })
                     
         except requests.RequestException as e:
@@ -1229,10 +1267,13 @@ def main(spread_overrides=None, league="mens"):
             "Kalshi_Ticker": kalshi_data.get("Kalshi_Ticker"),
             "Breakeven_Spread": line_shopping.breakeven_spread,
             "Line_Shopping_Data": line_shopping,
-            "Std_Edge": conf - STANDARD_IMPLIED_PROB,
-            "Std_Edge_Pct": f"{(conf - STANDARD_IMPLIED_PROB) * 100:+.1f}%",
-            "Std_Rating": get_rating(conf - STANDARD_IMPLIED_PROB).value,
-            "Std_Units": recommended_units(conf - STANDARD_IMPLIED_PROB, STANDARD_IMPLIED_PROB),
+            "Std_Edge": _compute_std_edge(conf, g, prob > 0.5, "spread"),
+            "Std_Edge_Pct": f"{_compute_std_edge(conf, g, prob > 0.5, 'spread') * 100:+.1f}%",
+            "Std_Rating": get_rating(_compute_std_edge(conf, g, prob > 0.5, "spread")).value,
+            "Std_Units": recommended_units(
+                _compute_std_edge(conf, g, prob > 0.5, "spread"),
+                _get_std_implied_prob(g, prob > 0.5, "spread"),
+            ),
         }
 
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:

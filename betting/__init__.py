@@ -1,6 +1,7 @@
 """Betting calculations: edge, EV, and Kelly sizing."""
 
 from .ev_calculator import (
+    american_odds_to_implied_prob,
     calculate_edge,
     get_rating,
     EdgeRating,
@@ -20,6 +21,7 @@ from .line_shopping import (
 )
 
 __all__ = [
+    "american_odds_to_implied_prob",
     "calculate_edge",
     "get_rating",
     "EdgeRating",

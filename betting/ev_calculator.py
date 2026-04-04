@@ -1,5 +1,6 @@
 """Edge calculation and bet rating logic."""
 
+import math
 from enum import Enum
 
 
@@ -95,6 +96,32 @@ def get_rating(edge: float) -> EdgeRating:
     if edge >= MARGINAL_THRESHOLD:
         return EdgeRating.MARGINAL
     return EdgeRating.PASS
+
+
+def american_odds_to_implied_prob(odds_str):
+    """Convert American odds string to implied probability (no-vig single side).
+
+    Args:
+        odds_str: American odds like "-150", "+130", "-110", or "+100".
+
+    Returns:
+        Implied probability as a float (0-1), or None if unparseable.
+
+    Examples:
+        "-110" -> 110/210 = 0.5238
+        "-150" -> 150/250 = 0.6000
+        "+130" -> 100/230 = 0.4348
+    """
+    try:
+        odds = float(str(odds_str).replace("+", ""))
+    except (TypeError, ValueError):
+        return None
+    if odds == 0:
+        return None
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100.0)
+    else:
+        return 100.0 / (odds + 100.0)
 
 
 def calculate_ev(
