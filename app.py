@@ -736,9 +736,10 @@ def _parse_edge(series):
 # LIVE KALSHI POSITIONS
 # ==========================================
 
-CBB_POSITION_PREFIXES = (
+POSITION_PREFIXES = (
     "KXNCAAMBGAME", "KXNCAAWBGAME",
     "KXNCAAMBSPREAD", "KXNCAAWBSPREAD",
+    "KXMLBGAME",
 )
 
 
@@ -757,7 +758,7 @@ def _fetch_kalshi_positions():
         if not client.api_key:
             return []
         positions = client.get_positions(settlement_status="unsettled")
-        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in CBB_POSITION_PREFIXES)]
+        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in POSITION_PREFIXES)]
     except Exception as e:
         print(f"      Failed to fetch Kalshi positions: {e}")
         return []
@@ -796,7 +797,11 @@ def _fetch_live_espn_games():
             period = status.get("period", 0)
             desc = status.get("type", {}).get("description", "")
 
-            if "halftime" in desc.lower():
+            if lg == "mlb":
+                # MLB: period = inning, clock = outs or top/bot indicator
+                inning_half = status.get("type", {}).get("shortDetail", "")
+                clock_display = inning_half if inning_half else f"Inn {period}"
+            elif "halftime" in desc.lower():
                 clock_display = "HALF"
             elif period > 2:
                 clock_display = f"{clock} OT" if clock else "OT"
@@ -842,8 +847,13 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         yes_abbr = abbr_match.group(1)
 
         # Determine league from ticker prefix to avoid cross-league mismatches
-        # (e.g. men's UK position matching women's UK game).
-        ticker_league = "womens" if "AAWB" in ticker.upper() else "mens"
+        ticker_upper = ticker.upper()
+        if "KXMLB" in ticker_upper:
+            ticker_league = "mlb"
+        elif "AAWB" in ticker_upper:
+            ticker_league = "womens"
+        else:
+            ticker_league = "mens"
 
         game = live_games.get(yes_abbr)
         if not game or game.get("league") != ticker_league:
