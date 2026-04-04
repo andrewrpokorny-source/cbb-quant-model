@@ -1093,6 +1093,13 @@ def _render_spread_bets(col, lg):
                 breakeven = row.get('Breakeven_Spread', None)
                 breakeven_str = f"{breakeven:+.1f}" if breakeven and pd.notna(breakeven) else "---"
 
+                std_odds_raw = row.get('Std_Odds', '')
+                try:
+                    odds_val = int(float(std_odds_raw)) if pd.notna(std_odds_raw) and str(std_odds_raw).strip() not in ('', 'nan') else None
+                    odds_str = f"{odds_val:+d}" if odds_val else "---"
+                except (ValueError, TypeError):
+                    odds_str = "---"
+
                 kalshi_side = row.get('Kalshi_Side')
                 kalshi_price = row.get('Kalshi_Price')
                 has_kalshi = pd.notna(kalshi_side) and kalshi_side
@@ -1126,6 +1133,10 @@ def _render_spread_bets(col, lg):
                         <div class="stat-item">
                             <span class="stat-label">{_esc(edge_source)}</span>
                             <span class="stat-value positive">{_esc(display_edge)}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Odds</span>
+                            <span class="stat-value">{_esc(odds_str)}</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Units</span>
