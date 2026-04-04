@@ -2213,20 +2213,24 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conf = row.get("Conf", 0)
         pick = row.get("Pick", "")
 
-        # Use whichever source (Kalshi vs standard book) has the better edge
         std_edge_str = row.get("Std_Edge_Pct", "")
         kalshi_edge_str = row.get("Edge_Pct", "")
         std_units = row.get("Std_Units", 0) or 0
         kalshi_units = row.get("Units", 0) or 0
+        std_edge_val = _parse_edge_pct(std_edge_str)
+        kalshi_edge_val = _parse_edge_pct(kalshi_edge_str)
 
-        if _parse_edge_pct(kalshi_edge_str) > _parse_edge_pct(std_edge_str):
-            edge = kalshi_edge_str
-            units = kalshi_units
-        else:
-            edge = std_edge_str
-            units = std_units
+        parts = [f"{pick}  {conf:.0%}"]
+        if std_edge_val > 0:
+            parts.append(f"DK {std_edge_str} {std_units:.1f}U")
+        if kalshi_edge_val > 0:
+            parts.append(f"Kalshi {kalshi_edge_str} {kalshi_units:.1f}U")
+        if std_edge_val <= 0 and kalshi_edge_val <= 0:
+            edge = std_edge_str or kalshi_edge_str
+            if edge:
+                parts.append(edge)
 
-        lines.append(f"{pick}  {conf:.0%} | {edge} | {units:.1f}U")
+        lines.append(" | ".join(parts))
 
     # Telegram max message length is 4096 chars
     msg = "\n".join(lines)

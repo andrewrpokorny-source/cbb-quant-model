@@ -112,8 +112,11 @@ def american_odds_to_implied_prob(odds_str):
         "-150" -> 150/250 = 0.6000
         "+130" -> 100/230 = 0.4348
     """
+    s = str(odds_str).strip().upper()
+    if s == "EVEN":
+        s = "100"
     try:
-        odds = float(str(odds_str).replace("+", ""))
+        odds = float(s.replace("+", ""))
     except (TypeError, ValueError):
         return None
     if odds == 0 or math.isnan(odds):
