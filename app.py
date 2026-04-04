@@ -659,16 +659,24 @@ def _esc(val) -> str:
 def _filter_not_started(df):
     """Drop rows whose game time has already passed (in-progress games).
 
+    Handles two Date/Time formats:
+      CBB: "04/04 08:49 PM"  (Eastern, no year)
+      MLB: "2026-04-04 17:10" (UTC, ISO with year)
+
     Rows with unparseable Date/Time values are kept (never silently hidden).
     """
     if df.empty or 'Date/Time' not in df.columns:
         return df
     eastern = pytz.timezone('US/Eastern')
+    utc = pytz.utc
     now = datetime.now(eastern)
     now_naive = now.replace(tzinfo=None)
     year = now.year
+    dt_strings = df["Date/Time"].astype(str)
+
+    # Try CBB format first: "04/04 08:49 PM" (needs year prefix)
     parsed = pd.to_datetime(
-        str(year) + "/" + df["Date/Time"].astype(str),
+        str(year) + "/" + dt_strings,
         format="%Y/%m/%d %I:%M %p",
         errors="coerce",
     )
@@ -679,17 +687,32 @@ def _filter_not_started(df):
         parsed = parsed.where(
             ~needs_bump,
             pd.to_datetime(
-                str(year + 1) + "/" + df["Date/Time"].astype(str),
+                str(year + 1) + "/" + dt_strings,
                 format="%Y/%m/%d %I:%M %p",
                 errors="coerce",
             ),
         )
+    # CBB times are Eastern -- localize them
+    cbb_mask = parsed.notna()
+    if cbb_mask.any():
+        parsed[cbb_mask] = parsed[cbb_mask].dt.tz_localize(
+            eastern, ambiguous="NaT", nonexistent="NaT"
+        )
+
+    # Try MLB/ISO format for remaining unparsed: "2026-04-04 17:10" (UTC)
+    still_na = parsed.isna()
+    if still_na.any():
+        iso_parsed = pd.to_datetime(dt_strings[still_na], errors="coerce")
+        iso_ok = iso_parsed.notna()
+        if iso_ok.any():
+            iso_aware = iso_parsed[iso_ok].dt.tz_localize(utc).dt.tz_convert(eastern)
+            parsed.loc[iso_aware.index] = iso_aware
+
     n_failed = parsed.isna().sum()
     if n_failed > 0:
         bad = df.loc[parsed.isna(), "Date/Time"].unique()
         print(f"      WARNING: _filter_not_started: {n_failed} row(s) with "
               f"unparseable Date/Time (kept): {list(bad[:5])}")
-    parsed = parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
     return df[parsed.isna() | (parsed > now)].copy()
 
 
