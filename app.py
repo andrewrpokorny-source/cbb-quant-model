@@ -1115,7 +1115,8 @@ def _render_spread_bets(col, lg):
                     kalshi_ticker = row.get('Kalshi_Ticker', '')
                     kalshi_fee = row.get('Kalshi_Fee')
                     fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
-                    kalshi_text = f"Kalshi {_esc(kalshi_side)} @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
+                    cbb_pick = _esc(row.get('Pick', ''))
+                    kalshi_text = f"Kalshi {cbb_pick} (buy {_esc(kalshi_side)}) @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_url = _esc(kalshi_event_url(kalshi_ticker))
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_url}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
@@ -1204,7 +1205,9 @@ def _render_game_bets(col, lg):
             game_price_val = float(row.get('Kalshi_Price', 0) or 0)
             net_cost = game_price_val + game_fee_val
             game_fee_str = f" + {game_fee_val:.1f}&#162; fee" if game_fee_val else ""
-            game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
+            game_pick = _esc(row.get('Pick', ''))
+            game_side = _esc(row.get('Kalshi_Side', ''))
+            game_kalshi_text = f"Kalshi {game_pick} (buy {game_side}) @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
             game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
             if game_kalshi_url:
                 game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
