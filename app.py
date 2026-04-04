@@ -1647,8 +1647,12 @@ def _render_mlb_slate(game_df, lg):
         key=f"slate_filter_{lg}",
     )
 
-    if show_filter == "Value Bets Only" and "Rating" in game_df.columns:
-        display_df = game_df[game_df["Rating"].isin(VALUE_RATINGS)].copy()
+    std_col = game_df["Std_Rating"] if "Std_Rating" in game_df.columns else pd.Series("PASS", index=game_df.index)
+    kalshi_col = game_df["Rating"] if "Rating" in game_df.columns else pd.Series("PASS", index=game_df.index)
+    is_value = std_col.isin(VALUE_RATINGS) | kalshi_col.isin(VALUE_RATINGS)
+
+    if show_filter == "Value Bets Only":
+        display_df = game_df[is_value].copy()
     else:
         display_df = game_df.copy()
 
@@ -1659,15 +1663,34 @@ def _render_mlb_slate(game_df, lg):
     if "Conf" in display_df.columns:
         display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
 
+    # Rename for clarity in the table
+    rename_map = {}
+    if "Std_Edge_Pct" in display_df.columns:
+        rename_map["Std_Edge_Pct"] = "DK Edge"
+    if "Std_Rating" in display_df.columns:
+        rename_map["Std_Rating"] = "DK Rating"
+    if "Std_Units" in display_df.columns:
+        rename_map["Std_Units"] = "DK Units"
+    if "Edge_Pct" in display_df.columns:
+        rename_map["Edge_Pct"] = "Kalshi Edge"
+    if "Rating" in display_df.columns:
+        rename_map["Rating"] = "Kalshi Rating"
+    if "Units" in display_df.columns:
+        rename_map["Units"] = "Kalshi Units"
+    display_df = display_df.rename(columns=rename_map)
+
     show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
-                 "Confidence", "Rating", "Edge_Pct", "Units",
+                 "Confidence", "Std_Odds",
+                 "DK Edge", "DK Rating", "DK Units",
+                 "Kalshi Edge", "Kalshi Rating", "Kalshi Units",
                  "Kalshi_Side", "Kalshi_Price"]
     show_cols = [c for c in show_cols if c in display_df.columns]
 
-    if "Edge_Pct" in display_df.columns:
-        sort_col = "_edge_sort"
-        display_df[sort_col] = _parse_edge(display_df["Edge_Pct"])
-        display_df = display_df.sort_values(sort_col, ascending=False).drop(columns=[sort_col])
+    # Sort by best edge across both sources
+    std_edge = _parse_edge(display_df["DK Edge"]) if "DK Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
+    k_edge = _parse_edge(display_df["Kalshi Edge"]) if "Kalshi Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
+    display_df["_edge_sort"] = pd.concat([std_edge, k_edge], axis=1).max(axis=1)
+    display_df = display_df.sort_values("_edge_sort", ascending=False).drop(columns=["_edge_sort"])
 
     st.dataframe(display_df[show_cols], use_container_width=True, hide_index=True)
 

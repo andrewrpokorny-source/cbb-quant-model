@@ -24,9 +24,23 @@ from betting import (
     get_rating,
     recommended_units,
     kalshi_implied_prob,
+    EdgeRating,
+    VALUE_RATINGS,
+    RATING_RANK,
     STANDARD_IMPLIED_PROB,
 )
 from betting.ev_calculator import kalshi_fee_cents
+
+# Kalshi edge cap -- model edges above this are likely noise/overconfidence
+KALSHI_EDGE_CAP = 0.15
+
+# Kalshi GAME rating gates (mirrors CBB get_kalshi_game_live_rating)
+GAME_STRONG_MIN_PROB = 0.55
+GAME_STRONG_MIN_PRICE = 10
+GAME_STRONG_MAX_PRICE = 90
+GAME_GOOD_MIN_PROB = 0.52
+GAME_GOOD_MIN_PRICE = 15
+GAME_GOOD_MAX_PRICE = 85
 from league_config import (
     get_league_artifact_paths,
     get_scoreboard_base_url,
@@ -352,6 +366,36 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     return row
 
 
+def _get_kalshi_game_rating(edge, side_prob, price_cents):
+    """Apply live GAME filters so edge alone cannot promote tail punts.
+
+    Mirrors CBB get_kalshi_game_live_rating -- requires sufficient model
+    probability AND price in a reasonable range, not just raw edge.
+    """
+    if edge is None or side_prob is None or price_cents is None:
+        return EdgeRating.PASS.value
+
+    edge = float(edge)
+    side_prob = float(side_prob)
+    price_cents = float(price_cents)
+
+    if (
+        edge >= 0.08
+        and side_prob >= GAME_STRONG_MIN_PROB
+        and GAME_STRONG_MIN_PRICE <= price_cents <= GAME_STRONG_MAX_PRICE
+    ):
+        return EdgeRating.STRONG.value
+
+    if (
+        edge >= 0.04
+        and side_prob >= GAME_GOOD_MIN_PROB
+        and GAME_GOOD_MIN_PRICE <= price_cents <= GAME_GOOD_MAX_PRICE
+    ):
+        return EdgeRating.GOOD.value
+
+    return EdgeRating.PASS.value
+
+
 def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
                      prob_home_win, pick, game_time=""):
     """Calculate edge against Kalshi GAME market prices.
@@ -415,10 +459,14 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
     implied_prob = kalshi_implied_prob(our_price)
     fee = kalshi_fee_cents(our_price) / 100.0
 
-    edge = calculate_edge(model_prob, implied_prob)
-    rating_enum = get_rating(edge)
-    rating = rating_enum.value
-    units = recommended_units(edge, implied_prob)
+    raw_edge = calculate_edge(model_prob, implied_prob)
+    edge = min(raw_edge, KALSHI_EDGE_CAP)
+    rating = _get_kalshi_game_rating(edge, model_prob, our_price)
+    units = (
+        recommended_units(edge, implied_prob)
+        if rating in VALUE_RATINGS
+        else 0.0
+    )
 
     result["Kalshi_Ticker"] = ticker
     result["Kalshi_Side"] = our_side
@@ -556,14 +604,19 @@ def generate_predictions(league=LEAGUE):
         }
         predictions.append(pred)
 
-        edge_str = ""
-        if kalshi_data.get("Edge") is not None:
-            edge_str = f" | Edge: {kalshi_data['Edge']:.1%} ({kalshi_data['Rating']})"
         label = "HOME" if prob_home_win > 0.5 else "AWAY"
         print(f"   {game['away_abbr']} @ {game['home_abbr']}: "
               f"{label} {conf:.1%} "
-              f"(SP: {game['away_sp']} vs {game['home_sp']})"
-              f"{edge_str}")
+              f"(SP: {game['away_sp']} vs {game['home_sp']})")
+        if kalshi_data.get("Rating") in VALUE_RATINGS:
+            side = kalshi_data.get("Kalshi_Side", "?")
+            k_fee = kalshi_data.get("Kalshi_Fee", 0) or 0
+            print(f"      Kalshi: Buy {side} @ {kalshi_data['Kalshi_Price']}c"
+                  f" + {k_fee:.1f}c fee | Edge: {kalshi_data['Edge_Pct']}"
+                  f" | {kalshi_data['Units']:.1f}U")
+        if std_rating in VALUE_RATINGS:
+            print(f"      DK: Edge {pred['Std_Edge_Pct']}"
+                  f" | {std_units:.1f}U")
 
     if predictions:
         pred_df = pd.DataFrame(predictions)
