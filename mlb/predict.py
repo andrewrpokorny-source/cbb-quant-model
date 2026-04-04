@@ -471,7 +471,7 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
     result["Kalshi_Price"] = our_price
     result["Kalshi_Fee"] = round(fee, 4)
     result["Edge"] = round(edge, 4)
-    result["Edge_Pct"] = f"{edge:.1%}"
+    result["Edge_Pct"] = f"{edge * 100:+.1f}%"
     result["Rating"] = rating
     result["Units"] = units
 
