@@ -5,7 +5,14 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from mlb.predict import build_feature_row, find_best_match, get_latest_stats, get_latest_pitcher_stats
+from mlb.predict import (
+    build_feature_row,
+    find_best_match,
+    get_latest_stats,
+    get_latest_pitcher_stats,
+    _get_kalshi_game_rating,
+    KALSHI_EDGE_CAP,
+)
 from model import MLB_FEATURES
 
 
@@ -172,3 +179,60 @@ class TestGetLatestPitcherStats:
         stats = get_latest_pitcher_stats(df)
         assert stats["Ace"]["sp_roll_era"] == 3.2  # latest date
         assert stats["Reliever"]["sp_roll_era"] == 4.0
+
+
+class TestGetKalshiGameRating:
+
+    def test_strong_when_all_gates_pass(self):
+        assert _get_kalshi_game_rating(0.10, 0.60, 50) == "STRONG"
+
+    def test_strong_boundary_edge(self):
+        assert _get_kalshi_game_rating(0.08, 0.55, 50) == "STRONG"
+
+    def test_good_when_edge_below_strong(self):
+        assert _get_kalshi_game_rating(0.05, 0.53, 50) == "GOOD"
+
+    def test_good_boundary(self):
+        assert _get_kalshi_game_rating(0.04, 0.52, 50) == "GOOD"
+
+    def test_pass_when_prob_too_low_for_strong(self):
+        """High edge but low model prob -- tail punt rejection."""
+        assert _get_kalshi_game_rating(0.12, 0.54, 50) == "GOOD"
+
+    def test_pass_when_prob_too_low_for_good(self):
+        assert _get_kalshi_game_rating(0.05, 0.51, 50) == "PASS"
+
+    def test_falls_to_good_when_price_outside_strong_band(self):
+        # Price 91 is outside STRONG (10-90) but inside GOOD (15-85)
+        assert _get_kalshi_game_rating(0.10, 0.60, 91) == "PASS"
+        # Price 9 is outside both bands
+        assert _get_kalshi_game_rating(0.10, 0.60, 9) == "PASS"
+
+    def test_pass_when_price_outside_good_band(self):
+        assert _get_kalshi_game_rating(0.05, 0.53, 10) == "PASS"
+        assert _get_kalshi_game_rating(0.05, 0.53, 90) == "PASS"
+
+    def test_pass_when_edge_too_low(self):
+        assert _get_kalshi_game_rating(0.03, 0.60, 50) == "PASS"
+
+    def test_none_inputs_return_pass(self):
+        assert _get_kalshi_game_rating(None, 0.60, 50) == "PASS"
+        assert _get_kalshi_game_rating(0.10, None, 50) == "PASS"
+        assert _get_kalshi_game_rating(0.10, 0.60, None) == "PASS"
+
+
+class TestKalshiEdgeCap:
+
+    def test_cap_value(self):
+        assert KALSHI_EDGE_CAP == 0.15
+
+    def test_edge_capped_in_result(self):
+        """Edges above 15% should be clamped."""
+        raw_edge = 0.25
+        capped = min(raw_edge, KALSHI_EDGE_CAP)
+        assert capped == 0.15
+
+    def test_edge_below_cap_unchanged(self):
+        raw_edge = 0.10
+        capped = min(raw_edge, KALSHI_EDGE_CAP)
+        assert capped == 0.10

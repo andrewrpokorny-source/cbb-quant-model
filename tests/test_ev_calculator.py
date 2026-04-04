@@ -191,6 +191,8 @@ class TestAmericanOddsToImpliedProb:
 
     def test_even_is_plus_100(self):
         assert american_odds_to_implied_prob("EVEN") == pytest.approx(0.5, abs=0.001)
+        assert american_odds_to_implied_prob("even") == pytest.approx(0.5, abs=0.001)
+        assert american_odds_to_implied_prob("Even") == pytest.approx(0.5, abs=0.001)
 
     def test_invalid_returns_none(self):
         assert american_odds_to_implied_prob("") is None

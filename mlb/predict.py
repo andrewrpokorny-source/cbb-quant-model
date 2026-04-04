@@ -26,10 +26,14 @@ from betting import (
     kalshi_implied_prob,
     EdgeRating,
     VALUE_RATINGS,
-    RATING_RANK,
-    STANDARD_IMPLIED_PROB,
 )
 from betting.ev_calculator import kalshi_fee_cents
+from league_config import (
+    get_league_artifact_paths,
+    get_scoreboard_base_url,
+    normalize_league,
+)
+from model import load_model, get_feature_list, TARGET_BY_LEAGUE
 
 # Kalshi edge cap -- model edges above this are likely noise/overconfidence
 KALSHI_EDGE_CAP = 0.15
@@ -41,12 +45,6 @@ GAME_STRONG_MAX_PRICE = 90
 GAME_GOOD_MIN_PROB = 0.52
 GAME_GOOD_MIN_PRICE = 15
 GAME_GOOD_MAX_PRICE = 85
-from league_config import (
-    get_league_artifact_paths,
-    get_scoreboard_base_url,
-    normalize_league,
-)
-from model import load_model, get_feature_list, TARGET_BY_LEAGUE
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEAGUE = "mlb"
