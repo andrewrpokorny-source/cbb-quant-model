@@ -96,15 +96,21 @@ configure_league("mens")
 
 def find_best_match(name, known_teams):
     """Match ESPN team name to historical data team name."""
-    if name in TEAM_MAP: 
+    # Exact match in training data takes priority over TEAM_MAP, which may
+    # map to a different variant (e.g. "UConn Huskies" -> "Connecticut" is
+    # correct for men's but wrong for WBB where the team is "UConn Huskies").
+    if name in known_teams:
+        return name
+
+    if name in TEAM_MAP:
         return TEAM_MAP[name]
-    
+
     parts = name.split()
     if len(parts) > 1:
         no_mascot = " ".join(parts[:-1])
-        if no_mascot in TEAM_MAP: 
+        if no_mascot in TEAM_MAP:
             return TEAM_MAP[no_mascot]
-    
+
     matches = get_close_matches(name, known_teams, n=1, cutoff=0.6)
     if matches:
         return matches[0]
