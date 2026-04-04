@@ -36,10 +36,10 @@ class TestStdImpliedProbFromRealOdds:
         result = _get_std_implied_prob(game, is_home_pick=True)
         assert result == STANDARD_IMPLIED_PROB
 
-    def test_falls_back_on_unparseable_odds(self):
+    def test_parses_even_as_plus_100(self):
         game = {"home_spread_odds": "EVEN"}
         result = _get_std_implied_prob(game, is_home_pick=True)
-        assert result == STANDARD_IMPLIED_PROB
+        assert result == pytest.approx(0.5)
 
     def test_falls_back_on_nan_odds(self):
         game = {"home_spread_odds": "NaN"}
