@@ -408,7 +408,7 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
         "Kalshi_Fee": None,
         "Edge": None,
         "Edge_Pct": None,
-        "Rating": None,
+        "Rating": EdgeRating.PASS.value,
         "Units": None,
     }
 
@@ -582,7 +582,7 @@ def generate_predictions(league=LEAGUE):
             std_units = recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0
         else:
             std_edge = None
-            std_rating = None
+            std_rating = EdgeRating.PASS.value
             std_units = 0.0
 
         pred = {

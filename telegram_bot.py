@@ -2226,8 +2226,9 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if kalshi_edge_val > 0:
             parts.append(f"Kalshi {kalshi_edge_str} {kalshi_units:.1f}U")
         if std_edge_val <= 0 and kalshi_edge_val <= 0:
-            edge = std_edge_str or kalshi_edge_str or ""
-            parts.append(edge)
+            edge = std_edge_str or kalshi_edge_str
+            if edge:
+                parts.append(edge)
 
         lines.append(" | ".join(parts))
 
