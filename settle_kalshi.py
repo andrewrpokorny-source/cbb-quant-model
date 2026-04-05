@@ -371,8 +371,16 @@ def _parse_settlement(s: dict, fills: list[dict] | None = None) -> list[dict]:
     """
     yes_count = int(float(s.get("yes_count_fp") or s.get("yes_count") or 0))
     no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
-    yes_cost = s.get("yes_total_cost", 0) or 0
-    no_cost = s.get("no_total_cost", 0) or 0
+    # Kalshi API returns costs in dollars (*_dollars fields, string type).
+    # Convert to cents for internal math. Fall back to legacy cents fields.
+    if s.get("yes_total_cost_dollars") is not None:
+        yes_cost = round(float(s["yes_total_cost_dollars"]) * 100)
+    else:
+        yes_cost = int(s.get("yes_total_cost", 0) or 0)
+    if s.get("no_total_cost_dollars") is not None:
+        no_cost = round(float(s["no_total_cost_dollars"]) * 100)
+    else:
+        no_cost = int(s.get("no_total_cost", 0) or 0)
     revenue = s.get("revenue", 0) or 0
     market_result = s.get("market_result", "")
     date_str = _parse_date(s.get("settled_time", ""))
