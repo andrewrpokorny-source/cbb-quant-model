@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -151,20 +151,34 @@ def fetch_schedule(league=LEAGUE):
     eastern = pytz.timezone("US/Eastern")
     now_eastern = datetime.now(eastern)
 
-    # Fetch all dates in parallel
+    # Fetch all dates in parallel, consume in date order for deterministic results
     date_strs = [
         (now_eastern + timedelta(days=d)).strftime("%Y%m%d")
         for d in range(3)
     ]
     all_events = []
+    failed_dates = []
+    seen_event_ids = set()
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(_fetch_mlb_espn_date, base_url, ds): ds
+        ordered_futures = [
+            executor.submit(_fetch_mlb_espn_date, base_url, ds)
             for ds in date_strs
-        }
-        for future in as_completed(futures):
-            _, events, _ = future.result()
-            all_events.extend(events)
+        ]
+        for future in ordered_futures:
+            date_str, events, error = future.result()
+            if error is not None:
+                failed_dates.append(date_str)
+            for ev in events:
+                ev_id = ev.get("id") or ev.get("uid", "")
+                if ev_id and ev_id not in seen_event_ids:
+                    seen_event_ids.add(ev_id)
+                    all_events.append(ev)
+                elif not ev_id:
+                    all_events.append(ev)
+
+    if failed_dates:
+        print(f"\n      WARNING: Failed to fetch {len(failed_dates)} date(s): {', '.join(failed_dates)}")
+        print(f"      Games for those dates are MISSING from predictions.")
 
     games = []
     for event in all_events:
