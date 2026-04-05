@@ -10,6 +10,7 @@ import backtest
 import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 import pytz
 import csv
@@ -917,46 +918,73 @@ def _build_live_positions(positions, live_games) -> list[dict]:
 
 
 # ==========================================
-# LOAD BOTH LEAGUES
+# LOAD ALL LEAGUES (parallel)
 # ==========================================
 league_data = {}
 
+
+def _run_predictions(lg, spread_overrides=None):
+    """Run prediction pipeline for a single league. Thread-safe."""
+    if lg == "mlb":
+        mlb_predict.generate_predictions(lg)
+    else:
+        predict.main(
+            spread_overrides=spread_overrides or {},
+            league=lg,
+        )
+
+
+# Determine which leagues need a prediction run
+_leagues_to_run = []
+_league_artifacts = {}
+# Read spread overrides on the main thread (st.session_state is thread-local)
+_spread_overrides = {}
 for lg in LEAGUES:
-    settings = get_league_settings(lg)
     paths = get_league_artifact_paths(BASE_DIR, lg)
-    overrides_key = f"spread_overrides_{lg}"
     loaded_key = f"predictions_loaded_{lg}"
     pred_file = paths["predictions_file"]
-
-    # Skip leagues whose model/data artifacts don't exist locally
     has_artifacts = os.path.exists(paths["model_file"]) and os.path.exists(paths["data_file"])
+    _league_artifacts[lg] = {"paths": paths, "has_artifacts": has_artifacts}
+    _spread_overrides[lg] = st.session_state.get(f"spread_overrides_{lg}", {})
 
     if has_artifacts:
-        # Reset loaded flag if predictions file is stale (from a previous day)
         if os.path.exists(pred_file):
             eastern = pytz.timezone('US/Eastern')
             file_date = datetime.fromtimestamp(os.path.getmtime(pred_file)).date()
             today_date = datetime.now(eastern).date()
             if file_date < today_date:
                 st.session_state[loaded_key] = False
-
         if not st.session_state.get(loaded_key, False):
-            with st.spinner(f"Loading {settings['label']}..."):
-                load_succeeded = False
+            _leagues_to_run.append(lg)
+
+# Run predictions in parallel (MLB is independent; mens/womens serialize via _RUNTIME_LOCK)
+if _leagues_to_run:
+    labels = [get_league_settings(lg)["label"] for lg in _leagues_to_run]
+    with st.spinner(f"Loading {', '.join(labels)}..."):
+        _errors = {}
+        with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
+            futures = {
+                executor.submit(_run_predictions, lg, _spread_overrides[lg]): lg
+                for lg in _leagues_to_run
+            }
+            for future in as_completed(futures):
+                lg = futures[future]
+                pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
                 try:
-                    if lg == "mlb":
-                        mlb_predict.generate_predictions(lg)
-                    else:
-                        predict.main(
-                            spread_overrides=st.session_state.get(overrides_key, {}),
-                            league=lg,
-                        )
-                    load_succeeded = True
+                    future.result()
+                    if os.path.exists(pred_file):
+                        st.session_state[f"predictions_loaded_{lg}"] = True
                 except Exception as e:
-                    st.error(f"Failed to load {settings['label']} predictions: {e}")
-            # Treat a blank file as a valid no-picks result for the current slate.
-            if load_succeeded and os.path.exists(pred_file):
-                st.session_state[loaded_key] = True
+                    _errors[lg] = e
+        for lg, e in _errors.items():
+            st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
+
+# Build league_data from prediction CSVs
+for lg in LEAGUES:
+    settings = get_league_settings(lg)
+    paths = _league_artifacts[lg]["paths"]
+    has_artifacts = _league_artifacts[lg]["has_artifacts"]
+    pred_file = paths["predictions_file"]
 
     try:
         df, predictions_status = load_predictions_csv(pred_file)

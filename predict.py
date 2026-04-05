@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import re
@@ -166,118 +167,141 @@ def _compute_std_edge(conf, game, is_home_pick, bet_type="spread"):
     return conf - _get_std_implied_prob(game, is_home_pick, bet_type)
 
 
+def _fetch_espn_date(date_str, day_label):
+    """Fetch ESPN schedule for a single date. Returns (date_str, games, error)."""
+    url = f"{BASE_URL}&dates={date_str}"
+    print(f"      Querying ESPN for: {date_str} ({day_label})")
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+    except requests.RequestException as e:
+        print(f"         HTTP/network error fetching {date_str}: {e}")
+        return date_str, [], e
+
+    try:
+        data = res.json()
+    except ValueError as e:
+        print(f"         JSON parse error fetching {date_str}: {e}")
+        return date_str, [], e
+
+    events_count = len(data.get('events', []))
+    print(f"         Found {events_count} events")
+
+    games = []
+    for event in data['events']:
+        game_date = pd.to_datetime(event['date'])
+
+        if not event.get('competitions'):
+            continue
+        comp = event['competitions'][0]
+
+        if not comp.get('competitors'):
+            continue
+
+        home_tm = comp['competitors'][0]['team']
+        away_tm = comp['competitors'][1]['team']
+        home_raw = home_tm['displayName']
+        away_raw = away_tm['displayName']
+
+        # Get odds
+        odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
+        details = odds.get('details', '0')
+        raw_odds = details
+
+        spread_val = 0.0
+        try:
+            if details and details != '0' and details != 'EVEN':
+                parts = details.split()
+                val = abs(float(parts[-1]))
+                fav = " ".join(parts[:-1])
+
+                home_abbr = home_tm.get('abbreviation', '')
+                is_home_fav = (fav == home_abbr) or (fav == home_raw) or (fav in home_raw)
+
+                if is_home_fav:
+                    spread_val = -val
+                else:
+                    spread_val = val
+        except (ValueError, IndexError):
+            print(f"         Could not parse spread from: {details!r}")
+            spread_val = 0.0
+
+        # Extract per-side spread odds and moneyline odds
+        point_spread = odds.get('pointSpread', {})
+        home_spread_odds = (point_spread.get('home', {}).get('close', {}).get('odds', '')
+                            or point_spread.get('home', {}).get('open', {}).get('odds', ''))
+        away_spread_odds = (point_spread.get('away', {}).get('close', {}).get('odds', '')
+                            or point_spread.get('away', {}).get('open', {}).get('odds', ''))
+        ml_block = odds.get('moneyline', {})
+        home_ml_odds = (ml_block.get('home', {}).get('close', {}).get('odds', '')
+                        or ml_block.get('home', {}).get('open', {}).get('odds', ''))
+        away_ml_odds = (ml_block.get('away', {}).get('close', {}).get('odds', '')
+                        or ml_block.get('away', {}).get('open', {}).get('odds', ''))
+
+        # Neutral site + venue
+        is_neutral = int(comp.get('neutralSite', False))
+        venue = comp.get('venue', {})
+        venue_addr = venue.get('address', {})
+
+        game_id = event['id']
+        games.append({
+            'id': game_id,
+            'home_raw': home_raw,
+            'away_raw': away_raw,
+            'spread': spread_val,
+            'date': game_date,
+            'raw_odds': raw_odds,
+            'has_espn_spread': spread_val != 0.0,
+            'is_neutral': is_neutral,
+            'venue_city': venue_addr.get('city', ''),
+            'venue_state': venue_addr.get('state', ''),
+            'home_spread_odds': home_spread_odds,
+            'away_spread_odds': away_spread_odds,
+            'home_ml_odds': home_ml_odds,
+            'away_ml_odds': away_ml_odds,
+        })
+
+    return date_str, games, None
+
+
 def fetch_schedule():
     """
     Fetch today's and tomorrow's games with TIMEZONE AWARENESS.
     Uses Eastern Time to ensure we're querying the correct date.
+    Fetches all dates in parallel.
     """
     print("   -> Fetching schedule (TIMEZONE AWARE)...")
-    
-    # Use Eastern Time for proper date handling
+
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
-    
     print(f"      Current Eastern Time: {now_eastern.strftime('%Y-%m-%d %I:%M %p %Z')}")
-    
-    games = []
-    failed_dates = []
 
-    # Fetch today through 5 days ahead (Eastern time)
+    # Build date list
+    date_tasks = []
     for days_ahead in range(6):
         target_date = now_eastern + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
-        url = f"{BASE_URL}&dates={date_str}"
+        day_label = target_date.strftime('%A, %B %d')
+        date_tasks.append((date_str, day_label))
 
-        print(f"      Querying ESPN for: {date_str} ({target_date.strftime('%A, %B %d')})")
+    # Fetch all dates in parallel, consume in date order for deterministic dedupe
+    games = []
+    failed_dates = []
+    seen_ids = set()
 
-        try:
-            res = requests.get(url, timeout=10)
-            res.raise_for_status()
-            data = res.json()
-            
-            events_count = len(data.get('events', []))
-            print(f"         Found {events_count} events")
-            
-            for event in data['events']:
-                game_date = pd.to_datetime(event['date'])
-                
-                if not event.get('competitions'): 
-                    continue
-                comp = event['competitions'][0]
-                
-                if not comp.get('competitors'): 
-                    continue
-                    
-                home_tm = comp['competitors'][0]['team']
-                away_tm = comp['competitors'][1]['team']
-                home_raw = home_tm['displayName']
-                away_raw = away_tm['displayName']
-                
-                # Get odds
-                odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
-                details = odds.get('details', '0')
-                raw_odds = details 
-                
-                spread_val = 0.0
-                try:
-                    if details and details != '0' and details != 'EVEN':
-                        parts = details.split()
-                        val = abs(float(parts[-1]))
-                        fav = " ".join(parts[:-1])
-                        
-                        home_abbr = home_tm.get('abbreviation', '')
-                        is_home_fav = (fav == home_abbr) or (fav == home_raw) or (fav in home_raw)
-                        
-                        if is_home_fav:
-                            spread_val = -val
-                        else:
-                            spread_val = val
-                except (ValueError, IndexError):
-                    print(f"         Could not parse spread from: {details!r}")
-                    spread_val = 0.0
-
-                # Extract per-side spread odds and moneyline odds
-                point_spread = odds.get('pointSpread', {})
-                home_spread_odds = (point_spread.get('home', {}).get('close', {}).get('odds', '')
-                                    or point_spread.get('home', {}).get('open', {}).get('odds', ''))
-                away_spread_odds = (point_spread.get('away', {}).get('close', {}).get('odds', '')
-                                    or point_spread.get('away', {}).get('open', {}).get('odds', ''))
-                ml_block = odds.get('moneyline', {})
-                home_ml_odds = (ml_block.get('home', {}).get('close', {}).get('odds', '')
-                                or ml_block.get('home', {}).get('open', {}).get('odds', ''))
-                away_ml_odds = (ml_block.get('away', {}).get('close', {}).get('odds', '')
-                                or ml_block.get('away', {}).get('open', {}).get('odds', ''))
-
-                # Neutral site + venue
-                is_neutral = int(comp.get('neutralSite', False))
-                venue = comp.get('venue', {})
-                venue_addr = venue.get('address', {})
-
-                game_id = event['id']
-                if not any(g['id'] == game_id for g in games):
-                    games.append({
-                        'id': game_id,
-                        'home_raw': home_raw,  # Keep original ESPN name
-                        'away_raw': away_raw,  # Keep original ESPN name
-                        'spread': spread_val,  # May be 0 if ESPN doesn't have it
-                        'date': game_date,
-                        'raw_odds': raw_odds,
-                        'has_espn_spread': spread_val != 0.0,
-                        'is_neutral': is_neutral,
-                        'venue_city': venue_addr.get('city', ''),
-                        'venue_state': venue_addr.get('state', ''),
-                        'home_spread_odds': home_spread_odds,
-                        'away_spread_odds': away_spread_odds,
-                        'home_ml_odds': home_ml_odds,
-                        'away_ml_odds': away_ml_odds,
-                    })
-                    
-        except requests.RequestException as e:
-            print(f"         HTTP/network error fetching {date_str}: {e}")
-            failed_dates.append(date_str)
-        except ValueError as e:
-            print(f"         JSON parse error fetching {date_str}: {e}")
-            failed_dates.append(date_str)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        ordered_futures = [
+            executor.submit(_fetch_espn_date, ds, dl)
+            for ds, dl in date_tasks
+        ]
+        for future in ordered_futures:
+            date_str, date_games, error = future.result()
+            if error is not None:
+                failed_dates.append(date_str)
+            for g in date_games:
+                if g['id'] not in seen_ids:
+                    seen_ids.add(g['id'])
+                    games.append(g)
 
     if failed_dates:
         print(f"\n      WARNING: Failed to fetch {len(failed_dates)} date(s): {', '.join(failed_dates)}")
@@ -937,31 +961,40 @@ def main(spread_overrides=None, league="mens"):
     if days_old > 2:
         print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
 
-    # Fetch schedule
-    schedule = fetch_schedule()
-    games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
-    print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
+    # Fetch network resources in parallel while loading local model/venue data
+    with ThreadPoolExecutor(max_workers=2) as _io_pool:
+        _schedule_future = _io_pool.submit(fetch_schedule)
+        _kalshi_future = _io_pool.submit(fetch_kalshi_markets, ACTIVE_LEAGUE)
 
-    # Optional P(win) bundle for Kalshi GAME markets
-    win_bundle = None
-    try:
-        win_bundle = load_win_model_bundle(league=ACTIVE_LEAGUE)
-        has_with_line = win_bundle.get("model_with_line") is not None
-        print(
-            f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
-            f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
-        )
-    except (FileNotFoundError, EOFError, IOError, ValueError) as e:
-        print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
+        win_bundle = None
+        try:
+            win_bundle = load_win_model_bundle(league=ACTIVE_LEAGUE)
+            has_with_line = win_bundle.get("model_with_line") is not None
+            print(
+                f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
+                f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
+            )
+        except (FileNotFoundError, EOFError, IOError, ValueError) as e:
+            print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
-    # Build venue lookups for neutral-site / distance features
-    _geo_cache = load_geocode_cache()
-    _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
-    if _team_homes:
-        print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
+        _geo_cache = load_geocode_cache()
+        _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
+        if _team_homes:
+            print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
 
-    # Fetch Kalshi markets
-    kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
+        try:
+            schedule = _schedule_future.result()
+        except Exception as e:
+            print(f"CRITICAL: Failed to fetch ESPN schedule: {e}")
+            return
+        games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
+        print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
+
+        try:
+            kalshi_client, kalshi_mapper = _kalshi_future.result()
+        except Exception as e:
+            print(f"   WARNING: Kalshi market fetch failed: {e}")
+            kalshi_client, kalshi_mapper = None, None
 
     spread_predictions = []
     game_predictions = []
