@@ -485,6 +485,15 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     except RuntimeError as e:
         return {"logged": [], "settled": 0, "skipped": 0, "error": str(e)}
 
+    # Warn if Kalshi API fields have changed again
+    if settlements:
+        sample = settlements[0]
+        expected_fields = {"yes_total_cost_dollars", "no_total_cost_dollars", "yes_count_fp", "revenue"}
+        missing = expected_fields - set(sample.keys())
+        if missing:
+            print(f"  WARNING: Kalshi settlement API fields changed -- missing: {missing}")
+            print(f"  Available fields: {sorted(sample.keys())}")
+
     cbb = [s for s in settlements if any(s.get("ticker", "").startswith(p) for p in ALL_PREFIXES)]
     if not cbb:
         if not dry_run:
