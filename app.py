@@ -675,17 +675,16 @@ def _filter_not_started(df):
     year = now.year
     dt_strings = df["Date/Time"].astype(str)
 
-    # Try CBB format first: "04/04 08:49 PM" (needs year prefix)
-    parsed = pd.to_datetime(
+    # Parse CBB format: "04/04 08:49 PM" (Eastern, needs year prefix)
+    cbb_parsed = pd.to_datetime(
         str(year) + "/" + dt_strings,
         format="%Y/%m/%d %I:%M %p",
         errors="coerce",
     )
-    # Year-rollover: Dec viewing Jan games -- bump year when parsed date
-    # is implausibly far in the past (same pattern as backtest_kalshi_game.py)
-    needs_bump = parsed.notna() & (parsed < (now_naive - timedelta(days=60)))
+    # Year-rollover: Dec viewing Jan games -- bump year (pre-localization, naive compare)
+    needs_bump = cbb_parsed.notna() & (cbb_parsed < (now_naive - timedelta(days=60)))
     if needs_bump.any():
-        parsed = parsed.where(
+        cbb_parsed = cbb_parsed.where(
             ~needs_bump,
             pd.to_datetime(
                 str(year + 1) + "/" + dt_strings,
@@ -693,21 +692,18 @@ def _filter_not_started(df):
                 errors="coerce",
             ),
         )
-    # CBB times are Eastern -- localize them
-    cbb_mask = parsed.notna()
-    if cbb_mask.any():
-        parsed[cbb_mask] = parsed[cbb_mask].dt.tz_localize(
-            eastern, ambiguous="NaT", nonexistent="NaT"
-        )
 
-    # Try MLB/ISO format for remaining unparsed: "2026-04-04 17:10" (UTC)
-    still_na = parsed.isna()
-    if still_na.any():
-        iso_parsed = pd.to_datetime(dt_strings[still_na], errors="coerce")
-        iso_ok = iso_parsed.notna()
-        if iso_ok.any():
-            iso_aware = iso_parsed[iso_ok].dt.tz_localize(utc).dt.tz_convert(eastern)
-            parsed.loc[iso_aware.index] = iso_aware
+    # Parse MLB/ISO format for rows CBB didn't match: "2026-04-04 17:10" (UTC)
+    iso_parsed = pd.to_datetime(dt_strings, format="%Y-%m-%d %H:%M", errors="coerce")
+    # Only use ISO for rows where CBB parse failed
+    iso_parsed = iso_parsed.where(cbb_parsed.isna())
+
+    # Localize each format to its source timezone, then combine as tz-aware
+    cbb_aware = cbb_parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
+    iso_aware = iso_parsed.dt.tz_localize(utc, ambiguous="NaT", nonexistent="NaT").dt.tz_convert(eastern)
+
+    # Combine: prefer CBB where available, fill with ISO
+    parsed = cbb_aware.combine_first(iso_aware)
 
     n_failed = parsed.isna().sum()
     if n_failed > 0:
@@ -740,7 +736,7 @@ def _parse_edge(series):
 POSITION_PREFIXES = (
     "KXNCAAMBGAME", "KXNCAAWBGAME",
     "KXNCAAMBSPREAD", "KXNCAAWBSPREAD",
-    "KXMLBGAME",
+    "KXMLB",
 )
 
 

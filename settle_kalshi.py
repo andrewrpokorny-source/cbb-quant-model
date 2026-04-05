@@ -361,6 +361,19 @@ def _pnl_from_fills(fills: list[dict], settlement_revenue_cents: int, date_str: 
             "profit": profit, "result": _result_from_profit(profit), "date": date_str}
 
 
+def _safe_dollars_to_cents(value) -> int | None:
+    """Convert a dollar-denomination string to integer cents.
+
+    Returns None if value is None, empty, or not a valid number.
+    """
+    if value is None:
+        return None
+    try:
+        return round(float(value) * 100)
+    except (ValueError, TypeError):
+        return None
+
+
 def _parse_settlement(s: dict, fills: list[dict] | None = None) -> list[dict]:
     """Parse a single Kalshi settlement into one or more row-ready dicts.
 
@@ -373,15 +386,18 @@ def _parse_settlement(s: dict, fills: list[dict] | None = None) -> list[dict]:
     no_count = int(float(s.get("no_count_fp") or s.get("no_count") or 0))
     # Kalshi API returns costs in dollars (*_dollars fields, string type).
     # Convert to cents for internal math. Fall back to legacy cents fields.
-    if s.get("yes_total_cost_dollars") is not None:
-        yes_cost = round(float(s["yes_total_cost_dollars"]) * 100)
-    else:
+    yes_cost = _safe_dollars_to_cents(s.get("yes_total_cost_dollars"))
+    if yes_cost is None:
         yes_cost = int(s.get("yes_total_cost", 0) or 0)
-    if s.get("no_total_cost_dollars") is not None:
-        no_cost = round(float(s["no_total_cost_dollars"]) * 100)
-    else:
+    no_cost = _safe_dollars_to_cents(s.get("no_total_cost_dollars"))
+    if no_cost is None:
         no_cost = int(s.get("no_total_cost", 0) or 0)
-    revenue = s.get("revenue", 0) or 0
+    # Revenue may also migrate to dollars in the future
+    revenue_dollars = _safe_dollars_to_cents(s.get("revenue_dollars"))
+    if revenue_dollars is not None:
+        revenue = revenue_dollars
+    else:
+        revenue = int(s.get("revenue", 0) or 0)
     market_result = s.get("market_result", "")
     date_str = _parse_date(s.get("settled_time", ""))
 
@@ -489,6 +505,9 @@ def settle_to_csv(days: int = 30, dry_run: bool = False) -> dict:
     if settlements:
         sample = settlements[0]
         expected_fields = {"yes_total_cost_dollars", "no_total_cost_dollars", "yes_count_fp", "revenue"}
+        # If revenue_dollars appears, the revenue field has migrated too
+        if "revenue_dollars" in sample:
+            print("  WARNING: Kalshi API now has 'revenue_dollars' -- revenue field may have migrated")
         missing = expected_fields - set(sample.keys())
         if missing:
             print(f"  WARNING: Kalshi settlement API fields changed -- missing: {missing}")
