@@ -16,6 +16,8 @@ performance_log_wbb.csv
 daily_predictions_wbb.csv
 wbb_training_data_processed.csv
 wbb_model_v2.pkl
+daily_predictions_mlb.csv
+performance_log_mlb.csv
 odds_history.csv
 kalshi_game_history.csv
 telegram_bot.log
@@ -23,6 +25,12 @@ telegram_bot.log
 .kalshi_sync_state.json
 
 .cache/
+.claude/
+.playwright-mcp/
 IMPROVEMENT_PLAN.md
 betting_history.csv
 screenshots/
+telegram_bot.log.*
+telegram_parse_audit.jsonl
+draft_results.csv
+*-check.png

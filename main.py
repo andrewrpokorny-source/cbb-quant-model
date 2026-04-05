@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timedelta
+import time
 
 import pandas as pd
 import requests
@@ -15,6 +16,7 @@ from league_config import (
     get_scoreboard_base_url,
     normalize_league,
 )
+from womens_net import sync_current_snapshot as sync_womens_net_snapshot
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -222,12 +224,14 @@ def fetch_games_for_date(target_date, base_url):
             game_date_str = target_date.strftime("%Y-%m-%d")
 
             spread_val = float("nan")
+            has_spread_line = False
             try:
                 if comp.get('odds'):
                     odds = comp['odds'][0]
                     details = odds.get('details', '')
                     if details == 'EVEN':
                         spread_val = 0.0
+                        has_spread_line = True
                     elif details and details != '0':
                         parts = details.split()
                         val = abs(float(parts[-1]))
@@ -236,6 +240,7 @@ def fetch_games_for_date(target_date, base_url):
                         home_name = home['team'].get('displayName', '')
                         is_home_fav = (fav == home_abbr) or (fav == home_name) or (fav in home_name)
                         spread_val = -val if is_home_fav else val
+                        has_spread_line = True
             except (ValueError, IndexError, TypeError) as e:
                 event_id = event.get('id', 'unknown')
                 print(f"      WARNING: Could not parse spread for event {event_id}: {type(e).__name__}: {e}")
@@ -256,6 +261,7 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(away['score']),
                 'is_home': 1,
                 'spread': spread_val,
+                'has_spread_line': has_spread_line,
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,
@@ -273,6 +279,7 @@ def fetch_games_for_date(target_date, base_url):
                 'opp_score': int(home['score']),
                 'is_home': 0,
                 'spread': -1 * spread_val,
+                'has_spread_line': has_spread_line,
                 'is_neutral': is_neutral,
                 'venue_city': venue_city,
                 'venue_state': venue_state,
@@ -409,6 +416,7 @@ def update_database(league="mens"):
     base_url = get_scoreboard_base_url(league)
     season_start_date = pd.Timestamp(get_season_start_date(league)).to_pydatetime()
 
+    t_start = time.monotonic()
     print(f"--- AUTO-HEALING UPDATER ({settings['label']}) ---")
     
     # 1. Determine Range
@@ -430,6 +438,7 @@ def update_database(league="mens"):
                 df_backfilled.to_csv(data_file, index=False)
                 print("Box-score and venue metadata backfilled.")
         run_pipeline(league)
+        print(f"\nTotal elapsed: {time.monotonic() - t_start:.1f}s")
         return
 
     print(f"Filling gap: {start_date.date()} to {end_date.date()}")
@@ -474,15 +483,31 @@ def update_database(league="mens"):
             print("Box-score and venue metadata backfilled.")
 
     run_pipeline(league)
+    print(f"\nTotal elapsed: {time.monotonic() - t_start:.1f}s")
 
 
 def run_pipeline(league):
     print("\n--- TRIGGERING PIPELINE ---")
+    if normalize_league(league) == "womens":
+        try:
+            report = sync_womens_net_snapshot(league="womens")
+            print(
+                "0. Synced women's NET snapshots "
+                f"(team map: {report['team_map_coverage']:.1%}, "
+                f"source teams: {report['source_team_coverage']:.1%})"
+            )
+        except (FileNotFoundError, requests.RequestException, ValueError) as e:
+            print(f"0. WARNING: women's NET sync skipped ({e})")
+
+    t0 = time.monotonic()
     print("1. Calculating efficiency stats...")
     subprocess.run([sys.executable, "features.py", "--league", league], check=True)
+    print(f"   Done in {time.monotonic() - t0:.1f}s")
 
+    t0 = time.monotonic()
     print("2. Grading history...")
     subprocess.run([sys.executable, "backtest.py", "--league", league], check=True)
+    print(f"   Done in {time.monotonic() - t0:.1f}s")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update CBB data and run feature/backtest pipeline.")

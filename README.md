@@ -1,6 +1,6 @@
 # CBB Quant Model
 
-College basketball spread prediction model using machine learning.
+Sports betting prediction model using machine learning. Covers college basketball (men's + women's spreads and game-winner markets) and MLB moneyline.
 
 ## Setup
 
@@ -27,7 +27,7 @@ Predictions now include both spread picks and Kalshi game-market picks when avai
 ```bash
 uv run streamlit run app.py
 ```
-Use the in-app league selector to switch between Men's CBB and Women's CBB.
+Use the in-app league selector to switch between Men's CBB, Women's CBB, and MLB.
 Use the in-app **Jump to section** control to quickly navigate directly to:
 - Spread Value Bets
 - Kalshi Game Markets
@@ -38,7 +38,7 @@ Use the in-app **Jump to section** control to quickly navigate directly to:
 
 ### Multi-League Commands
 
-All major scripts now support `--league` with `mens` (default) or `womens`.
+All major scripts support `--league` with `mens` (default), `womens`, or `mlb`.
 
 ```bash
 # Update data + run features/backtest for women's CBB
@@ -60,12 +60,25 @@ uv run python backtest.py --league womens
 uv run python grade_predictions.py --league womens
 ```
 
+### MLB Predictions
+
+```bash
+# Generate MLB moneyline predictions (with Kalshi + DK edge)
+uv run python mlb/predict.py
+
+# Backtest MLB model
+uv run python backtest.py --league mlb
+```
+
+The MLB model is a GBM classifier (28 features) predicting P(home win) for moneyline bets. Features include starting pitcher rolling stats, team Pythagorean win%, weather, ballpark factors, and bullpen ERA differentials. Kalshi edges are capped at 15% with CBB-style rating gates (model prob + price range).
+
 ### Model Artifacts
 
 - Men's canonical model: `cbb_model_v2.pkl`
 - Women's canonical model: `womens_cbb_spread_model_v2.pkl`
 - Men's game-winner model bundle: `cbb_win_model_v1.pkl`
 - Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
+- MLB moneyline model: `mlb_win_model_v1.pkl`
 
 ### Neutral-Site and Venue Features
 
@@ -99,7 +112,7 @@ The Telegram bot is a local bet logger and settlement assistant. It can:
 - The current bot process should be run on macOS because it imports `ocrmac` at startup.
 - Screenshot parsing uses macOS native OCR via `ocrmac`.
 - Text shorthand entry and share-link logging are supported workflows, but they still use the same bot process.
-- `/today` reads `daily_predictions.csv`, so run `uv run python predict.py` first if you want live model picks in Telegram.
+- `/today` reads `daily_predictions.csv` (CBB), so run `uv run python predict.py` first if you want live model picks in Telegram. MLB predictions are generated separately via `uv run python mlb/predict.py`.
 
 #### Environment Configuration
 

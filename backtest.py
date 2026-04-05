@@ -8,7 +8,7 @@ from sklearn.base import clone
 from sklearn.metrics import brier_score_loss
 
 from league_config import get_league_artifact_paths, normalize_league
-from model import build_spread_estimator, get_feature_list, use_calibrated_spread_model
+from model import TARGET_BY_LEAGUE, build_spread_estimator, get_feature_list, use_calibrated_spread_model
 
 # --- BULLETPROOF PATHS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +25,7 @@ def build_pipeline(league):
 
 def train_model_at_date(df, cutoff_date, pipeline, league):
     """Train a model on all data before cutoff_date."""
+    target = TARGET_BY_LEAGUE.get(normalize_league(league), 'ats_win')
     past_games = df[df['date'] < cutoff_date].copy()
     features = get_feature_list(league)
 
@@ -32,13 +33,13 @@ def train_model_at_date(df, cutoff_date, pipeline, league):
     if len(valid_feats) != len(features):
         return None, None
 
-    train_data = past_games.dropna(subset=valid_feats + ['ats_win'])
+    train_data = past_games.dropna(subset=valid_feats + [target])
 
     if len(train_data) < 50:
         return None, None
 
     X = train_data[valid_feats].astype(float)
-    y = train_data['ats_win'].astype(int)
+    y = train_data[target].astype(int)
 
     clf = clone(pipeline)
     clf.fit(X, y)
@@ -46,7 +47,7 @@ def train_model_at_date(df, cutoff_date, pipeline, league):
     return clf, valid_feats
 
 
-def predict_week(model, feats, week_df):
+def predict_week(model, feats, week_df, target='ats_win'):
     """Run predictions on a week of games. Returns DataFrame with results."""
     test = week_df.dropna(subset=feats).copy()
     if len(test) == 0:
@@ -60,14 +61,19 @@ def predict_week(model, feats, week_df):
 
     conditions = [test['prob_home'] > 0.5, test['prob_home'] <= 0.5]
     test['picked_team'] = np.select(conditions, [test['team'], test['opponent']])
-    test['picked_spread'] = np.select(conditions, [test['spread'], -1 * test['spread']])
+    if 'spread' in test.columns:
+        test['picked_spread'] = np.select(conditions, [test['spread'], -1 * test['spread']])
+    else:
+        test['picked_spread'] = 0.0
     test['pick_correct'] = np.where(
         test['prob_home'] > 0.5,
-        test['ats_win'] == 1,
-        test['ats_win'] == 0,
+        test[target] == 1,
+        test[target] == 0,
     )
 
-    return test[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct', 'prob_home', 'ats_win']]
+    # Use generic target column name for metrics
+    test['target'] = test[target]
+    return test[['date', 'picked_team', 'picked_spread', 'conf', 'pick_correct', 'prob_home', 'target']]
 
 
 def compute_metrics(log_df):
@@ -86,8 +92,9 @@ def compute_metrics(log_df):
     correct = log_df['pick_correct'].sum()
     accuracy = correct / total if total > 0 else 0.0
 
+    target_col = 'target' if 'target' in log_df.columns else 'ats_win'
     brier = brier_score_loss(
-        log_df['ats_win'].astype(int),
+        log_df[target_col].astype(int),
         log_df['prob_home'].astype(float),
     )
 
@@ -128,14 +135,17 @@ def run_backtest(league="mens"):
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
 
+    target = TARGET_BY_LEAGUE.get(league, 'ats_win')
+
     # Compute rest days dynamically
     df['last_game'] = df.groupby('team')['date'].shift(1)
     df['rest_days'] = (df['date'] - df['last_game']).dt.days.fillna(7)
     df['rest_days'] = df['rest_days'].clip(upper=7)
 
-    # Compute derived spread features
-    df['spread_abs'] = df['spread'].abs()
-    df['spread_squared'] = df['spread'] ** 2
+    # Compute derived spread features (CBB only)
+    if 'spread' in df.columns and league != 'mlb':
+        df['spread_abs'] = df['spread'].abs()
+        df['spread_squared'] = df['spread'] ** 2
 
     # Date range
     end_date = df['date'].max() + timedelta(days=1)
@@ -171,7 +181,7 @@ def run_backtest(league="mens"):
             current_date = next_week
             continue
 
-        result = predict_week(model, valid_feats, week_df)
+        result = predict_week(model, valid_feats, week_df, target=target)
         n = len(result) if result is not None else 0
 
         if result is not None:
@@ -211,11 +221,11 @@ def run_backtest(league="mens"):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run walk-forward backtest for CBB spread model.")
+    parser = argparse.ArgumentParser(description="Run walk-forward backtest.")
     parser.add_argument(
         "--league",
         default="mens",
-        help="League to backtest: mens or womens (aliases supported).",
+        help="League to backtest: mens, womens, or mlb (aliases supported).",
     )
     args = parser.parse_args()
     run_backtest(args.league)

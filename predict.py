@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import re
@@ -19,7 +20,7 @@ except ImportError:
     print("python-dotenv not installed; skipping .env auto-load.")
 
 from kalshi import KalshiClient, MarketMapper
-from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob
+from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob, american_odds_to_implied_prob
 from betting.ev_calculator import kalshi_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
@@ -27,7 +28,7 @@ from hasla import HASLA_GAME_FEATURE_COLUMNS, load_snapshot_file as load_hasla_s
 from kalshi_game_archive import append_archive_records as append_kalshi_game_archive_records
 from kalshi_game_archive import build_game_archive_record
 from league_config import get_league_artifact_paths, get_scoreboard_base_url, normalize_league
-from model import load_model
+from model import load_model, use_calibrated_spread_model
 from model_win import load_win_model_bundle, predict_home_win_prob
 from odds_archive import append_archive_records, build_archive_record
 from torvik import TORVIK_GAME_FEATURE_COLUMNS, load_snapshot_file, load_team_map, matchup_features_for_game
@@ -96,15 +97,21 @@ configure_league("mens")
 
 def find_best_match(name, known_teams):
     """Match ESPN team name to historical data team name."""
-    if name in TEAM_MAP: 
+    # Exact match in training data takes priority over TEAM_MAP, which may
+    # map to a different variant (e.g. "UConn Huskies" -> "Connecticut" is
+    # correct for men's but wrong for WBB where the team is "UConn Huskies").
+    if name in known_teams:
+        return name
+
+    if name in TEAM_MAP:
         return TEAM_MAP[name]
-    
+
     parts = name.split()
     if len(parts) > 1:
         no_mascot = " ".join(parts[:-1])
-        if no_mascot in TEAM_MAP: 
+        if no_mascot in TEAM_MAP:
             return TEAM_MAP[no_mascot]
-    
+
     matches = get_close_matches(name, known_teams, n=1, cutoff=0.6)
     if matches:
         return matches[0]
@@ -138,102 +145,163 @@ def get_latest_stats(df):
 
     return latest_stats
 
+def _get_std_implied_prob(game, is_home_pick, bet_type="spread"):
+    """Get the implied probability for the picked side from real ESPN odds.
+
+    Falls back to STANDARD_IMPLIED_PROB if odds aren't available.
+    """
+    if bet_type == "spread":
+        odds_str = game.get("home_spread_odds") if is_home_pick else game.get("away_spread_odds")
+    else:
+        odds_str = game.get("home_ml_odds") if is_home_pick else game.get("away_ml_odds")
+
+    if odds_str:
+        implied = american_odds_to_implied_prob(odds_str)
+        if implied is not None:
+            return implied
+    return STANDARD_IMPLIED_PROB
+
+
+def _compute_std_edge(conf, game, is_home_pick, bet_type="spread"):
+    """Compute edge vs real sportsbook odds (not the fixed -110 assumption)."""
+    return conf - _get_std_implied_prob(game, is_home_pick, bet_type)
+
+
+def _fetch_espn_date(date_str, day_label):
+    """Fetch ESPN schedule for a single date. Returns (date_str, games, error)."""
+    url = f"{BASE_URL}&dates={date_str}"
+    print(f"      Querying ESPN for: {date_str} ({day_label})")
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+    except requests.RequestException as e:
+        print(f"         HTTP/network error fetching {date_str}: {e}")
+        return date_str, [], e
+
+    try:
+        data = res.json()
+    except ValueError as e:
+        print(f"         JSON parse error fetching {date_str}: {e}")
+        return date_str, [], e
+
+    events_count = len(data.get('events', []))
+    print(f"         Found {events_count} events")
+
+    games = []
+    for event in data['events']:
+        game_date = pd.to_datetime(event['date'])
+
+        if not event.get('competitions'):
+            continue
+        comp = event['competitions'][0]
+
+        if not comp.get('competitors'):
+            continue
+
+        home_tm = comp['competitors'][0]['team']
+        away_tm = comp['competitors'][1]['team']
+        home_raw = home_tm['displayName']
+        away_raw = away_tm['displayName']
+
+        # Get odds
+        odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
+        details = odds.get('details', '0')
+        raw_odds = details
+
+        spread_val = 0.0
+        try:
+            if details and details != '0' and details != 'EVEN':
+                parts = details.split()
+                val = abs(float(parts[-1]))
+                fav = " ".join(parts[:-1])
+
+                home_abbr = home_tm.get('abbreviation', '')
+                is_home_fav = (fav == home_abbr) or (fav == home_raw) or (fav in home_raw)
+
+                if is_home_fav:
+                    spread_val = -val
+                else:
+                    spread_val = val
+        except (ValueError, IndexError):
+            print(f"         Could not parse spread from: {details!r}")
+            spread_val = 0.0
+
+        # Extract per-side spread odds and moneyline odds
+        point_spread = odds.get('pointSpread', {})
+        home_spread_odds = (point_spread.get('home', {}).get('close', {}).get('odds', '')
+                            or point_spread.get('home', {}).get('open', {}).get('odds', ''))
+        away_spread_odds = (point_spread.get('away', {}).get('close', {}).get('odds', '')
+                            or point_spread.get('away', {}).get('open', {}).get('odds', ''))
+        ml_block = odds.get('moneyline', {})
+        home_ml_odds = (ml_block.get('home', {}).get('close', {}).get('odds', '')
+                        or ml_block.get('home', {}).get('open', {}).get('odds', ''))
+        away_ml_odds = (ml_block.get('away', {}).get('close', {}).get('odds', '')
+                        or ml_block.get('away', {}).get('open', {}).get('odds', ''))
+
+        # Neutral site + venue
+        is_neutral = int(comp.get('neutralSite', False))
+        venue = comp.get('venue', {})
+        venue_addr = venue.get('address', {})
+
+        game_id = event['id']
+        games.append({
+            'id': game_id,
+            'home_raw': home_raw,
+            'away_raw': away_raw,
+            'spread': spread_val,
+            'date': game_date,
+            'raw_odds': raw_odds,
+            'has_espn_spread': spread_val != 0.0,
+            'is_neutral': is_neutral,
+            'venue_city': venue_addr.get('city', ''),
+            'venue_state': venue_addr.get('state', ''),
+            'home_spread_odds': home_spread_odds,
+            'away_spread_odds': away_spread_odds,
+            'home_ml_odds': home_ml_odds,
+            'away_ml_odds': away_ml_odds,
+        })
+
+    return date_str, games, None
+
+
 def fetch_schedule():
     """
     Fetch today's and tomorrow's games with TIMEZONE AWARENESS.
     Uses Eastern Time to ensure we're querying the correct date.
+    Fetches all dates in parallel.
     """
     print("   -> Fetching schedule (TIMEZONE AWARE)...")
-    
-    # Use Eastern Time for proper date handling
+
     eastern = pytz.timezone('US/Eastern')
     now_eastern = datetime.now(eastern)
-    
     print(f"      Current Eastern Time: {now_eastern.strftime('%Y-%m-%d %I:%M %p %Z')}")
-    
-    games = []
-    failed_dates = []
 
-    # Fetch today through 5 days ahead (Eastern time)
+    # Build date list
+    date_tasks = []
     for days_ahead in range(6):
         target_date = now_eastern + timedelta(days=days_ahead)
         date_str = target_date.strftime("%Y%m%d")
-        url = f"{BASE_URL}&dates={date_str}"
+        day_label = target_date.strftime('%A, %B %d')
+        date_tasks.append((date_str, day_label))
 
-        print(f"      Querying ESPN for: {date_str} ({target_date.strftime('%A, %B %d')})")
+    # Fetch all dates in parallel, consume in date order for deterministic dedupe
+    games = []
+    failed_dates = []
+    seen_ids = set()
 
-        try:
-            res = requests.get(url, timeout=10)
-            res.raise_for_status()
-            data = res.json()
-            
-            events_count = len(data.get('events', []))
-            print(f"         Found {events_count} events")
-            
-            for event in data['events']:
-                game_date = pd.to_datetime(event['date'])
-                
-                if not event.get('competitions'): 
-                    continue
-                comp = event['competitions'][0]
-                
-                if not comp.get('competitors'): 
-                    continue
-                    
-                home_tm = comp['competitors'][0]['team']
-                away_tm = comp['competitors'][1]['team']
-                home_raw = home_tm['displayName']
-                away_raw = away_tm['displayName']
-                
-                # Get odds
-                odds = comp.get('odds', [{}])[0] if comp.get('odds') else {}
-                details = odds.get('details', '0')
-                raw_odds = details 
-                
-                spread_val = 0.0
-                try:
-                    if details and details != '0' and details != 'EVEN':
-                        parts = details.split()
-                        val = abs(float(parts[-1]))
-                        fav = " ".join(parts[:-1])
-                        
-                        home_abbr = home_tm.get('abbreviation', '')
-                        is_home_fav = (fav == home_abbr) or (fav == home_raw) or (fav in home_raw)
-                        
-                        if is_home_fav:
-                            spread_val = -val
-                        else:
-                            spread_val = val
-                except (ValueError, IndexError):
-                    print(f"         Could not parse spread from: {details!r}")
-                    spread_val = 0.0
-
-                # Neutral site + venue
-                is_neutral = int(comp.get('neutralSite', False))
-                venue = comp.get('venue', {})
-                venue_addr = venue.get('address', {})
-
-                game_id = event['id']
-                if not any(g['id'] == game_id for g in games):
-                    games.append({
-                        'id': game_id,
-                        'home_raw': home_raw,  # Keep original ESPN name
-                        'away_raw': away_raw,  # Keep original ESPN name
-                        'spread': spread_val,  # May be 0 if ESPN doesn't have it
-                        'date': game_date,
-                        'raw_odds': raw_odds,
-                        'has_espn_spread': spread_val != 0.0,
-                        'is_neutral': is_neutral,
-                        'venue_city': venue_addr.get('city', ''),
-                        'venue_state': venue_addr.get('state', '')
-                    })
-                    
-        except requests.RequestException as e:
-            print(f"         HTTP/network error fetching {date_str}: {e}")
-            failed_dates.append(date_str)
-        except ValueError as e:
-            print(f"         JSON parse error fetching {date_str}: {e}")
-            failed_dates.append(date_str)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        ordered_futures = [
+            executor.submit(_fetch_espn_date, ds, dl)
+            for ds, dl in date_tasks
+        ]
+        for future in ordered_futures:
+            date_str, date_games, error = future.result()
+            if error is not None:
+                failed_dates.append(date_str)
+            for g in date_games:
+                if g['id'] not in seen_ids:
+                    seen_ids.add(g['id'])
+                    games.append(g)
 
     if failed_dates:
         print(f"\n      WARNING: Failed to fetch {len(failed_dates)} date(s): {', '.join(failed_dates)}")
@@ -717,13 +785,17 @@ def calculate_production_features(row, h_stats, a_stats, game_date=None, torvik_
     # 10. Volatility (home team's consistency)
     row['prev_volatility'] = h_stats.get('prev_volatility', 10)
 
-    # 11-14. Win-model team strength features (used by Kalshi GAME scoring)
+    # Win-model team strength features used by GAME scoring.
     row['prev_win_pct'] = h_stats.get('prev_win_pct', 0.5)
+    row['prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0)
+    row['prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0)
     row['prev_season_off_rating'] = h_stats.get('prev_season_off_rating', 100.0)
     row['opp_season_off_rating'] = a_stats.get('prev_season_off_rating', 100.0)
     row['off_rating_gap'] = row['prev_season_off_rating'] - row['opp_season_off_rating']
+    row['diff_prev_season_team_score'] = h_stats.get('prev_season_team_score', 70.0) - a_stats.get('prev_season_team_score', 70.0)
+    row['diff_prev_roll3_team_score'] = h_stats.get('prev_roll3_team_score', 70.0) - a_stats.get('prev_roll3_team_score', 70.0)
 
-    # 15-16. Spread interaction features
+    # Spread interaction features.
     row['spread_abs'] = abs(row.get('spread', 0))
     row['spread_squared'] = row.get('spread', 0) ** 2
 
@@ -810,6 +882,11 @@ def get_games_needing_spreads(league="mens"):
     return _games_needing_spreads.get(canonical)
 
 
+def get_spread_model_label(league="mens"):
+    """Return the display label for the configured spread model."""
+    return "GBM + Sigmoid Calibration" if use_calibrated_spread_model(league) else "GBM"
+
+
 @_with_runtime_lock
 def main(spread_overrides=None, league="mens"):
     """Run prediction engine.
@@ -832,10 +909,8 @@ def main(spread_overrides=None, league="mens"):
     try:
         model, sigma = load_model(league=ACTIVE_LEAGUE)
         feature_count = len(getattr(model, "feature_names_in_", [])) or "unknown"
-        print(
-            f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, GBM + Sigmoid Calibration, "
-            f"{feature_count} features) ---"
-        )
+        model_label = get_spread_model_label(ACTIVE_LEAGUE)
+        print(f"--- PREDICTION ENGINE ({ACTIVE_LEAGUE}, {model_label}, {feature_count} features) ---")
         print(f"   Model loaded: {MODEL_FILE} (sigma={sigma:.2f})")
     except (FileNotFoundError, IOError, EOFError) as e:
         print(f"CRITICAL: Model not found or corrupted. Run model.py first. ({e})")
@@ -886,31 +961,40 @@ def main(spread_overrides=None, league="mens"):
     if days_old > 2:
         print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
 
-    # Fetch schedule
-    schedule = fetch_schedule()
-    games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
-    print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
+    # Fetch network resources in parallel while loading local model/venue data
+    with ThreadPoolExecutor(max_workers=2) as _io_pool:
+        _schedule_future = _io_pool.submit(fetch_schedule)
+        _kalshi_future = _io_pool.submit(fetch_kalshi_markets, ACTIVE_LEAGUE)
 
-    # Optional P(win) bundle for Kalshi GAME markets
-    win_bundle = None
-    try:
-        win_bundle = load_win_model_bundle(league=ACTIVE_LEAGUE)
-        has_with_line = win_bundle.get("model_with_line") is not None
-        print(
-            f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
-            f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
-        )
-    except (FileNotFoundError, EOFError, IOError, ValueError) as e:
-        print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
+        win_bundle = None
+        try:
+            win_bundle = load_win_model_bundle(league=ACTIVE_LEAGUE)
+            has_with_line = win_bundle.get("model_with_line") is not None
+            print(
+                f"   Win model loaded: {os.path.basename(WIN_MODEL_FILE)} "
+                f"(no_line + {'with_line' if has_with_line else 'no_line only'})"
+            )
+        except (FileNotFoundError, EOFError, IOError, ValueError) as e:
+            print(f"   WARNING: Win model unavailable ({e}) -- GAME markets skipped.")
 
-    # Build venue lookups for neutral-site / distance features
-    _geo_cache = load_geocode_cache()
-    _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
-    if _team_homes:
-        print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
+        _geo_cache = load_geocode_cache()
+        _team_homes = build_team_home_locations(df_hist, league=ACTIVE_LEAGUE) if 'venue_city' in df_hist.columns else {}
+        if _team_homes:
+            print(f"   Venue distance: {len(_team_homes)} team home locations loaded")
 
-    # Fetch Kalshi markets
-    kalshi_client, kalshi_mapper = fetch_kalshi_markets(league=ACTIVE_LEAGUE)
+        try:
+            schedule = _schedule_future.result()
+        except Exception as e:
+            print(f"CRITICAL: Failed to fetch ESPN schedule: {e}")
+            return
+        games_with_espn_spread = sum(1 for g in schedule if g.get('has_espn_spread', False))
+        print(f"   -> Found {len(schedule)} games ({games_with_espn_spread} with ESPN spreads)")
+
+        try:
+            kalshi_client, kalshi_mapper = _kalshi_future.result()
+        except Exception as e:
+            print(f"   WARNING: Kalshi market fetch failed: {e}")
+            kalshi_client, kalshi_mapper = None, None
 
     spread_predictions = []
     game_predictions = []
@@ -1073,7 +1157,7 @@ def main(spread_overrides=None, league="mens"):
                         )
                     )
 
-                    if game_kalshi.get("Rating") in VALUE_RATINGS:
+                    if game_kalshi.get("Rating") in VALUE_RATINGS and side_prob >= GAME_GOOD_MIN_PROB:
                         game_predictions.append({
                             "Bet_Type": "game",
                             "Date/Time": time_str,
@@ -1129,6 +1213,10 @@ def main(spread_overrides=None, league="mens"):
             'prev_blowout_rate': 0, 'prev_roll5_margin': 0,
             'prev_volatility': 10, 'is_home': 1, 'is_neutral': 0,
             'distance_advantage': 0, 'spread': 0, 'rest_days': 3,
+            'prev_season_team_score': 70,
+            'prev_roll3_team_score': 70,
+            'diff_prev_season_team_score': 0,
+            'diff_prev_roll3_team_score': 0,
             'spread_abs': 0, 'spread_squared': 0,
             'torvik_diff_adj_oe': 0,
             'torvik_diff_adj_de': 0,
@@ -1190,6 +1278,9 @@ def main(spread_overrides=None, league="mens"):
                 recommendations=[],
             )
 
+        std_implied = _get_std_implied_prob(g, is_home_pick, "spread")
+        std_edge = conf - std_implied
+
         prediction_row = {
             "Bet_Type": "spread",
             "Date/Time": time_str,
@@ -1212,10 +1303,11 @@ def main(spread_overrides=None, league="mens"):
             "Kalshi_Ticker": kalshi_data.get("Kalshi_Ticker"),
             "Breakeven_Spread": line_shopping.breakeven_spread,
             "Line_Shopping_Data": line_shopping,
-            "Std_Edge": conf - STANDARD_IMPLIED_PROB,
-            "Std_Edge_Pct": f"{(conf - STANDARD_IMPLIED_PROB) * 100:+.1f}%",
-            "Std_Rating": get_rating(conf - STANDARD_IMPLIED_PROB).value,
-            "Std_Units": recommended_units(conf - STANDARD_IMPLIED_PROB, STANDARD_IMPLIED_PROB),
+            "Std_Edge": std_edge,
+            "Std_Edge_Pct": f"{std_edge * 100:+.1f}%",
+            "Std_Rating": get_rating(std_edge).value,
+            "Std_Units": recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0,
+            "Std_Odds": g.get("home_spread_odds", "") if is_home_pick else g.get("away_spread_odds", ""),
         }
 
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:

@@ -18,11 +18,14 @@ dependencies = [
     "scipy>=1.10",
     "httpx>=0.24",
     "geopy>=2.4.1",
+    "MLB-StatsAPI>=1.7",
+    "python-telegram-bot[job-queue]>=21.0",
+    "ocrmac>=1.0.0",
+    "streamlit-autorefresh>=1.0.1",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=9.0.2"]
-bot = ["python-telegram-bot>=21.0", "ocrmac>=1.0.0"]
 
 [project.scripts]
 train = "model:train_and_evaluate"

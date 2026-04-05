@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 import numpy as np
 import os
@@ -6,21 +7,27 @@ import altair as alt
 import html as html_mod
 import predict
 import backtest
-import settle_bets
+import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 import pytz
+import csv
+import re
+import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
-from league_config import get_league_artifact_paths, get_league_settings, normalize_league
+from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
+from prediction_io import load_predictions_csv
+from dashboard_helpers import filter_recent_kalshi
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
 
-LEAGUES = ["mens", "womens"]
+LEAGUES = ["mens", "womens", "mlb"]
 
-st.set_page_config(page_title="CBB Quant Edge", layout="wide")
+st.set_page_config(page_title="Quant Edge", layout="wide")
 
 # --- CUSTOM STYLING ---
 st.markdown("""
@@ -48,6 +55,7 @@ st.markdown("""
     --neutral-200: #e0dfd8;
     --neutral-100: #eeeee8;
     --neutral-50: #f7f6f2;
+    --live: #b5342a;
     --surface: #ffffff;
     --bg: #faf9f5;
     --font-display: 'Newsreader', Georgia, serif;
@@ -69,8 +77,9 @@ st.markdown("""
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background: var(--green-900);
+    background: #f2f1ec;
     width: 240px !important;
+    border-right: 1px solid #e0dfd8;
 }
 
 section[data-testid="stSidebar"] .block-container {
@@ -84,21 +93,45 @@ section[data-testid="stSidebar"] span:not([data-testid="stIconMaterial"]),
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] .stMarkdown {
     font-family: var(--font-body);
-    color: rgba(255,255,255,0.8) !important;
+    color: var(--neutral-700) !important;
 }
 
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 {
-    color: #ffffff !important;
+    color: var(--neutral-900) !important;
     font-family: var(--font-body) !important;
+}
+
+/* Sidebar widget overrides for light background */
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stTextInput label,
+section[data-testid="stSidebar"] .stCaption,
+section[data-testid="stSidebar"] small {
+    color: var(--neutral-500) !important;
+}
+
+section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"],
+section[data-testid="stSidebar"] .stTextInput input {
+    background: white;
+    color: var(--neutral-900);
+    border-color: var(--neutral-200);
+}
+
+section[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border-color: var(--neutral-200);
+    background: white;
+}
+
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary span {
+    color: var(--neutral-700) !important;
 }
 
 section[data-testid="stSidebar"] .stButton > button {
     width: 100%;
     background: var(--green-700);
     color: white;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: none;
     font-family: var(--font-body);
     font-weight: 600;
     font-size: 0.82rem;
@@ -109,24 +142,22 @@ section[data-testid="stSidebar"] .stButton > button {
 
 section[data-testid="stSidebar"] .stButton > button:hover {
     background: var(--green-600);
-    border-color: rgba(255,255,255,0.2);
 }
 
 .sidebar-brand {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 600;
-    font-style: italic;
-    color: #ffffff;
+    font-family: var(--font-body);
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--green-800);
     margin-bottom: 0.25rem;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     line-height: 1.1;
 }
 
 .sidebar-sub {
     font-family: var(--font-mono);
     font-size: 0.6rem;
-    color: rgba(255,255,255,0.35);
+    color: var(--neutral-400);
     text-transform: uppercase;
     letter-spacing: 0.12em;
     margin-bottom: 1.5rem;
@@ -134,7 +165,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .sidebar-divider {
     border: none;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid var(--neutral-200);
     margin: 1rem 0;
 }
 
@@ -171,14 +202,19 @@ p, span, div, .stMarkdown {
 }
 
 /* Section headers */
+.section-title, .league-header {
+    scroll-margin-top: 4rem;
+}
 .section-title {
     font-family: var(--font-body);
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: var(--neutral-500);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin: 1rem 0 0.5rem 0;
+    margin: 1.5rem 0 0.5rem 0;
+    padding-top: 0.5rem;
+    border-top: 2px solid var(--neutral-200);
 }
 
 /* Value bet cards */
@@ -454,6 +490,137 @@ hr {
     border-radius: 10px;
     overflow: hidden;
 }
+
+/* Live position cards */
+.live-card {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-left: 4px solid var(--live);
+    border-radius: 10px;
+    padding: 1rem 1.1rem 0.9rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.live-card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.07);
+    transform: translateY(-1px);
+}
+
+.live-card.womens-card {
+    border-left-color: var(--purple-700);
+}
+
+.live-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--live);
+    border-radius: 50%;
+    margin-right: 5px;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.womens-card .live-dot {
+    background: var(--purple-700);
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.live-badge {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--live);
+    display: inline-flex;
+    align-items: center;
+}
+
+.womens-card .live-badge {
+    color: var(--purple-700);
+}
+
+.live-clock {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--live);
+}
+
+.womens-card .live-clock {
+    color: var(--purple-700);
+}
+
+.live-score-row {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 8px 0;
+}
+
+.live-team {
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--green-900);
+    flex: 1;
+}
+
+.live-team.away { text-align: right; }
+.live-team.home { text-align: left; }
+
+.live-score {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--green-900);
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+}
+
+.live-bet-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--neutral-100);
+}
+
+.live-bet-stats .stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.live-bet-stats .stat-label {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--neutral-400);
+}
+
+.live-bet-stats .stat-value {
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--green-900);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -467,6 +634,9 @@ _KALSHI_SERIES_SLUGS = {
     "KXNCAAMBGAME": "mens-college-basketball-mens-game",
     "KXNCAAWBSPREAD": "womens-college-basketball-spread",
     "KXNCAAWBGAME": "college-basketball-womens-game",
+    "KXMLBGAME": "baseball-game",
+    "KXMLBSPREAD": "baseball-spread",
+    "KXMLBTOTAL": "baseball-total",
 }
 
 
@@ -490,38 +660,67 @@ def _esc(val) -> str:
 def _filter_not_started(df):
     """Drop rows whose game time has already passed (in-progress games).
 
+    Handles two Date/Time formats:
+      CBB: "04/04 08:49 PM"  (Eastern, no year)
+      MLB: "2026-04-04 17:10" (UTC, ISO with year)
+
     Rows with unparseable Date/Time values are kept (never silently hidden).
     """
     if df.empty or 'Date/Time' not in df.columns:
         return df
     eastern = pytz.timezone('US/Eastern')
+    utc = pytz.utc
     now = datetime.now(eastern)
     now_naive = now.replace(tzinfo=None)
     year = now.year
-    parsed = pd.to_datetime(
-        str(year) + "/" + df["Date/Time"].astype(str),
+    dt_strings = df["Date/Time"].astype(str)
+
+    # Parse CBB format: "04/04 08:49 PM" (Eastern, needs year prefix)
+    cbb_parsed = pd.to_datetime(
+        str(year) + "/" + dt_strings,
         format="%Y/%m/%d %I:%M %p",
         errors="coerce",
     )
-    # Year-rollover: Dec viewing Jan games -- bump year when parsed date
-    # is implausibly far in the past (same pattern as backtest_kalshi_game.py)
-    needs_bump = parsed.notna() & (parsed < (now_naive - timedelta(days=60)))
+    # Year-rollover: Dec viewing Jan games -- bump year (pre-localization, naive compare)
+    needs_bump = cbb_parsed.notna() & (cbb_parsed < (now_naive - timedelta(days=60)))
     if needs_bump.any():
-        parsed = parsed.where(
+        cbb_parsed = cbb_parsed.where(
             ~needs_bump,
             pd.to_datetime(
-                str(year + 1) + "/" + df["Date/Time"].astype(str),
+                str(year + 1) + "/" + dt_strings,
                 format="%Y/%m/%d %I:%M %p",
                 errors="coerce",
             ),
         )
+
+    # Parse MLB/ISO format for rows CBB didn't match: "2026-04-04 17:10" (UTC)
+    iso_parsed = pd.to_datetime(dt_strings, format="%Y-%m-%d %H:%M", errors="coerce")
+    # Only use ISO for rows where CBB parse failed
+    iso_parsed = iso_parsed.where(cbb_parsed.isna())
+
+    # Localize each format to its source timezone, then combine as tz-aware
+    cbb_aware = cbb_parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
+    iso_aware = iso_parsed.dt.tz_localize(utc, ambiguous="NaT", nonexistent="NaT").dt.tz_convert(eastern)
+
+    # Combine: prefer CBB where available, fill with ISO
+    parsed = cbb_aware.combine_first(iso_aware)
+
     n_failed = parsed.isna().sum()
     if n_failed > 0:
         bad = df.loc[parsed.isna(), "Date/Time"].unique()
         print(f"      WARNING: _filter_not_started: {n_failed} row(s) with "
               f"unparseable Date/Time (kept): {list(bad[:5])}")
-    parsed = parsed.dt.tz_localize(eastern, ambiguous="NaT", nonexistent="NaT")
     return df[parsed.isna() | (parsed > now)].copy()
+
+
+def _format_odds_display(x):
+    """Format American odds for display, preserving +/- sign."""
+    try:
+        if pd.isna(x) or str(x).strip().lower() in ('', 'nan'):
+            return ''
+        return f"{int(float(x)):+d}"
+    except (ValueError, TypeError):
+        return ''
 
 
 def _parse_edge(series):
@@ -531,47 +730,267 @@ def _parse_edge(series):
 
 
 # ==========================================
-# LOAD BOTH LEAGUES
+# LIVE KALSHI POSITIONS
+# ==========================================
+
+POSITION_PREFIXES = (
+    "KXNCAAMBGAME", "KXNCAAWBGAME",
+    "KXNCAAMBSPREAD", "KXNCAAWBSPREAD",
+    "KXMLB",
+)
+
+
+@st.cache_data(ttl=120)
+def _fetch_kalshi_positions():
+    """Fetch unsettled Kalshi positions, filtered to CBB markets.
+
+    Returns:
+        List of position dicts. Each contains dollar-denominated string
+        fields: market_exposure_dollars, fees_paid_dollars, position_fp.
+        Returns [] on failure.
+    """
+    try:
+        from kalshi.client import KalshiClient
+        client = KalshiClient()
+        if not client.api_key:
+            return []
+        positions = client.get_positions(settlement_status="unsettled")
+        return [p for p in positions if any(p.get("ticker", "").startswith(pfx) for pfx in POSITION_PREFIXES)]
+    except Exception as e:
+        print(f"      Failed to fetch Kalshi positions: {e}")
+        return []
+
+
+@st.cache_data(ttl=60)
+def _fetch_live_espn_games():
+    """Fetch in-progress ESPN games for both leagues, keyed by team abbreviation."""
+    games_by_abbr = {}
+    for lg in LEAGUES:
+        try:
+            url = get_scoreboard_base_url(lg)
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"      ESPN scoreboard fetch failed for {lg}: {e}")
+            continue
+        for event in data.get("events", []):
+            status = event.get("status", {})
+            state = status.get("type", {}).get("state", "")
+            if state != "in":
+                continue
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp = competitions[0]
+            competitors = comp.get("competitors", [])
+            if len(competitors) < 2:
+                continue
+
+            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[0])
+            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[1])
+
+            clock = status.get("displayClock", "")
+            period = status.get("period", 0)
+            desc = status.get("type", {}).get("description", "")
+
+            if lg == "mlb":
+                # MLB: period = inning, clock = outs or top/bot indicator
+                inning_half = status.get("type", {}).get("shortDetail", "")
+                clock_display = inning_half if inning_half else f"Inn {period}"
+            elif "halftime" in desc.lower():
+                clock_display = "HALF"
+            elif period > 2:
+                clock_display = f"{clock} OT" if clock else "OT"
+            else:
+                half_label = f"{period}H" if period else ""
+                clock_display = f"{clock} {half_label}".strip()
+
+            game_info = {
+                "away_abbr": away.get("team", {}).get("abbreviation", ""),
+                "away_name": away.get("team", {}).get("shortDisplayName", ""),
+                "away_score": away.get("score", "0"),
+                "home_abbr": home.get("team", {}).get("abbreviation", ""),
+                "home_name": home.get("team", {}).get("shortDisplayName", ""),
+                "home_score": home.get("score", "0"),
+                "clock": clock_display,
+                "league": lg,
+            }
+            if game_info["away_abbr"]:
+                games_by_abbr[game_info["away_abbr"]] = game_info
+            if game_info["home_abbr"]:
+                games_by_abbr[game_info["home_abbr"]] = game_info
+    return games_by_abbr
+
+
+def _build_live_positions(positions, live_games) -> list[dict]:
+    """Match Kalshi positions to live ESPN games."""
+    from kalshi.client import KalshiClient
+    client = KalshiClient()
+    results = []
+    for pos in positions:
+        ticker = pos.get("ticker", "")
+        # Ticker suffix after last '-' contains the YES team abbreviation.
+        # Game tickers use the bare abbreviation (e.g. "MIZZ"), while spread
+        # tickers append a spread number (e.g. "SMC8"), so extract only
+        # the leading letters.
+        parts = ticker.rsplit("-", 1)
+        if len(parts) < 2:
+            continue
+        tail = parts[1].upper()
+        abbr_match = re.match(r"([A-Z]+)", tail)
+        if not abbr_match:
+            continue
+        yes_abbr = abbr_match.group(1)
+
+        # Determine league from ticker prefix to avoid cross-league mismatches
+        ticker_upper = ticker.upper()
+        if "KXMLB" in ticker_upper:
+            ticker_league = "mlb"
+        elif "AAWB" in ticker_upper:
+            ticker_league = "womens"
+        else:
+            ticker_league = "mens"
+
+        game = live_games.get(yes_abbr)
+        if not game or game.get("league") != ticker_league:
+            continue
+
+        # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
+        position_fp = float(pos.get("position_fp", 0) or 0)
+        if position_fp > 0:
+            side = "YES"
+        elif position_fp < 0:
+            side = "NO"
+        else:
+            continue
+
+        # Resolve full team name from the game data
+        if yes_abbr == game["home_abbr"]:
+            yes_team_name = game["home_name"]
+        elif yes_abbr == game["away_abbr"]:
+            yes_team_name = game["away_name"]
+        else:
+            yes_team_name = yes_abbr
+
+        contracts = int(abs(position_fp))
+        cost = float(pos.get("market_exposure_dollars", 0) or 0)
+        fee = float(pos.get("fees_paid_dollars", 0) or 0)
+        net_cost = cost + fee
+
+        # Determine market type (game vs spread) from ticker
+        market_type = "spread" if "SPREAD" in ticker.upper() else "game"
+
+        # Fetch current market bid price (what we'd get if we sold now)
+        current_price = None
+        try:
+            market = client.get_market(ticker)
+            if side == "YES":
+                bid = market.get("yes_bid_dollars")
+            else:
+                bid = market.get("no_bid_dollars")
+            if bid is not None:
+                current_price = float(bid)
+        except (requests.RequestException, ValueError, TypeError) as e:
+            print(f"      Failed to fetch market price for {ticker}: {e}")
+
+        # Unrealized P&L: what the position is worth now vs what was paid
+        pnl = None
+        if current_price is not None:
+            pnl = round(current_price * contracts - net_cost, 2)
+
+        results.append({
+            "ticker": ticker,
+            "side": side,
+            "side_team": yes_team_name,
+            "contracts": contracts,
+            "net_cost": net_cost,
+            "game": game,
+            "market_type": market_type,
+            "current_price": current_price,
+            "pnl": pnl,
+        })
+    return results
+
+
+# ==========================================
+# LOAD ALL LEAGUES (parallel)
 # ==========================================
 league_data = {}
 
+
+def _run_predictions(lg, spread_overrides=None):
+    """Run prediction pipeline for a single league. Thread-safe."""
+    if lg == "mlb":
+        mlb_predict.generate_predictions(lg)
+    else:
+        predict.main(
+            spread_overrides=spread_overrides or {},
+            league=lg,
+        )
+
+
+# Determine which leagues need a prediction run
+_leagues_to_run = []
+_league_artifacts = {}
+# Read spread overrides on the main thread (st.session_state is thread-local)
+_spread_overrides = {}
 for lg in LEAGUES:
-    settings = get_league_settings(lg)
     paths = get_league_artifact_paths(BASE_DIR, lg)
-    overrides_key = f"spread_overrides_{lg}"
     loaded_key = f"predictions_loaded_{lg}"
     pred_file = paths["predictions_file"]
-
-    # Skip leagues whose model/data artifacts don't exist locally
     has_artifacts = os.path.exists(paths["model_file"]) and os.path.exists(paths["data_file"])
+    _league_artifacts[lg] = {"paths": paths, "has_artifacts": has_artifacts}
+    _spread_overrides[lg] = st.session_state.get(f"spread_overrides_{lg}", {})
 
     if has_artifacts:
-        # Reset loaded flag if predictions file is stale (from a previous day)
         if os.path.exists(pred_file):
             eastern = pytz.timezone('US/Eastern')
             file_date = datetime.fromtimestamp(os.path.getmtime(pred_file)).date()
             today_date = datetime.now(eastern).date()
             if file_date < today_date:
                 st.session_state[loaded_key] = False
-
         if not st.session_state.get(loaded_key, False):
-            with st.spinner(f"Loading {settings['label']}..."):
+            _leagues_to_run.append(lg)
+
+# Run predictions in parallel (MLB is independent; mens/womens serialize via _RUNTIME_LOCK)
+if _leagues_to_run:
+    labels = [get_league_settings(lg)["label"] for lg in _leagues_to_run]
+    with st.spinner(f"Loading {', '.join(labels)}..."):
+        _errors = {}
+        with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
+            futures = {
+                executor.submit(_run_predictions, lg, _spread_overrides[lg]): lg
+                for lg in _leagues_to_run
+            }
+            for future in as_completed(futures):
+                lg = futures[future]
+                pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
                 try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(overrides_key, {}),
-                        league=lg,
-                    )
+                    future.result()
+                    if os.path.exists(pred_file):
+                        st.session_state[f"predictions_loaded_{lg}"] = True
                 except Exception as e:
-                    st.error(f"Failed to load {settings['label']} predictions: {e}")
-            # Only mark loaded if predictions file exists and has content
-            if os.path.exists(pred_file) and os.path.getsize(pred_file) > 0:
-                st.session_state[loaded_key] = True
+                    _errors[lg] = e
+        for lg, e in _errors.items():
+            st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
+
+# Build league_data from prediction CSVs
+for lg in LEAGUES:
+    settings = get_league_settings(lg)
+    paths = _league_artifacts[lg]["paths"]
+    has_artifacts = _league_artifacts[lg]["has_artifacts"]
+    pred_file = paths["predictions_file"]
 
     try:
-        df = pd.read_csv(pred_file) if os.path.exists(pred_file) else pd.DataFrame()
+        df, predictions_status = load_predictions_csv(pred_file)
     except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
         st.warning(f"Could not read {settings['label']} predictions: {e}")
         df = pd.DataFrame()
+        predictions_status = "error"
+
+    if predictions_status == "empty" and has_artifacts:
+        st.info(f"No {settings['label']} predictions are available for the current slate.")
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
@@ -592,8 +1011,8 @@ for lg in LEAGUES:
         "df": df,
         "spread_df": spread_df,
         "game_df": game_df,
-        "predictions_ls": predict.get_latest_predictions(lg),
-        "games_needing_spreads": predict.get_games_needing_spreads(lg),
+        "predictions_ls": predict.get_latest_predictions(lg) if lg != "mlb" else None,
+        "games_needing_spreads": predict.get_games_needing_spreads(lg) if lg != "mlb" else {},
     }
 
 
@@ -601,54 +1020,47 @@ for lg in LEAGUES:
 # SIDEBAR
 # ==========================================
 with st.sidebar:
-    st.markdown('<div class="sidebar-brand">CBB Quant Edge</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-sub">Spread + Kalshi Markets</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-brand">Quant Edge</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-sub">CBB + MLB | Kalshi Markets</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-    if st.button("Refresh All"):
-        refresh_ok = True
-        for lg in LEAGUES:
-            lg_paths = get_league_artifact_paths(BASE_DIR, lg)
-            if not (os.path.exists(lg_paths["model_file"]) and os.path.exists(lg_paths["data_file"])):
-                continue
-            with st.spinner(f"Refreshing {get_league_settings(lg)['label']}..."):
-                try:
-                    predict.main(
-                        spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
-                        league=lg,
-                    )
-                except Exception as e:
-                    st.error(f"Failed to refresh {get_league_settings(lg)['label']}: {e}")
-                    refresh_ok = False
-                    continue
-                # Only mark loaded if predictions file was actually produced
-                pf = lg_paths["predictions_file"]
-                if os.path.exists(pf) and os.path.getsize(pf) > 0:
-                    st.session_state[f"predictions_loaded_{lg}"] = True
-                else:
-                    refresh_ok = False
-        if refresh_ok:
-            st.rerun()
-
-    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
-
-    settle_league = st.selectbox(
-        "Settle league",
-        LEAGUES,
-        format_func=lambda x: get_league_settings(x)["label"],
-    )
-    if st.button("Settle Bets"):
-        with st.spinner(f"Settling {get_league_settings(settle_league)['label']}..."):
-            summary = settle_bets.settle_pending_bets(league=settle_league)
-        st.session_state["settle_result"] = f"{summary['settled']} settled, {summary['still_pending']} pending"
-        if summary["details"]:
-            st.session_state["settle_details"] = summary["details"]
-        st.rerun()
-
-    if st.session_state.get("settle_result"):
-        st.caption(st.session_state.pop("settle_result"))
-        for d in st.session_state.pop("settle_details", []):
-            st.caption(d)
+    st.markdown("""
+<style>
+.nav-link, .nav-link:visited, .nav-link:link {
+    display: block;
+    padding: 5px 10px;
+    margin: 1px 0;
+    color: #4a5a4a !important;
+    text-decoration: none !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+    border-radius: 5px;
+    transition: background 0.15s, color 0.15s;
+}
+.nav-link:hover {
+    background: rgba(0,0,0,0.05);
+    color: #1a4d2e !important;
+    text-decoration: none !important;
+}
+.nav-section-label {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #aab5aa;
+    padding: 0 10px 4px;
+}
+</style>
+<div class="nav-section-label">Navigate</div>
+<a href="#cbb-spread-bets" class="nav-link">CBB Spread Bets</a>
+<a href="#cbb-game-bets" class="nav-link">CBB Game Bets</a>
+<a href="#mlb-moneyline" class="nav-link">MLB Moneyline</a>
+<a href="#full-slates" class="nav-link">Full Slates</a>
+<a href="#performance" class="nav-link">Performance</a>
+<a href="#betting-history" class="nav-link">Betting History</a>
+""", unsafe_allow_html=True)
 
     # Missing spreads per league
     for lg in LEAGUES:
@@ -748,6 +1160,8 @@ def _render_spread_bets(col, lg):
                 breakeven = row.get('Breakeven_Spread', None)
                 breakeven_str = f"{breakeven:+.1f}" if breakeven and pd.notna(breakeven) else "---"
 
+                odds_str = _format_odds_display(row.get('Std_Odds', '')) or "---"
+
                 kalshi_side = row.get('Kalshi_Side')
                 kalshi_price = row.get('Kalshi_Price')
                 has_kalshi = pd.notna(kalshi_side) and kalshi_side
@@ -758,7 +1172,8 @@ def _render_spread_bets(col, lg):
                     kalshi_ticker = row.get('Kalshi_Ticker', '')
                     kalshi_fee = row.get('Kalshi_Fee')
                     fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
-                    kalshi_text = f"Kalshi {_esc(kalshi_side)} @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
+                    cbb_pick = _esc(row.get('Pick', ''))
+                    kalshi_text = f"Kalshi {cbb_pick} @ {_esc(kalshi_price)}&#162;{fee_str} ({_esc(kalshi_side)} side) &middot; {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_url = _esc(kalshi_event_url(kalshi_ticker))
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_url}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
@@ -781,6 +1196,10 @@ def _render_spread_bets(col, lg):
                         <div class="stat-item">
                             <span class="stat-label">{_esc(edge_source)}</span>
                             <span class="stat-value positive">{_esc(display_edge)}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Odds</span>
+                            <span class="stat-value">{_esc(odds_str)}</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Units</span>
@@ -843,7 +1262,9 @@ def _render_game_bets(col, lg):
             game_price_val = float(row.get('Kalshi_Price', 0) or 0)
             net_cost = game_price_val + game_fee_val
             game_fee_str = f" + {game_fee_val:.1f}&#162; fee" if game_fee_val else ""
-            game_kalshi_text = f"Kalshi {_esc(row.get('Kalshi_Side', ''))} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
+            game_pick = _esc(row.get('Pick', ''))
+            game_side = _esc(row.get('Kalshi_Side', ''))
+            game_kalshi_text = f"Kalshi {game_pick} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str} ({game_side} side)"
             game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
             if game_kalshi_url:
                 game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
@@ -884,17 +1305,159 @@ def _render_game_bets(col, lg):
             ''', unsafe_allow_html=True)
 
 
-st.markdown('<div class="section-title">Spread Bets</div>', unsafe_allow_html=True)
+# ==========================================
+# LIVE KALSHI POSITIONS (in-progress games)
+# ==========================================
+try:
+    _kalshi_positions = _fetch_kalshi_positions()
+    _live_games = _fetch_live_espn_games() if _kalshi_positions else {}
+    _live_positions = _build_live_positions(_kalshi_positions, _live_games) if _kalshi_positions else []
+except Exception as e:
+    print(f"      Live positions section error: {e}")
+    _live_positions = []
+
+# Auto-refresh: keep running even after live positions disappear so that
+# recently-settled results are picked up without a manual browser refresh.
+if "live_auto_refresh" not in st.session_state:
+    st.session_state.live_auto_refresh = True
+
+if st.session_state.live_auto_refresh:
+    st_autorefresh(interval=60_000, key="live_autorefresh")
+
+if _live_positions:
+    st.markdown('<div class="section-title">Live Positions</div>', unsafe_allow_html=True)
+
+    # Refresh controls
+    ctrl_cols = st.columns([1, 1, 6])
+    with ctrl_cols[0]:
+        if st.button("Refresh now", key="live_refresh_btn"):
+            _fetch_kalshi_positions.clear()
+            _fetch_live_espn_games.clear()
+            st.rerun()
+    with ctrl_cols[1]:
+        auto_on = st.toggle("Auto-refresh", value=st.session_state.live_auto_refresh, key="live_auto_toggle")
+        st.session_state.live_auto_refresh = auto_on
+
+    live_cols = st.columns(min(len(_live_positions), 3))
+    for i, lp in enumerate(_live_positions):
+        g = lp["game"]
+        col = live_cols[i % len(live_cols)]
+        league_label = "W" if g["league"] == "womens" else "M"
+        type_label = "SPR" if lp["market_type"] == "spread" else "ML"
+        card_extra = "womens-card" if g["league"] == "womens" else ""
+
+        # P&L display with color
+        pnl = lp.get("pnl")
+        if pnl is not None:
+            pnl_color = "var(--green-600)" if pnl >= 0 else "var(--live)"
+            pnl_html = f'<span style="color:{pnl_color};font-weight:700">{pnl:+.2f}</span>'
+        else:
+            pnl_html = '<span style="color:var(--neutral-400)">--</span>'
+
+        mkt_html = f'${lp["current_price"]:.2f}' if lp.get("current_price") is not None else '--'
+
+        size_label = f'{lp["contracts"]}x ' if lp["contracts"] > 1 else ''
+
+        kalshi_url = kalshi_event_url(lp["ticker"])
+        kalshi_link = f'<a href="{_esc(kalshi_url)}" target="_blank" style="color:var(--neutral-400);font-size:0.65rem;text-decoration:none">view</a>' if kalshi_url else ''
+
+        with col:
+            st.markdown(f'''
+            <div class="live-card {card_extra}">
+                <div class="live-header">
+                    <span class="live-badge"><span class="live-dot"></span>LIVE {_esc(league_label)} {_esc(type_label)}</span>
+                    <span class="live-clock">{_esc(g["clock"])} {kalshi_link}</span>
+                </div>
+                <div class="live-score-row">
+                    <span class="live-team away">{_esc(g["away_name"])}</span>
+                    <span class="live-score">{_esc(g["away_score"])} &ndash; {_esc(g["home_score"])}</span>
+                    <span class="live-team home">{_esc(g["home_name"])}</span>
+                </div>
+                <div class="live-bet-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Position</span>
+                        <span class="stat-value">{_esc(size_label)}{_esc(lp["side"])} {_esc(lp["side_team"])}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Cost</span>
+                        <span class="stat-value">${lp["net_cost"]:.2f}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Mkt</span>
+                        <span class="stat-value">{mkt_html}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">P&amp;L</span>
+                        <span class="stat-value">{pnl_html}</span>
+                    </div>
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+# Recent Kalshi results (last 7 days)
+_recent_kalshi = []
+if os.path.exists(BET_HIST_FILE):
+    try:
+        with open(BET_HIST_FILE, "r", newline="") as _f:
+            _all_bets = list(csv.DictReader(_f))
+        _recent_kalshi = filter_recent_kalshi(_all_bets)
+    except (OSError, csv.Error, UnicodeDecodeError, ValueError) as e:
+        print(f"      Failed to read recent Kalshi results: {e}")
+
+if _recent_kalshi:
+    st.markdown('<div class="section-title">Recent Kalshi Results</div>', unsafe_allow_html=True)
+    _rows_html = ""
+    for _r in _recent_kalshi:
+        _res = _r.get("result", "").strip().lower()
+        _profit = float(_r.get("profit", 0) or 0)
+        if _res == "win":
+            _res_style = "color:var(--green-600);font-weight:700"
+            _res_label = "W"
+        elif _res == "loss":
+            _res_style = "color:var(--live);font-weight:700"
+            _res_label = "L"
+        else:
+            _res_style = "color:var(--neutral-500)"
+            _res_label = "V"
+        _pnl_color = "var(--green-600)" if _profit >= 0 else "var(--live)"
+        _rows_html += f'''
+        <tr style="border-bottom:1px solid var(--neutral-100)">
+            <td style="padding:6px 8px;color:var(--neutral-500)">{_esc(_r.get("date", "")[5:])}</td>
+            <td style="padding:6px 8px">{_esc(_r.get("game", ""))}</td>
+            <td style="padding:6px 8px">{_esc(_r.get("line", ""))}</td>
+            <td style="padding:6px 8px;text-align:center"><span style="{_res_style}">{_res_label}</span></td>
+            <td style="padding:6px 8px;text-align:right;color:{_pnl_color};font-weight:600">{_profit:+.2f}</td>
+        </tr>'''
+    st.markdown(f'''
+    <table style="width:100%;font-family:var(--font-mono);font-size:0.78rem;border-collapse:collapse;margin-bottom:0.5rem">
+        <thead>
+            <tr style="border-bottom:1px solid var(--neutral-200);color:var(--neutral-400);font-size:0.6rem;text-transform:uppercase;letter-spacing:0.06em">
+                <th style="text-align:left;padding:4px 8px">Date</th>
+                <th style="text-align:left;padding:4px 8px">Game</th>
+                <th style="text-align:left;padding:4px 8px">Line</th>
+                <th style="text-align:center;padding:4px 8px">Result</th>
+                <th style="text-align:right;padding:4px 8px">P&L</th>
+            </tr>
+        </thead>
+        <tbody>{_rows_html}
+        </tbody>
+    </table>
+    ''', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+st.markdown('<div class="section-title" id="cbb-spread-bets">CBB -- Spread Bets</div>', unsafe_allow_html=True)
 col_spread_m, col_spread_w = st.columns(2)
 _render_spread_bets(col_spread_m, "mens")
 _render_spread_bets(col_spread_w, "womens")
 
-st.markdown("<hr>", unsafe_allow_html=True)
-
-st.markdown('<div class="section-title">Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title" id="cbb-game-bets">CBB -- Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
 col_game_m, col_game_w = st.columns(2)
 _render_game_bets(col_game_m, "mens")
 _render_game_bets(col_game_w, "womens")
+
+st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
+_render_game_bets(st.container(), "mlb")
 
 
 # ==========================================
@@ -975,7 +1538,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 col_record, col_perf = st.columns(2)
 
 with col_record:
-    st.markdown('<div class="league-header mens">Betting Record</div>', unsafe_allow_html=True)
+    st.markdown('<div class="league-header mens" id="betting-history">Betting Record</div>', unsafe_allow_html=True)
 
     if os.path.exists(BET_HIST_FILE):
         try:
@@ -1020,7 +1583,7 @@ with col_record:
         st.caption("No betting history file found.")
 
 with col_perf:
-    st.markdown('<div class="league-header mens">Model Performance</div>', unsafe_allow_html=True)
+    st.markdown('<div class="league-header mens" id="performance">Model Performance</div>', unsafe_allow_html=True)
 
     def get_metrics(df_subset):
         if len(df_subset) == 0:
@@ -1133,7 +1696,64 @@ with col_perf:
 # BOTTOM: Spread Slates (full width, tabs)
 # ==========================================
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown('<div class="section-title">Full Spread Slates</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title" id="full-slates">Full Slates</div>', unsafe_allow_html=True)
+
+def _render_mlb_slate(game_df, lg):
+    """Render the MLB full slate with moneyline picks and Kalshi links."""
+    show_filter = st.selectbox(
+        "Show",
+        ["All Games", "Value Bets Only"],
+        label_visibility="collapsed",
+        key=f"slate_filter_{lg}",
+    )
+
+    std_col = game_df["Std_Rating"] if "Std_Rating" in game_df.columns else pd.Series("PASS", index=game_df.index)
+    kalshi_col = game_df["Rating"] if "Rating" in game_df.columns else pd.Series("PASS", index=game_df.index)
+    is_value = std_col.isin(VALUE_RATINGS) | kalshi_col.isin(VALUE_RATINGS)
+
+    if show_filter == "Value Bets Only":
+        display_df = game_df[is_value].copy()
+    else:
+        display_df = game_df.copy()
+
+    if display_df.empty:
+        st.caption("No matching picks.")
+        return
+
+    if "Conf" in display_df.columns:
+        display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+
+    # Rename for clarity in the table
+    rename_map = {}
+    if "Std_Edge_Pct" in display_df.columns:
+        rename_map["Std_Edge_Pct"] = "DK Edge"
+    if "Std_Rating" in display_df.columns:
+        rename_map["Std_Rating"] = "DK Rating"
+    if "Std_Units" in display_df.columns:
+        rename_map["Std_Units"] = "DK Units"
+    if "Edge_Pct" in display_df.columns:
+        rename_map["Edge_Pct"] = "Kalshi Edge"
+    if "Rating" in display_df.columns:
+        rename_map["Rating"] = "Kalshi Rating"
+    if "Units" in display_df.columns:
+        rename_map["Units"] = "Kalshi Units"
+    display_df = display_df.rename(columns=rename_map)
+
+    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
+                 "Confidence", "Std_Odds",
+                 "DK Edge", "DK Rating", "DK Units",
+                 "Kalshi Edge", "Kalshi Rating", "Kalshi Units",
+                 "Kalshi_Side", "Kalshi_Price"]
+    show_cols = [c for c in show_cols if c in display_df.columns]
+
+    # Sort by best edge across both sources
+    std_edge = _parse_edge(display_df["DK Edge"]) if "DK Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
+    k_edge = _parse_edge(display_df["Kalshi Edge"]) if "Kalshi Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
+    display_df["_edge_sort"] = pd.concat([std_edge, k_edge], axis=1).max(axis=1)
+    display_df = display_df.sort_values("_edge_sort", ascending=False).drop(columns=["_edge_sort"])
+
+    st.dataframe(display_df[show_cols], use_container_width=True, hide_index=True)
+
 
 slate_tabs = st.tabs([league_data[lg]["settings"]["label"] for lg in LEAGUES])
 
@@ -1142,8 +1762,13 @@ for i, lg in enumerate(LEAGUES):
         spread_df = league_data[lg]["spread_df"]
         game_df = league_data[lg]["game_df"]
 
+        # For MLB, all predictions are game type (moneyline)
+        if spread_df.empty and not game_df.empty:
+            _render_mlb_slate(game_df, lg)
+            continue
+
         if spread_df.empty:
-            st.caption("No spread picks on this slate.")
+            st.caption("No picks on this slate.")
             continue
 
         show_filter = st.selectbox(
@@ -1181,7 +1806,13 @@ for i, lg in enumerate(LEAGUES):
             display_df['Best_Edge'] = k_edge.where(kalshi_better, std_edge).apply(lambda x: f"+{x:.1f}%" if x > 0 else "")
             display_df['Best_Units'] = k_units.where(kalshi_better, std_units)
 
-            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Best_Edge', 'Best_Units']
+            # Format odds column for display
+            if 'Std_Odds' in display_df.columns:
+                display_df['Odds'] = display_df['Std_Odds'].apply(_format_odds_display)
+            else:
+                display_df['Odds'] = ''
+
+            table_cols = ['Date/Time', 'Pick', 'Confidence', 'Odds', 'Best_Edge', 'Best_Units']
             valid_cols = [c for c in table_cols if c in display_df.columns]
             table_df = display_df[valid_cols].rename(columns={
                 'Date/Time': 'Time', 'Best_Edge': 'Edge', 'Best_Units': 'Units'
@@ -1196,6 +1827,7 @@ for i, lg in enumerate(LEAGUES):
                     "Time": st.column_config.TextColumn("Time", width="small"),
                     "Pick": st.column_config.TextColumn("Pick", width="large"),
                     "Confidence": st.column_config.TextColumn("Conf", width="small"),
+                    "Odds": st.column_config.TextColumn("Odds", width="small"),
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                 }
@@ -1232,5 +1864,6 @@ for i, lg in enumerate(LEAGUES):
                     "Link": st.column_config.LinkColumn("Kalshi", width="small", display_text="Trade"),
                 }
             )
+
 
 st.caption(f"Men's: {os.path.basename(league_data['mens']['paths']['model_file'])} | Women's: {os.path.basename(league_data['womens']['paths']['model_file'])}")

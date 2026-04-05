@@ -12,6 +12,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from model import (
     FEATURES,
     MENS_FEATURES,
+    WOMENS_FEATURES,
     TimeAwareCalibratedGBM,
     build_spread_estimator,
     cover_prob_at_spread,
@@ -24,9 +25,21 @@ from model import (
 )
 
 
-def test_production_features_keep_neutral_drop_distance():
-    assert "is_neutral" in FEATURES
-    assert "distance_advantage" not in FEATURES
+def test_exported_features_constant_stays_on_mens_baseline():
+    assert FEATURES == MENS_FEATURES
+
+
+def test_womens_feature_list_uses_live_inputs_only():
+    womens_features = get_feature_list("womens")
+    assert womens_features == WOMENS_FEATURES
+    assert "is_neutral" in womens_features
+    assert "prev_win_pct" in womens_features
+    assert "distance_advantage" in womens_features
+    assert "spread" not in womens_features
+    assert "diff_eFG" not in womens_features
+    assert "roll5_cover_margin" not in womens_features
+    assert "prev_season_team_score" in womens_features
+    assert "prev_roll3_team_score" in womens_features
 
 
 def test_mens_feature_list_uses_torvik_priors_and_drops_dead_inputs():
@@ -44,9 +57,9 @@ def test_mens_spread_model_defaults_to_uncalibrated_gbm():
     assert isinstance(build_spread_estimator("mens"), GradientBoostingClassifier)
 
 
-def test_womens_spread_model_keeps_calibration():
-    assert use_calibrated_spread_model("womens") is True
-    assert isinstance(build_spread_estimator("womens"), TimeAwareCalibratedGBM)
+def test_womens_spread_model_defaults_to_uncalibrated_after_cleanup():
+    assert use_calibrated_spread_model("womens") is False
+    assert isinstance(build_spread_estimator("womens"), GradientBoostingClassifier)
 
 
 def test_calibrated_gbm_pickles_under_model_module():

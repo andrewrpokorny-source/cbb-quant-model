@@ -4,6 +4,7 @@ import pytest
 
 from betting.ev_calculator import (
     EdgeRating,
+    american_odds_to_implied_prob,
     get_rating,
     kalshi_fee_cents,
     kalshi_implied_prob,
@@ -155,3 +156,52 @@ class TestAnalyzeBet:
     def test_zero_price(self):
         result = analyze_bet(model_prob=0.5, kalshi_yes_price=0)
         assert result["ev"] == pytest.approx(-0.5)
+
+
+class TestAmericanOddsToImpliedProb:
+    """Tests for american_odds_to_implied_prob()."""
+
+    def test_minus_110(self):
+        assert american_odds_to_implied_prob("-110") == pytest.approx(0.5238, abs=0.001)
+
+    def test_minus_150(self):
+        # 150 / 250 = 0.600
+        assert american_odds_to_implied_prob("-150") == pytest.approx(0.600)
+
+    def test_plus_130(self):
+        # 100 / 230 = 0.4348
+        assert american_odds_to_implied_prob("+130") == pytest.approx(0.4348, abs=0.001)
+
+    def test_plus_100(self):
+        assert american_odds_to_implied_prob("+100") == pytest.approx(0.500)
+
+    def test_minus_100(self):
+        assert american_odds_to_implied_prob("-100") == pytest.approx(0.500)
+
+    def test_heavy_favorite(self):
+        # -300: 300 / 400 = 0.75
+        assert american_odds_to_implied_prob("-300") == pytest.approx(0.75)
+
+    def test_heavy_underdog(self):
+        # +300: 100 / 400 = 0.25
+        assert american_odds_to_implied_prob("+300") == pytest.approx(0.25)
+
+    def test_numeric_input(self):
+        assert american_odds_to_implied_prob(-110) == pytest.approx(0.5238, abs=0.001)
+
+    def test_even_is_plus_100(self):
+        assert american_odds_to_implied_prob("EVEN") == pytest.approx(0.5, abs=0.001)
+        assert american_odds_to_implied_prob("even") == pytest.approx(0.5, abs=0.001)
+        assert american_odds_to_implied_prob("Even") == pytest.approx(0.5, abs=0.001)
+
+    def test_invalid_returns_none(self):
+        assert american_odds_to_implied_prob("") is None
+        assert american_odds_to_implied_prob(None) is None
+
+    def test_zero_returns_none(self):
+        assert american_odds_to_implied_prob("0") is None
+
+    def test_nan_string_returns_none(self):
+        assert american_odds_to_implied_prob("NaN") is None
+        assert american_odds_to_implied_prob("nan") is None
+        assert american_odds_to_implied_prob(float("nan")) is None
