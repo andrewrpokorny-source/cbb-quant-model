@@ -890,13 +890,13 @@ def _build_live_positions(positions, live_games) -> list[dict]:
 league_data = {}
 
 
-def _run_predictions(lg):
+def _run_predictions(lg, spread_overrides=None):
     """Run prediction pipeline for a single league. Thread-safe."""
     if lg == "mlb":
         mlb_predict.generate_predictions(lg)
     else:
         predict.main(
-            spread_overrides=st.session_state.get(f"spread_overrides_{lg}", {}),
+            spread_overrides=spread_overrides or {},
             league=lg,
         )
 
@@ -904,12 +904,15 @@ def _run_predictions(lg):
 # Determine which leagues need a prediction run
 _leagues_to_run = []
 _league_artifacts = {}
+# Read spread overrides on the main thread (st.session_state is thread-local)
+_spread_overrides = {}
 for lg in LEAGUES:
     paths = get_league_artifact_paths(BASE_DIR, lg)
     loaded_key = f"predictions_loaded_{lg}"
     pred_file = paths["predictions_file"]
     has_artifacts = os.path.exists(paths["model_file"]) and os.path.exists(paths["data_file"])
     _league_artifacts[lg] = {"paths": paths, "has_artifacts": has_artifacts}
+    _spread_overrides[lg] = st.session_state.get(f"spread_overrides_{lg}", {})
 
     if has_artifacts:
         if os.path.exists(pred_file):
@@ -927,7 +930,10 @@ if _leagues_to_run:
     with st.spinner(f"Loading {', '.join(labels)}..."):
         _errors = {}
         with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
-            futures = {executor.submit(_run_predictions, lg): lg for lg in _leagues_to_run}
+            futures = {
+                executor.submit(_run_predictions, lg, _spread_overrides[lg]): lg
+                for lg in _leagues_to_run
+            }
             for future in as_completed(futures):
                 lg = futures[future]
                 pred_file = _league_artifacts[lg]["paths"]["predictions_file"]

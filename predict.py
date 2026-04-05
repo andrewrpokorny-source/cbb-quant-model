@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 import re
@@ -282,17 +282,17 @@ def fetch_schedule():
         day_label = target_date.strftime('%A, %B %d')
         date_tasks.append((date_str, day_label))
 
-    # Fetch all dates in parallel
+    # Fetch all dates in parallel, consume in date order for deterministic dedupe
     games = []
     failed_dates = []
     seen_ids = set()
 
     with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = {
-            executor.submit(_fetch_espn_date, ds, dl): ds
+        ordered_futures = [
+            executor.submit(_fetch_espn_date, ds, dl)
             for ds, dl in date_tasks
-        }
-        for future in as_completed(futures):
+        ]
+        for future in ordered_futures:
             date_str, date_games, error = future.result()
             if error is not None:
                 failed_dates.append(date_str)
