@@ -19,7 +19,7 @@ import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
-from dashboard_helpers import filter_recent_kalshi
+from dashboard_helpers import filter_recent_kalshi, position_matches_game
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -852,8 +852,9 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         else:
             ticker_league = "mens"
 
+        # Match position to live game -- verify both teams, not just YES abbr
         game = live_games.get(yes_abbr)
-        if not game or game.get("league") != ticker_league:
+        if not game or not position_matches_game(ticker, game, ticker_league):
             continue
 
         # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
