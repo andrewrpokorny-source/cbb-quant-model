@@ -794,7 +794,10 @@ def _build_position_lookup(positions: list[dict]) -> dict:
             continue
         side = "YES" if position_fp > 0 else "NO"
         contracts = int(abs(position_fp))
-        lookup.setdefault(et, []).append({"side": side, "contracts": contracts})
+        cost = float(pos.get("market_exposure_dollars", 0) or 0)
+        fee = float(pos.get("fees_paid_dollars", 0) or 0)
+        basis = round(cost + fee, 2)
+        lookup.setdefault(et, []).append({"side": side, "contracts": contracts, "basis": basis})
     return lookup
 
 
@@ -808,7 +811,7 @@ def _placed_badge_html(kalshi_ticker: str, position_lookup: dict) -> str:
         return ""
     parts = []
     for p in positions:
-        parts.append(f"{p['contracts']}x {p['side']}")
+        parts.append(f"{p['contracts']}x {p['side']} @ ${p['basis']:.2f}")
     label = ", ".join(parts)
     return f'<span class="placed-badge">PLACED: {_esc(label)}</span>'
 
@@ -821,7 +824,7 @@ def _format_position_col(ticker: str, position_lookup: dict) -> str:
     positions = position_lookup.get(et, [])
     if not positions:
         return ""
-    parts = [f"{p['contracts']}x {p['side']}" for p in positions]
+    parts = [f"{p['contracts']}x {p['side']} @ ${p['basis']:.2f}" for p in positions]
     return ", ".join(parts)
 
 
