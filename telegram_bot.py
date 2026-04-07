@@ -2165,6 +2165,7 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logged = kalshi_result["logged"]
             kalshi_settled = kalshi_result["settled"]
             if kalshi_result["error"]:
+                logger.warning("Kalshi settlement error: %s", kalshi_result["error"])
                 msg_parts.append(f"Kalshi: {kalshi_result['error']}")
             elif logged or kalshi_settled:
                 parts = []
@@ -2180,6 +2181,18 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     icon = {"win": "W", "loss": "L"}.get(r.get("result", ""), "?")
                     p = float(r.get("profit", 0))
                     msg_parts.append(f"  [{icon}] {r.get('line', '?')} ({r.get('game', '?')}) {p:+.2f}U")
+                logger.info(
+                    "Kalshi settled: %d new, %d pending updated, %d skipped",
+                    len(logged), kalshi_settled, kalshi_result["skipped"],
+                )
+                for r in logged:
+                    logger.info(
+                        "  Kalshi new: %s | %s | %s | %+.2f",
+                        r.get("game", "?"), r.get("line", "?"),
+                        r.get("result", "?"), float(r.get("profit", 0)),
+                    )
+            else:
+                logger.info("Kalshi settle: nothing new (skipped=%d)", kalshi_result["skipped"])
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
             msg_parts.append("Kalshi: fetch failed")
