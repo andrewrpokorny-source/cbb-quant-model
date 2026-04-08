@@ -830,8 +830,12 @@ def _format_position_col(ticker: str, position_lookup: dict) -> str:
 
 @st.cache_data(ttl=60)
 def _fetch_live_espn_games():
-    """Fetch in-progress ESPN games for both leagues, keyed by team abbreviation."""
-    games_by_abbr = {}
+    """Fetch in-progress ESPN games, keyed by team abbreviation.
+
+    Returns dict[str, list[dict]] -- multiple games can share the same
+    abbreviation across leagues (e.g. MLB 'CIN' and CBB 'CIN').
+    """
+    games_by_abbr: dict[str, list[dict]] = {}
     for lg in LEAGUES:
         try:
             url = get_scoreboard_base_url(lg)
@@ -889,9 +893,9 @@ def _fetch_live_espn_games():
                 "game_date": game_date,
             }
             if game_info["away_abbr"]:
-                games_by_abbr[game_info["away_abbr"]] = game_info
+                games_by_abbr.setdefault(game_info["away_abbr"], []).append(game_info)
             if game_info["home_abbr"]:
-                games_by_abbr[game_info["home_abbr"]] = game_info
+                games_by_abbr.setdefault(game_info["home_abbr"], []).append(game_info)
     return games_by_abbr
 
 
@@ -924,9 +928,14 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         else:
             ticker_league = "mens"
 
-        # Match position to live game -- verify both teams, not just YES abbr
-        game = live_games.get(yes_abbr)
-        if not game or not position_matches_game(ticker, game, ticker_league):
+        # Match position to live game -- try all candidates for this abbreviation
+        candidates = live_games.get(yes_abbr, [])
+        game = None
+        for candidate in candidates:
+            if position_matches_game(ticker, candidate, ticker_league):
+                game = candidate
+                break
+        if not game:
             continue
 
         # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
