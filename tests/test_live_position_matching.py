@@ -138,6 +138,39 @@ class TestPositionMatchesGame:
             "KXNCAAMBGAME-26APR04ILLCONN-ILL", game, "mens"
         )
 
+    def test_cross_league_abbr_collision_picks_correct_game(self):
+        """When MLB and CBB share an abbreviation, the position matches
+        the correct league's game, not whichever was stored last.
+
+        This mirrors _build_live_positions iterating over a list of
+        candidates per abbreviation.
+        """
+        mlb_game = self._game("CIN", "STL", league="mlb", game_date="2026-04-08")
+        cbb_game = self._game("CIN", "CONN", league="mens", game_date="2026-04-08")
+        candidates = [mlb_game, cbb_game]
+
+        mlb_ticker = "KXMLBGAME-26APR081810STLCIN-CIN"
+        matched = None
+        for candidate in candidates:
+            if position_matches_game(mlb_ticker, candidate, "mlb"):
+                matched = candidate
+                break
+        assert matched is mlb_game
+
+    def test_cross_league_abbr_collision_cbb_side(self):
+        """CBB position finds CBB game even when MLB game is listed first."""
+        mlb_game = self._game("CIN", "STL", league="mlb", game_date="2026-04-08")
+        cbb_game = self._game("CIN", "CONN", league="mens", game_date="2026-04-08")
+        candidates = [mlb_game, cbb_game]
+
+        cbb_ticker = "KXNCAAMBGAME-26APR08CONNCIN-CIN"
+        matched = None
+        for candidate in candidates:
+            if position_matches_game(cbb_ticker, candidate, "mens"):
+                matched = candidate
+                break
+        assert matched is cbb_game
+
 
 class TestExtractTickerDate:
     """Extract game date from a Kalshi ticker."""
