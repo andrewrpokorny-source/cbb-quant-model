@@ -11,6 +11,34 @@ _MLB_ABBRS = sorted([
 ], key=len, reverse=True)
 
 
+_MONTH_MAP = {
+    "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
+    "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
+    "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+}
+
+
+def extract_ticker_date(ticker: str) -> str:
+    """Extract game date from a Kalshi ticker as 'YYYY-MM-DD'.
+
+    Ticker middle segment starts with YYMMMDD (e.g. '26APR06' = 2026-04-06).
+    Returns '' on parse failure.
+    """
+    parts = ticker.split("-")
+    if len(parts) < 3:
+        return ""
+    middle = parts[1]
+    if len(middle) < 7:
+        return ""
+    yy = middle[:2]
+    mmm = middle[2:5].upper()
+    dd = middle[5:7]
+    mm = _MONTH_MAP.get(mmm)
+    if not mm or not yy.isdigit() or not dd.isdigit():
+        return ""
+    return f"20{yy}-{mm}-{dd}"
+
+
 def extract_ticker_teams(ticker: str) -> tuple[str, str]:
     """Extract (away_abbr, home_abbr) from a Kalshi ticker.
 
@@ -49,9 +77,18 @@ def position_matches_game(ticker: str, game: dict, ticker_league: str) -> bool:
 
     For MLB, verifies both teams in the ticker match both teams in the game.
     For CBB, falls back to YES-team-only matching (ticker doesn't encode both).
+    When the game dict includes a 'game_date' key, the ticker date must also match
+    to prevent stale positions from prior days ghosting onto today's games.
     """
     if game.get("league") != ticker_league:
         return False
+
+    # Date check: if both ticker and game have dates, they must match
+    game_date = game.get("game_date", "")
+    if game_date:
+        ticker_date = extract_ticker_date(ticker)
+        if ticker_date and ticker_date != game_date:
+            return False
 
     game_teams = {game.get("home_abbr", ""), game.get("away_abbr", "")}
     game_teams.discard("")

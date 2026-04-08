@@ -873,6 +873,10 @@ def _fetch_live_espn_games():
                 half_label = f"{period}H" if period else ""
                 clock_display = f"{clock} {half_label}".strip()
 
+            # Extract game date from ESPN event (ISO format -> YYYY-MM-DD)
+            event_date_raw = comp.get("date") or event.get("date", "")
+            game_date = event_date_raw[:10] if len(event_date_raw) >= 10 else ""
+
             game_info = {
                 "away_abbr": away.get("team", {}).get("abbreviation", ""),
                 "away_name": away.get("team", {}).get("shortDisplayName", ""),
@@ -882,6 +886,7 @@ def _fetch_live_espn_games():
                 "home_score": home.get("score", "0"),
                 "clock": clock_display,
                 "league": lg,
+                "game_date": game_date,
             }
             if game_info["away_abbr"]:
                 games_by_abbr[game_info["away_abbr"]] = game_info

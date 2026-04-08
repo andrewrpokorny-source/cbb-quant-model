@@ -2,7 +2,7 @@
 
 import pytest
 
-from dashboard_helpers import extract_ticker_teams, position_matches_game
+from dashboard_helpers import extract_ticker_date, extract_ticker_teams, position_matches_game
 
 
 class TestExtractTickerTeams:
@@ -33,14 +33,17 @@ class TestExtractTickerTeams:
 class TestPositionMatchesGame:
     """Verify that positions only match their actual live game."""
 
-    def _game(self, home_abbr, away_abbr, league="mlb"):
-        return {
+    def _game(self, home_abbr, away_abbr, league="mlb", game_date=None):
+        g = {
             "home_abbr": home_abbr,
             "away_abbr": away_abbr,
             "home_name": f"{home_abbr} Team",
             "away_name": f"{away_abbr} Team",
             "league": league,
         }
+        if game_date:
+            g["game_date"] = game_date
+        return g
 
     def test_mlb_position_matches_correct_game(self):
         """STL @ WSH position should match STL vs WSH game."""
@@ -101,3 +104,50 @@ class TestPositionMatchesGame:
         assert position_matches_game(
             "KXMLBGAME-26APR041910MILKC-KC", game, "mlb"
         )
+
+    def test_stale_position_does_not_match_next_day(self):
+        """Apr 6 LAD/TOR position must NOT match Apr 7 LAD/TOR game."""
+        game = self._game("TOR", "LAD", game_date="2026-04-07")
+        assert not position_matches_game(
+            "KXMLBGAME-26APR061907LADTOR-TOR", game, "mlb"
+        )
+
+    def test_same_day_position_still_matches(self):
+        """Apr 7 LAD/TOR position should match Apr 7 LAD/TOR game."""
+        game = self._game("TOR", "LAD", game_date="2026-04-07")
+        assert position_matches_game(
+            "KXMLBGAME-26APR071907LADTOR-TOR", game, "mlb"
+        )
+
+    def test_no_game_date_still_matches(self):
+        """If game has no date (legacy), fall back to team-only matching."""
+        game = self._game("TOR", "LAD")
+        assert position_matches_game(
+            "KXMLBGAME-26APR071907LADTOR-TOR", game, "mlb"
+        )
+
+    def test_stale_cbb_position_does_not_match(self):
+        """CBB position from wrong date should not match."""
+        game = self._game("CONN", "ILL", league="mens", game_date="2026-04-05")
+        assert not position_matches_game(
+            "KXNCAAMBGAME-26APR04ILLCONN-ILL", game, "mens"
+        )
+
+
+class TestExtractTickerDate:
+    """Extract game date from a Kalshi ticker."""
+
+    def test_mlb_ticker_date(self):
+        assert extract_ticker_date("KXMLBGAME-26APR061845STLWSH-STL") == "2026-04-06"
+
+    def test_mlb_ticker_different_month(self):
+        assert extract_ticker_date("KXMLBGAME-26MAY151910NYYLAD-NYY") == "2026-05-15"
+
+    def test_cbb_ticker_date(self):
+        assert extract_ticker_date("KXNCAAMBGAME-26APR04ILLCONN-ILL") == "2026-04-04"
+
+    def test_malformed_ticker_returns_empty(self):
+        assert extract_ticker_date("GARBAGE") == ""
+
+    def test_short_middle_returns_empty(self):
+        assert extract_ticker_date("KXMLBGAME-26AP-STL") == ""
