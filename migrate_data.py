@@ -44,6 +44,9 @@ def migrate():
     moved = []
     conflicts = []
 
+    for subdir in ("data", "models"):
+        os.makedirs(os.path.join(BASE_DIR, subdir), exist_ok=True)
+
     for old_rel, new_rel in MOVES:
         old = os.path.join(BASE_DIR, old_rel)
         new = os.path.join(BASE_DIR, new_rel)
@@ -75,4 +78,7 @@ def migrate():
 
 
 if __name__ == "__main__":
-    migrate()
+    import sys
+    success = migrate()
+    if not success:
+        sys.exit(1)

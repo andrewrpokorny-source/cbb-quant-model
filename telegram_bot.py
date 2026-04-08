@@ -218,6 +218,14 @@ def ensure_csv_exists():
     Also migrates existing CSVs that lack the bet_id column.
     """
     if not os.path.exists(BETTING_HISTORY):
+        legacy_path = os.path.join(BASE_DIR, "betting_history.csv")
+        if os.path.exists(legacy_path):
+            raise FileNotFoundError(
+                f"betting_history.csv found at legacy location ({legacy_path}) "
+                f"but not at expected location ({BETTING_HISTORY}). "
+                f"Run 'python migrate_data.py' to migrate."
+            )
+        os.makedirs(os.path.dirname(BETTING_HISTORY), exist_ok=True)
         with open(BETTING_HISTORY, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(CSV_HEADERS)
