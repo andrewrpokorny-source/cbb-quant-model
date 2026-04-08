@@ -19,7 +19,7 @@ import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
-from dashboard_helpers import filter_recent_kalshi
+from dashboard_helpers import filter_recent_kalshi, position_matches_game, utc_date_to_eastern
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -287,6 +287,20 @@ p, span, div, .stMarkdown {
 .bet-badge.pass {
     background: var(--neutral-400);
     color: #ffffff;
+}
+
+.placed-badge {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #1a6fb5;
+    color: #ffffff;
+    display: inline-block;
+    margin-left: 8px;
 }
 
 .bet-pick {
@@ -761,10 +775,67 @@ def _fetch_kalshi_positions():
         return []
 
 
+def _event_ticker(ticker: str) -> str:
+    """Extract event ticker (drop market suffix) for game-level matching."""
+    parts = ticker.rsplit("-", 1)
+    return parts[0] if len(parts) > 1 else ticker
+
+
+def _build_position_lookup(positions: list[dict]) -> dict:
+    """Build event_ticker -> list of (side, contracts) for 'action on game' display."""
+    lookup: dict[str, list[dict]] = {}
+    for pos in positions:
+        ticker = pos.get("ticker", "")
+        et = _event_ticker(ticker)
+        if not et:
+            continue
+        position_fp = float(pos.get("position_fp", 0) or 0)
+        if position_fp == 0:
+            continue
+        side = "YES" if position_fp > 0 else "NO"
+        contracts = int(abs(position_fp))
+        cost = float(pos.get("market_exposure_dollars", 0) or 0)
+        fee = float(pos.get("fees_paid_dollars", 0) or 0)
+        basis = round(cost + fee, 2)
+        lookup.setdefault(et, []).append({"side": side, "contracts": contracts, "basis": basis})
+    return lookup
+
+
+def _placed_badge_html(kalshi_ticker: str, position_lookup: dict) -> str:
+    """Return HTML for 'PLACED' badge if user has a position on this game, else ''."""
+    if not kalshi_ticker or not position_lookup:
+        return ""
+    et = _event_ticker(kalshi_ticker)
+    positions = position_lookup.get(et, [])
+    if not positions:
+        return ""
+    parts = []
+    for p in positions:
+        parts.append(f"{p['contracts']}x {p['side']} @ ${p['basis']:.2f}")
+    label = ", ".join(parts)
+    return f'<span class="placed-badge">PLACED: {_esc(label)}</span>'
+
+
+def _format_position_col(ticker: str, position_lookup: dict) -> str:
+    """Return plain-text position summary for dataframe columns (e.g. '5x YES')."""
+    if not ticker or not position_lookup:
+        return ""
+    et = _event_ticker(ticker)
+    positions = position_lookup.get(et, [])
+    if not positions:
+        return ""
+    parts = [f"{p['contracts']}x {p['side']} @ ${p['basis']:.2f}" for p in positions]
+    return ", ".join(parts)
+
+
 @st.cache_data(ttl=60)
 def _fetch_live_espn_games():
-    """Fetch in-progress ESPN games for both leagues, keyed by team abbreviation."""
-    games_by_abbr = {}
+    """Fetch in-progress ESPN games, keyed by team abbreviation.
+
+    Returns dict[str, list[dict]] -- multiple games can share the same
+    abbreviation across leagues (e.g. MLB 'CIN' and CBB 'CIN').
+    """
+    games_by_abbr: dict[str, list[dict]] = {}
     for lg in LEAGUES:
         try:
             url = get_scoreboard_base_url(lg)
@@ -806,6 +877,10 @@ def _fetch_live_espn_games():
                 half_label = f"{period}H" if period else ""
                 clock_display = f"{clock} {half_label}".strip()
 
+            # Extract game date from ESPN event (UTC ISO -> Eastern date)
+            event_date_raw = comp.get("date") or event.get("date", "")
+            game_date = utc_date_to_eastern(event_date_raw)
+
             game_info = {
                 "away_abbr": away.get("team", {}).get("abbreviation", ""),
                 "away_name": away.get("team", {}).get("shortDisplayName", ""),
@@ -815,11 +890,12 @@ def _fetch_live_espn_games():
                 "home_score": home.get("score", "0"),
                 "clock": clock_display,
                 "league": lg,
+                "game_date": game_date,
             }
             if game_info["away_abbr"]:
-                games_by_abbr[game_info["away_abbr"]] = game_info
+                games_by_abbr.setdefault(game_info["away_abbr"], []).append(game_info)
             if game_info["home_abbr"]:
-                games_by_abbr[game_info["home_abbr"]] = game_info
+                games_by_abbr.setdefault(game_info["home_abbr"], []).append(game_info)
     return games_by_abbr
 
 
@@ -852,8 +928,14 @@ def _build_live_positions(positions, live_games) -> list[dict]:
         else:
             ticker_league = "mens"
 
-        game = live_games.get(yes_abbr)
-        if not game or game.get("league") != ticker_league:
+        # Match position to live game -- try all candidates for this abbreviation
+        candidates = live_games.get(yes_abbr, [])
+        game = None
+        for candidate in candidates:
+            if position_matches_game(ticker, candidate, ticker_league):
+                game = candidate
+                break
+        if not game:
             continue
 
         # position_fp > 0 means YES contracts held, < 0 means NO; 0 means no active position
@@ -1103,7 +1185,7 @@ with st.sidebar:
 # ==========================================
 
 
-def _render_spread_bets(col, lg):
+def _render_spread_bets(col, lg, position_lookup=None):
     """Render spread value bets for one league."""
     d = league_data[lg]
     spread_df = d["spread_df"]
@@ -1167,9 +1249,9 @@ def _render_spread_bets(col, lg):
                 has_kalshi = pd.notna(kalshi_side) and kalshi_side
 
                 kalshi_html = ""
+                kalshi_ticker = row.get('Kalshi_Ticker', '')
                 if has_kalshi:
                     kalshi_edge = _esc(row.get('Edge_Pct', 'N/A'))
-                    kalshi_ticker = row.get('Kalshi_Ticker', '')
                     kalshi_fee = row.get('Kalshi_Fee')
                     fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
                     cbb_pick = _esc(row.get('Pick', ''))
@@ -1180,10 +1262,12 @@ def _render_spread_bets(col, lg):
                     else:
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">{kalshi_text}</span></div>'
 
+                placed_html = _placed_badge_html(kalshi_ticker, position_lookup or {})
+
                 st.markdown(f'''
                 <div class="bet-card {badge_css} {card_extra}">
                     <div class="bet-header">
-                        <div class="bet-badge {badge_css}">{_esc(best_rating.title())}</div>
+                        <div><span class="bet-badge {badge_css}">{_esc(best_rating.title())}</span>{placed_html}</div>
                         <div class="bet-time">{_esc(game_time)}</div>
                     </div>
                     <div class="bet-pick">{_esc(row['Pick'])}</div>
@@ -1229,7 +1313,7 @@ def _render_spread_bets(col, lg):
             st.caption("No spread value bets on this slate.")
 
 
-def _render_game_bets(col, lg):
+def _render_game_bets(col, lg, position_lookup=None):
     """Render Kalshi ML game value bets for one league."""
     d = league_data[lg]
     game_df = d["game_df"]
@@ -1270,10 +1354,11 @@ def _render_game_bets(col, lg):
                 game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
             else:
                 game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
+            placed_html = _placed_badge_html(game_kalshi_ticker, position_lookup or {})
             st.markdown(f'''
             <div class="bet-card {badge_css} {card_extra}">
                 <div class="bet-header">
-                    <div class="bet-badge {badge_css}">{_esc(str(rating).title())}</div>
+                    <div><span class="bet-badge {badge_css}">{_esc(str(rating).title())}</span>{placed_html}</div>
                     <div class="bet-time">{_esc(row.get('Date/Time', ''))}</div>
                 </div>
                 <div class="bet-pick">{_esc(row.get('Pick', ''))}</div>
@@ -1446,18 +1531,20 @@ if _recent_kalshi:
     ''', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
 
+_position_lookup = _build_position_lookup(_fetch_kalshi_positions())
+
 st.markdown('<div class="section-title" id="cbb-spread-bets">CBB -- Spread Bets</div>', unsafe_allow_html=True)
 col_spread_m, col_spread_w = st.columns(2)
-_render_spread_bets(col_spread_m, "mens")
-_render_spread_bets(col_spread_w, "womens")
+_render_spread_bets(col_spread_m, "mens", _position_lookup)
+_render_spread_bets(col_spread_w, "womens", _position_lookup)
 
 st.markdown('<div class="section-title" id="cbb-game-bets">CBB -- Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
 col_game_m, col_game_w = st.columns(2)
-_render_game_bets(col_game_m, "mens")
-_render_game_bets(col_game_w, "womens")
+_render_game_bets(col_game_m, "mens", _position_lookup)
+_render_game_bets(col_game_w, "womens", _position_lookup)
 
 st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
-_render_game_bets(st.container(), "mlb")
+_render_game_bets(st.container(), "mlb", _position_lookup)
 
 
 # ==========================================
@@ -1739,11 +1826,19 @@ def _render_mlb_slate(game_df, lg):
         rename_map["Units"] = "Kalshi Units"
     display_df = display_df.rename(columns=rename_map)
 
+    # Add position column from Kalshi portfolio
+    if "Kalshi_Ticker" in display_df.columns and _position_lookup:
+        display_df["Position"] = display_df["Kalshi_Ticker"].apply(
+            lambda t: _format_position_col(t, _position_lookup) if pd.notna(t) and t else ""
+        )
+    else:
+        display_df["Position"] = ""
+
     show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
                  "Confidence", "Std_Odds",
                  "DK Edge", "DK Rating", "DK Units",
                  "Kalshi Edge", "Kalshi Rating", "Kalshi Units",
-                 "Kalshi_Side", "Kalshi_Price"]
+                 "Kalshi_Side", "Kalshi_Price", "Position"]
     show_cols = [c for c in show_cols if c in display_df.columns]
 
     # Sort by best edge across both sources
@@ -1842,7 +1937,13 @@ for i, lg in enumerate(LEAGUES):
                 table_game["Link"] = table_game["Kalshi_Ticker"].apply(
                     lambda t: kalshi_event_url(t) if pd.notna(t) and t else None
                 )
-            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Kalshi_Fee", "Edge_Pct", "Units", "Rating", "Link"]
+                if _position_lookup:
+                    table_game["Position"] = table_game["Kalshi_Ticker"].apply(
+                        lambda t: _format_position_col(t, _position_lookup) if pd.notna(t) and t else ""
+                    )
+                else:
+                    table_game["Position"] = ""
+            game_cols = ["Date/Time", "Pick", "Confidence", "Kalshi_Price", "Kalshi_Fee", "Edge_Pct", "Units", "Rating", "Position", "Link"]
             game_cols = [c for c in game_cols if c in table_game.columns]
             table_game = table_game[game_cols].rename(columns={
                 "Date/Time": "Time", "Kalshi_Price": "Price", "Kalshi_Fee": "Fee", "Edge_Pct": "Edge",
@@ -1861,6 +1962,7 @@ for i, lg in enumerate(LEAGUES):
                     "Edge": st.column_config.TextColumn("Edge", width="small"),
                     "Units": st.column_config.NumberColumn("Units", format="%.1f", width="small"),
                     "Rating": st.column_config.TextColumn("Rating", width="small"),
+                    "Position": st.column_config.TextColumn("Position", width="small"),
                     "Link": st.column_config.LinkColumn("Kalshi", width="small", display_text="Trade"),
                 }
             )
