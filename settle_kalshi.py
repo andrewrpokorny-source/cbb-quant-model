@@ -18,7 +18,7 @@ load_dotenv()
 from kalshi.client import KalshiClient
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
+BETTING_HISTORY = os.path.join(BASE_DIR, "data/betting_history.csv")
 SYNC_STATE_FILE = os.path.join(BASE_DIR, ".kalshi_sync_state.json")
 
 CSV_HEADERS = [

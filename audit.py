@@ -6,7 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score
 
 # --- CONFIG ---
-DATA_FILE = "cbb_training_data_processed.csv"
+DATA_FILE = "data/cbb_training_data_processed.csv"
 
 def create_matchup_features(df):
     """

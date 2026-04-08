@@ -7,8 +7,8 @@ from sklearn.metrics import accuracy_score
 import joblib
 import os
 
-DATA_FILE = "cbb_training_data_processed.csv"
-MODEL_FILE = "cbb_totals_model.pkl"
+DATA_FILE = "data/cbb_training_data_processed.csv"
+MODEL_FILE = "models/cbb_totals_model.pkl"
 
 def create_totals_features(df):
     """Features specific to Over/Under Prediction."""

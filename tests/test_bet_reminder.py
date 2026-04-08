@@ -13,7 +13,9 @@ import pytest
 def tmp_project(tmp_path, monkeypatch):
     """Set up a temporary project directory with archive CSVs and betting history."""
     monkeypatch.setattr("telegram_bot.BASE_DIR", str(tmp_path))
-    monkeypatch.setattr("telegram_bot.BETTING_HISTORY", str(tmp_path / "betting_history.csv"))
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setattr("telegram_bot.BETTING_HISTORY", str(data_dir / "betting_history.csv"))
     return tmp_path
 
 
@@ -58,7 +60,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -82,7 +84,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "game",
@@ -104,7 +106,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -125,7 +127,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 27)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "game",
@@ -155,7 +157,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 27)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "game",
@@ -190,7 +192,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -202,7 +204,7 @@ class TestFindUnloggedStrongGames:
                 "Std_Units": "1.5",
             },
         ])
-        _write_betting_history(tmp_project / "betting_history.csv", [
+        _write_betting_history(tmp_project / "data/betting_history.csv", [
             {
                 "date": "2026-03-23",
                 "platform": "FanDuel",
@@ -224,7 +226,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -234,7 +236,7 @@ class TestFindUnloggedStrongGames:
                 "Std_Rating": "STRONG",
             },
         ])
-        _write_betting_history(tmp_project / "betting_history.csv", [
+        _write_betting_history(tmp_project / "data/betting_history.csv", [
             {
                 "date": "2026-03-23",
                 "platform": "DraftKings",
@@ -256,7 +258,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -266,7 +268,7 @@ class TestFindUnloggedStrongGames:
                 "Std_Rating": "STRONG",
             },
         ])
-        _write_betting_history(tmp_project / "betting_history.csv", [
+        _write_betting_history(tmp_project / "data/betting_history.csv", [
             {
                 "date": "2026-03-23",
                 "platform": "Kalshi",
@@ -288,7 +290,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",
@@ -305,7 +307,7 @@ class TestFindUnloggedStrongGames:
                 "Std_Rating": "STRONG",
             },
         ])
-        _write_betting_history(tmp_project / "betting_history.csv", [
+        _write_betting_history(tmp_project / "data/betting_history.csv", [
             {
                 "date": "2026-03-23",
                 "platform": "FanDuel",
@@ -330,7 +332,7 @@ class TestFindUnloggedStrongGames:
         target = date(2026, 3, 23)
 
         # Men's archive
-        _write_predictions_csv(tmp_project / "predictions_20260323.csv", [
+        _write_predictions_csv(tmp_project / "data/predictions_20260323.csv", [
             {
                 "Bet_Type": "spread",
                 "Date/Time": "03/23 07:00 PM",
@@ -341,7 +343,7 @@ class TestFindUnloggedStrongGames:
         ])
 
         # Women's archive
-        _write_predictions_csv(tmp_project / "predictions_wbb_20260323.csv", [
+        _write_predictions_csv(tmp_project / "data/predictions_wbb_20260323.csv", [
             {
                 "Bet_Type": "spread",
                 "Date/Time": "03/23 08:00 PM",
@@ -362,7 +364,7 @@ class TestFindUnloggedStrongGames:
         from telegram_bot import find_unlogged_strong_games
 
         target = date(2026, 3, 23)
-        archive_path = tmp_project / "predictions_20260323.csv"
+        archive_path = tmp_project / "data/predictions_20260323.csv"
         _write_predictions_csv(archive_path, [
             {
                 "Bet_Type": "spread",

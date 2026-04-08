@@ -50,9 +50,9 @@ from settle_kalshi import settle_to_csv
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
-DAILY_PREDICTIONS = os.path.join(BASE_DIR, "daily_predictions.csv")
-PERF_FILE = os.path.join(BASE_DIR, "performance_log.csv")
+BETTING_HISTORY = os.path.join(BASE_DIR, "data/betting_history.csv")
+DAILY_PREDICTIONS = os.path.join(BASE_DIR, "data/daily_predictions.csv")
+PERF_FILE = os.path.join(BASE_DIR, "data/performance_log.csv")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -1067,11 +1067,11 @@ def _resolve_game_date(team_name: str) -> str:
     # Build list of prediction files to search (most recent first)
     # Include both men's and women's prediction files
     pred_files = []
-    for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "daily_predictions_wbb.csv")]:
+    for base in [DAILY_PREDICTIONS, os.path.join(BASE_DIR, "data/daily_predictions_wbb.csv")]:
         if os.path.exists(base):
             pred_files.append(base)
     archive_files = []
-    for pattern in ("predictions_*.csv", "predictions_wbb_*.csv"):
+    for pattern in ("data/predictions_*.csv", "data/predictions_wbb_*.csv"):
         archive_files.extend(glob.glob(os.path.join(BASE_DIR, pattern)))
 
     def _archive_sort_key(path: str) -> str:
@@ -1137,7 +1137,7 @@ def find_unlogged_strong_games(target_date) -> list[dict]:
     ]
 
     for prefix, league in league_prefixes:
-        archive_files = glob.glob(os.path.join(BASE_DIR, f"{prefix}_*.csv"))
+        archive_files = glob.glob(os.path.join(BASE_DIR, f"data/{prefix}_*.csv"))
         # Exclude wbb files from men's glob (predictions_*.csv also matches predictions_wbb_*)
         if prefix == "predictions":
             archive_files = [f for f in archive_files if "_wbb_" not in os.path.basename(f)]

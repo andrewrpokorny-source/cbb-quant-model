@@ -23,7 +23,7 @@ from dashboard_helpers import filter_recent_kalshi
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BET_HIST_FILE = os.path.join(BASE_DIR, "betting_history.csv")
+BET_HIST_FILE = os.path.join(BASE_DIR, "data/betting_history.csv")
 
 LEAGUES = ["mens", "womens", "mlb"]
 

@@ -16,9 +16,9 @@ HEADERS = {
 VALID_BOOKS = ['DraftKings', 'FanDuel', 'BetMGM', 'Caesars', 'PointsBet']
 
 # File Paths
-RAW_DATA_FILE = "cbb_data_raw.csv"
-TRAINING_DATA_FILE = "cbb_data_processed.csv"
-HISTORY_FILE = "cbb_predictions_log.csv"
+RAW_DATA_FILE = "data/cbb_data_raw.csv"
+TRAINING_DATA_FILE = "data/cbb_data_processed.csv"
+HISTORY_FILE = "data/cbb_predictions_log.csv"
 
 # Model Settings
 START_YEAR = 2024 

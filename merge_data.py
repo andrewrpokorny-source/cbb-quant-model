@@ -2,9 +2,9 @@ import pandas as pd
 from difflib import get_close_matches
 
 # --- CONFIG ---
-STATS_FILE = "cbb_training_data_processed.csv"
-ODDS_FILE = "espn_odds_history.csv"
-OUTPUT_FILE = "cbb_training_data_with_totals.csv"
+STATS_FILE = "data/cbb_training_data_processed.csv"
+ODDS_FILE = "data/espn_odds_history.csv"
+OUTPUT_FILE = "data/cbb_training_data_with_totals.csv"
 
 def normalize_name(name):
     """Simple normalizer to help matching."""

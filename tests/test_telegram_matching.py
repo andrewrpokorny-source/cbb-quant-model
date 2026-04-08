@@ -433,28 +433,32 @@ def test_csv_migration_adds_bet_id_column(tmp_path, monkeypatch):
 
 def test_resolve_game_date_finds_wbb_daily(tmp_path, monkeypatch):
     """_resolve_game_date should search daily_predictions_wbb.csv."""
-    wbb_csv = tmp_path / "daily_predictions_wbb.csv"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    wbb_csv = data_dir / "daily_predictions_wbb.csv"
     wbb_csv.write_text(
         "Pick,Matchup,Date/Time\n"
         "South Carolina Gamecocks,LSU @ South Carolina,03/06 7:00 PM\n"
     )
     monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(data_dir / "daily_predictions.csv"))
     result = BOT._resolve_game_date("South Carolina")
     assert result == f"{BOT.datetime.now(BOT.pytz.timezone('US/Eastern')).year}-03-06"
 
 
 def test_resolve_game_date_finds_wbb_dated(tmp_path, monkeypatch):
     """_resolve_game_date should search predictions_wbb_YYYYMMDD.csv files."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
     eastern = BOT.pytz.timezone("US/Eastern")
     today = BOT.datetime.now(eastern)
     date_str = today.strftime("%Y%m%d")
-    wbb_csv = tmp_path / f"predictions_wbb_{date_str}.csv"
+    wbb_csv = data_dir / f"predictions_wbb_{date_str}.csv"
     wbb_csv.write_text(
         "Pick,Matchup,Date/Time\n"
         "Iowa Hawkeyes,Iowa @ Nebraska,03/06 8:00 PM\n"
     )
     monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(data_dir / "daily_predictions.csv"))
     result = BOT._resolve_game_date("Iowa")
     assert result == f"{today.year}-03-06"

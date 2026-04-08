@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore')
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
+DATA_FILE = os.path.join(BASE_DIR, "data/cbb_training_data_processed.csv")
 
 BASELINE_FEATURES = [
     'is_home', 'spread', 'rest_days', 'diff_eFG',

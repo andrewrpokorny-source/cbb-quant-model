@@ -74,11 +74,11 @@ The MLB model is a GBM classifier (28 features) predicting P(home win) for money
 
 ### Model Artifacts
 
-- Men's canonical model: `cbb_model_v2.pkl`
-- Women's canonical model: `womens_cbb_spread_model_v2.pkl`
-- Men's game-winner model bundle: `cbb_win_model_v1.pkl`
-- Women's game-winner model bundle: `womens_cbb_win_model_v1.pkl`
-- MLB moneyline model: `mlb_win_model_v1.pkl`
+- Men's canonical model: `models/cbb_model_v2.pkl`
+- Women's canonical model: `models/womens_cbb_spread_model_v2.pkl`
+- Men's game-winner model bundle: `models/cbb_win_model_v1.pkl`
+- Women's game-winner model bundle: `models/womens_cbb_win_model_v1.pkl`
+- MLB moneyline model: `models/mlb_win_model_v1.pkl`
 
 ### Neutral-Site and Venue Features
 
@@ -112,7 +112,7 @@ The Telegram bot is a local bet logger and settlement assistant. It can:
 - The current bot process should be run on macOS because it imports `ocrmac` at startup.
 - Screenshot parsing uses macOS native OCR via `ocrmac`.
 - Text shorthand entry and share-link logging are supported workflows, but they still use the same bot process.
-- `/today` reads `daily_predictions.csv` (CBB), so run `uv run python predict.py` first if you want live model picks in Telegram. MLB predictions are generated separately via `uv run python mlb/predict.py`.
+- `/today` reads `data/daily_predictions.csv` (CBB), so run `uv run python predict.py` first if you want live model picks in Telegram. MLB predictions are generated separately via `uv run python mlb/predict.py`.
 
 #### Environment Configuration
 
@@ -169,8 +169,8 @@ The process also creates a lock file at `.telegram_bot.lock` so you do not accid
 |---------|-------------|
 | `/start` | Show the quick-start help text |
 | `/help` | Alias for `/start` |
-| `/today` | Show today's value bets from `daily_predictions.csv` |
-| `/pending` | List all unsettled bets in `betting_history.csv` |
+| `/today` | Show today's value bets from `data/daily_predictions.csv` |
+| `/pending` | List all unsettled bets in `data/betting_history.csv` |
 | `/settle` | Settle pending bets and import recent Kalshi settlements |
 | `/record` | Show all-time record, profit, ROI, last 7 days, and pending count |
 | `/delete N` | Delete the `N`th pending bet |
@@ -214,9 +214,9 @@ The bot will parse the URL, extract the bet, and log or settle it when possible.
 
 The bot works out of the repository root and uses these local files:
 
-- `betting_history.csv`: primary ledger of logged bets
-- `daily_predictions.csv`: source for `/today`
-- `performance_log.csv`: performance data used elsewhere in the project
+- `data/betting_history.csv`: primary ledger of logged bets
+- `data/daily_predictions.csv`: source for `/today`
+- `data/performance_log.csv`: performance data used elsewhere in the project
 - `telegram_bot.log`: rotating bot log output
 - `telegram_parse_audit.jsonl`: parse audit trail unless overridden by `BET_PARSE_AUDIT_FILE`
 - `screenshots/`: stored screenshot artifacts when parsing needs them

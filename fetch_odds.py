@@ -7,7 +7,7 @@ import os
 # --- CONFIG ---
 START_DATE = date(2024, 11, 4) # Start of 24-25 Season
 END_DATE = date.today()
-OUTPUT_FILE = "espn_odds_history.csv"
+OUTPUT_FILE = "data/espn_odds_history.csv"
 
 def fetch_history():
     print(f"--- 🕰️ SPINNING UP THE TIME MACHINE ({START_DATE} to {END_DATE}) ---")

@@ -24,7 +24,7 @@ from grade_predictions import fetch_completed_games
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
+BETTING_HISTORY = os.path.join(BASE_DIR, "data/betting_history.csv")
 
 
 def parse_bet_line(line_str):
