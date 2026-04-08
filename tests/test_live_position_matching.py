@@ -2,7 +2,12 @@
 
 import pytest
 
-from dashboard_helpers import extract_ticker_date, extract_ticker_teams, position_matches_game
+from dashboard_helpers import (
+    extract_ticker_date,
+    extract_ticker_teams,
+    position_matches_game,
+    utc_date_to_eastern,
+)
 
 
 class TestExtractTickerTeams:
@@ -151,3 +156,42 @@ class TestExtractTickerDate:
 
     def test_short_middle_returns_empty(self):
         assert extract_ticker_date("KXMLBGAME-26AP-STL") == ""
+
+
+class TestUtcDateToEastern:
+    """ESPN dates are UTC -- must convert to Eastern for ticker comparison."""
+
+    def test_daytime_game_same_date(self):
+        """1 PM ET game = 5 PM UTC, same date in both."""
+        assert utc_date_to_eastern("2026-04-07T17:00Z") == "2026-04-07"
+
+    def test_evening_game_same_date(self):
+        """7 PM ET game = 11 PM UTC, same date in both."""
+        assert utc_date_to_eastern("2026-04-07T23:00Z") == "2026-04-07"
+
+    def test_late_night_west_coast_game(self):
+        """10:10 PM ET = 2:10 AM UTC next day. Must return ET date, not UTC."""
+        assert utc_date_to_eastern("2026-04-08T02:10Z") == "2026-04-07"
+
+    def test_past_midnight_et(self):
+        """Extra innings ending at 12:30 AM ET = 4:30 AM UTC. Still prior ET date."""
+        assert utc_date_to_eastern("2026-04-08T04:30Z") == "2026-04-08"
+
+    def test_full_iso_format(self):
+        """Handle full ISO format with seconds."""
+        assert utc_date_to_eastern("2026-04-07T23:10:00Z") == "2026-04-07"
+
+    def test_empty_string(self):
+        assert utc_date_to_eastern("") == ""
+
+    def test_invalid_string(self):
+        assert utc_date_to_eastern("not-a-date") == ""
+
+    def test_date_only_no_time(self):
+        """Plain date string without time should pass through."""
+        assert utc_date_to_eastern("2026-04-07") == "2026-04-07"
+
+    def test_dst_transition(self):
+        """During EDT (summer), ET = UTC-4."""
+        # 3:30 AM UTC on Apr 7 = 11:30 PM ET on Apr 6
+        assert utc_date_to_eastern("2026-04-07T03:30Z") == "2026-04-06"

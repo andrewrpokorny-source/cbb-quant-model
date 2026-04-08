@@ -19,7 +19,7 @@ import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
-from dashboard_helpers import filter_recent_kalshi, position_matches_game
+from dashboard_helpers import filter_recent_kalshi, position_matches_game, utc_date_to_eastern
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -873,9 +873,9 @@ def _fetch_live_espn_games():
                 half_label = f"{period}H" if period else ""
                 clock_display = f"{clock} {half_label}".strip()
 
-            # Extract game date from ESPN event (ISO format -> YYYY-MM-DD)
+            # Extract game date from ESPN event (UTC ISO -> Eastern date)
             event_date_raw = comp.get("date") or event.get("date", "")
-            game_date = event_date_raw[:10] if len(event_date_raw) >= 10 else ""
+            game_date = utc_date_to_eastern(event_date_raw)
 
             game_info = {
                 "away_abbr": away.get("team", {}).get("abbreviation", ""),

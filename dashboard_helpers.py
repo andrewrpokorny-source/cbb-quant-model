@@ -1,7 +1,7 @@
 """Helpers for the Streamlit dashboard that can be imported without Streamlit."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # MLB abbreviations for ticker parsing (sorted longest-first for greedy match)
 _MLB_ABBRS = sorted([
@@ -37,6 +37,52 @@ def extract_ticker_date(ticker: str) -> str:
     if not mm or not yy.isdigit() or not dd.isdigit():
         return ""
     return f"20{yy}-{mm}-{dd}"
+
+
+_ET_OFFSET_STD = timedelta(hours=-5)   # EST
+_ET_OFFSET_DST = timedelta(hours=-4)   # EDT
+
+
+def utc_date_to_eastern(utc_str: str) -> str:
+    """Convert a UTC ISO date string to an Eastern Time date string (YYYY-MM-DD).
+
+    Ticker dates are in ET, so ESPN UTC dates must be converted to ET before
+    comparison.  Returns '' on parse failure.  Handles both 'YYYY-MM-DDTHH:MMZ'
+    and plain 'YYYY-MM-DD' inputs.
+    """
+    if not utc_str or len(utc_str) < 10:
+        return ""
+    # Plain date (no time component) -- pass through if valid
+    if "T" not in utc_str:
+        candidate = utc_str[:10]
+        if len(candidate) == 10 and candidate[4] == "-" and candidate[7] == "-":
+            try:
+                datetime.strptime(candidate, "%Y-%m-%d")
+                return candidate
+            except ValueError:
+                return ""
+        return ""
+    try:
+        clean = utc_str.rstrip("Z")
+        dt = datetime.fromisoformat(clean).replace(tzinfo=timezone.utc)
+        # Approximate DST: EDT (UTC-4) Mar second Sun - Nov first Sun,
+        # EST (UTC-5) otherwise.  Use the standard US rule.
+        et = dt + _ET_OFFSET_STD
+        # Check if DST applies (second Sunday of March to first Sunday of Nov)
+        year = et.year
+        # March: second Sunday
+        mar1 = datetime(year, 3, 1, tzinfo=timezone.utc)
+        dst_start = mar1 + timedelta(days=(6 - mar1.weekday()) % 7 + 7)
+        # November: first Sunday
+        nov1 = datetime(year, 11, 1, tzinfo=timezone.utc)
+        dst_end = nov1 + timedelta(days=(6 - nov1.weekday()) % 7)
+        dst_start = dst_start.replace(hour=7)  # 2 AM ET = 7 AM UTC
+        dst_end = dst_end.replace(hour=6)      # 2 AM EDT = 6 AM UTC
+        if dst_start <= dt < dst_end:
+            et = dt + _ET_OFFSET_DST
+        return et.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return ""
 
 
 def extract_ticker_teams(ticker: str) -> tuple[str, str]:
