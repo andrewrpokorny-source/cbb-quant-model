@@ -22,21 +22,21 @@ def test_normalize_league_invalid():
 
 def test_artifact_paths_include_womens_files(tmp_path):
     paths = get_league_artifact_paths(str(tmp_path), "womens")
-    assert paths["model_file"].endswith("womens_cbb_spread_model_v2.pkl")
-    assert paths["win_model_file"].endswith("womens_cbb_win_model_v1.pkl")
-    assert paths["odds_archive_file"].endswith("odds_history.csv")
-    assert paths["predictions_archive_prefix"] == "predictions_wbb"
+    assert paths["model_file"].endswith("models/womens_cbb_spread_model_v2.pkl")
+    assert paths["win_model_file"].endswith("models/womens_cbb_win_model_v1.pkl")
+    assert paths["odds_archive_file"].endswith("data/odds_history.csv")
+    assert paths["predictions_archive_prefix"] == "data/predictions_wbb"
     assert paths["torvik_snapshot_file"] is None
-    assert paths["womens_net_snapshot_file"].endswith("womens_net_snapshots.csv")
-    assert paths["womens_net_map_file"].endswith("womens_net_team_map.csv")
+    assert paths["womens_net_snapshot_file"].endswith("data/womens_net_snapshots.csv")
+    assert paths["womens_net_map_file"].endswith("data/womens_net_team_map.csv")
 
 
 def test_artifact_paths_include_torvik_files_for_mens(tmp_path):
     paths = get_league_artifact_paths(str(tmp_path), "mens")
-    assert paths["torvik_snapshot_file"].endswith("torvik_ratings_snapshots.csv")
-    assert paths["torvik_map_file"].endswith("torvik_team_map.csv")
-    assert paths["hasla_snapshot_file"].endswith("hasla_rank_snapshots.csv")
-    assert paths["hasla_map_file"].endswith("hasla_team_map.csv")
+    assert paths["torvik_snapshot_file"].endswith("data/torvik_ratings_snapshots.csv")
+    assert paths["torvik_map_file"].endswith("data/torvik_team_map.csv")
+    assert paths["hasla_snapshot_file"].endswith("data/hasla_rank_snapshots.csv")
+    assert paths["hasla_map_file"].endswith("data/hasla_team_map.csv")
 
 
 def test_scoreboard_base_url_uses_league_path():

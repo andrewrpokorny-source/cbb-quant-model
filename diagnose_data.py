@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the PROCESSED data (the one causing issues)
-df = pd.read_csv("cbb_training_data_processed.csv")
+df = pd.read_csv("data/cbb_training_data_processed.csv")
 print(f"Total Rows: {len(df)}")
 
 # Check for NaNs in key columns

@@ -7,7 +7,23 @@ __pycache__/
 .env
 *.pem
 
-# Generated artifacts
+# Generated artifacts (new paths under data/ and models/)
+data/predictions_*.csv
+data/performance_log.csv
+data/daily_predictions.csv
+data/predictions_wbb_*.csv
+data/performance_log_wbb.csv
+data/daily_predictions_wbb.csv
+data/wbb_training_data_processed.csv
+models/wbb_model_v2.pkl
+data/daily_predictions_mlb.csv
+data/performance_log_mlb.csv
+data/odds_history.csv
+data/kalshi_game_history.csv
+data/betting_history.csv
+data/draft_results.csv
+
+# Legacy root-level locations (keep until all local installs migrate)
 predictions_*.csv
 performance_log.csv
 daily_predictions.csv
@@ -20,6 +36,9 @@ daily_predictions_mlb.csv
 performance_log_mlb.csv
 odds_history.csv
 kalshi_game_history.csv
+betting_history.csv
+draft_results.csv
+
 telegram_bot.log
 .telegram_bot.lock
 .kalshi_sync_state.json
@@ -28,9 +47,7 @@ telegram_bot.log
 .claude/
 .playwright-mcp/
 IMPROVEMENT_PLAN.md
-betting_history.csv
 screenshots/
 telegram_bot.log.*
 telegram_parse_audit.jsonl
-draft_results.csv
 *-check.png

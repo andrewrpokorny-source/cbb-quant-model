@@ -10,7 +10,7 @@ import pandas as pd
 import os
 from datetime import datetime
 
-PERF_FILE = "performance_log.csv"
+PERF_FILE = "data/performance_log.csv"
 CONFIDENCE_THRESHOLD = 0.53
 
 print("="*60)
@@ -40,7 +40,7 @@ print(f"   Removed: {removed_count}")
 
 if removed_count > 0:
     # Backup original
-    backup_file = f"performance_log_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    backup_file = f"data/performance_log_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     df.to_csv(backup_file, index=False)
     print(f"\n💾 Backed up original to: {backup_file}")
     

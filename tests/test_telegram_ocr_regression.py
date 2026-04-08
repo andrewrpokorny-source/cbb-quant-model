@@ -410,14 +410,16 @@ def test_fanduel_finished_date_from_predictions(tmp_path, monkeypatch) -> None:
     The fixture has PLACED: 2/25/2026, but the mock prediction file dates the
     game to 2/24 -- verifying prediction lookup wins over PLACED.
     """
-    pred_csv = tmp_path / "predictions_20260224.csv"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    pred_csv = data_dir / "predictions_20260224.csv"
     pred_csv.write_text(
         "Date/Time,Matchup,Spread,Pick,Conf,Raw Odds,Rest\n"
         "02/24 09:00 PM,Mississippi State Bulldogs @ Alabama Crimson Tide,"
         "-14.5,Alabama Crimson Tide -14.5,0.7,ALA -14.5,3\n"
     )
     monkeypatch.setattr(BOT, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(tmp_path / "daily_predictions.csv"))
+    monkeypatch.setattr(BOT, "DAILY_PREDICTIONS", str(data_dir / "daily_predictions.csv"))
 
     raw = _read_fixture("fanduel_finished_win.txt")
     bets = BOT._parse_fd_settled_cards(raw)

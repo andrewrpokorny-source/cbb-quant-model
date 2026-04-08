@@ -12,7 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, ".cache")
 # Tracked geocode file ships with the repo; .cache/geocode.json holds runtime additions
 GEOCODE_TRACKED = os.path.join(BASE_DIR, "venue_geocode.json")
-TEAM_LOCATIONS_FILE = os.path.join(BASE_DIR, "team_locations.csv")
+TEAM_LOCATIONS_FILE = os.path.join(BASE_DIR, "data/team_locations.csv")
 
 STATE_CENTROIDS = {
     "AL": (32.8, -86.8), "AK": (64.2, -152.5), "AZ": (34.0, -111.1),

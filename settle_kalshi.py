@@ -18,7 +18,7 @@ load_dotenv()
 from kalshi.client import KalshiClient
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BETTING_HISTORY = os.path.join(BASE_DIR, "betting_history.csv")
+BETTING_HISTORY = os.path.join(BASE_DIR, "data/betting_history.csv")
 SYNC_STATE_FILE = os.path.join(BASE_DIR, ".kalshi_sync_state.json")
 
 CSV_HEADERS = [
@@ -154,6 +154,14 @@ def _find_pending_kalshi_match(
 def _ensure_csv_headers(csv_path: str):
     """Create CSV with headers if missing, or migrate to add league column."""
     if not os.path.exists(csv_path):
+        legacy_path = os.path.join(BASE_DIR, os.path.basename(csv_path))
+        if os.path.exists(legacy_path):
+            raise FileNotFoundError(
+                f"{os.path.basename(csv_path)} found at legacy location ({legacy_path}) "
+                f"but not at expected location ({csv_path}). "
+                f"Run 'python migrate_data.py' to migrate."
+            )
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(CSV_HEADERS)

@@ -9,7 +9,7 @@ print("="*60)
 # 1. Check historical data
 print("\n1. CHECKING HISTORICAL DATA:")
 try:
-    df = pd.read_csv('cbb_training_data_processed.csv')
+    df = pd.read_csv('data/cbb_training_data_processed.csv')
     df['date'] = pd.to_datetime(df['date'])
     
     last_date = df['date'].max()
@@ -49,7 +49,7 @@ for team in test_teams:
 # 3. Check predictions file rest days
 print("\n3. CHECKING CURRENT PREDICTIONS:")
 try:
-    pred = pd.read_csv('daily_predictions.csv')
+    pred = pd.read_csv('data/daily_predictions.csv')
     
     print(f"   Total predictions: {len(pred)}")
     print(f"\n   Rest Days Distribution:")

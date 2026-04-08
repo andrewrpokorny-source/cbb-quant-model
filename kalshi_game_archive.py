@@ -37,7 +37,7 @@ ARCHIVE_COLUMNS = [
 
 DEFAULT_ARCHIVE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "kalshi_game_history.csv",
+    "data/kalshi_game_history.csv",
 )
 
 

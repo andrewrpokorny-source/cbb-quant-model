@@ -25,7 +25,7 @@ ARCHIVE_COLUMNS = [
 
 DEFAULT_ARCHIVE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "odds_history.csv",
+    "data/odds_history.csv",
 )
 
 

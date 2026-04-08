@@ -5,7 +5,7 @@ import sys
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "cbb_training_data_processed.csv")
+DATA_FILE = os.path.join(BASE_DIR, "data/cbb_training_data_processed.csv")
 BASE_URL = "http://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=1000&groups=50"
 
 def main():
