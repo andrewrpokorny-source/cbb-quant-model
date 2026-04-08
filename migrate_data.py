@@ -27,6 +27,28 @@ MOVES = [
 ]
 
 
+def _pick_and_move(old, new, old_rel, new_rel, moved, skipped):
+    """Move old -> new. If both exist, keep the larger file (the real data)."""
+    if not os.path.exists(old):
+        return
+    if os.path.exists(new):
+        old_size = os.path.getsize(old)
+        new_size = os.path.getsize(new)
+        if old_size > new_size:
+            os.remove(new)
+            shutil.move(old, new)
+            moved.append((old_rel, new_rel, f"replaced smaller destination ({new_size}B < {old_size}B)"))
+        elif old_size == new_size:
+            os.remove(old)
+            skipped.append((old_rel, "identical size at both locations, removed old"))
+        else:
+            os.remove(old)
+            skipped.append((old_rel, f"destination is larger ({new_size}B > {old_size}B), removed old"))
+    else:
+        shutil.move(old, new)
+        moved.append((old_rel, new_rel, None))
+
+
 def migrate():
     moved = []
     skipped = []
@@ -34,13 +56,7 @@ def migrate():
     for old_rel, new_rel in MOVES:
         old = os.path.join(BASE_DIR, old_rel)
         new = os.path.join(BASE_DIR, new_rel)
-        if not os.path.exists(old):
-            continue
-        if os.path.exists(new):
-            skipped.append((old_rel, "already exists at new location"))
-            continue
-        shutil.move(old, new)
-        moved.append((old_rel, new_rel))
+        _pick_and_move(old, new, old_rel, new_rel, moved, skipped)
 
     # Also migrate any prediction archives (predictions_*.csv, predictions_wbb_*.csv)
     import glob
@@ -48,16 +64,13 @@ def migrate():
         for old in glob.glob(os.path.join(BASE_DIR, pattern)):
             basename = os.path.basename(old)
             new = os.path.join(BASE_DIR, "data", basename)
-            if os.path.exists(new):
-                skipped.append((basename, "already exists at new location"))
-                continue
-            shutil.move(old, new)
-            moved.append((basename, f"data/{basename}"))
+            _pick_and_move(old, new, basename, f"data/{basename}", moved, skipped)
 
     if moved:
         print(f"Migrated {len(moved)} file(s):")
-        for old_rel, new_rel in moved:
-            print(f"  {old_rel} -> {new_rel}")
+        for old_rel, new_rel, note in moved:
+            suffix = f" ({note})" if note else ""
+            print(f"  {old_rel} -> {new_rel}{suffix}")
     else:
         print("Nothing to migrate.")
 
