@@ -72,6 +72,14 @@ uv run python backtest.py --league mlb
 
 The MLB model is a GBM classifier (28 features) predicting P(home win) for moneyline bets. Features include starting pitcher rolling stats, team Pythagorean win%, weather, ballpark factors, and bullpen ERA differentials. Kalshi edges are capped at 15% with CBB-style rating gates (model prob + price range).
 
+### Data Migration
+
+After pulling, run once to move any existing generated files (betting history, predictions, etc.) to their new locations:
+
+```bash
+uv run python migrate_data.py
+```
+
 ### Model Artifacts
 
 - Men's canonical model: `models/cbb_model_v2.pkl`
