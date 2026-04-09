@@ -32,3 +32,8 @@ train = "model:train_and_evaluate"
 train-win = "model_win:train_win_models"
 predict = "predict:main"
 features = "features:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

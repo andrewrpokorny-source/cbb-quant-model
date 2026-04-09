@@ -98,8 +98,9 @@ class PolymarketMarketMapper:
             from datetime import timezone
             return datetime.fromtimestamp(raw, tz=timezone.utc)
         raw = str(raw)
-        # Try ISO with explicit timezone first
-        if raw.endswith("Z") or "+" in raw[10:]:
+        # Try ISO with explicit timezone first (Z, +HH:MM, or -HH:MM offset)
+        has_tz = raw.endswith("Z") or "+" in raw[10:] or re.search(r"-\d{2}:\d{2}$", raw)
+        if has_tz:
             try:
                 return datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except (ValueError, TypeError):
