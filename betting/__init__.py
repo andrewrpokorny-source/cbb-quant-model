@@ -7,6 +7,9 @@ from .ev_calculator import (
     EdgeRating,
     analyze_bet,
     kalshi_implied_prob,
+    polymarket_implied_prob,
+    polymarket_fee_cents,
+    analyze_polymarket_bet,
     VALUE_RATINGS,
     RATING_RANK,
 )
@@ -36,5 +39,8 @@ __all__ = [
     "find_breakeven_spread",
     "format_line_shopping_text",
     "kalshi_implied_prob",
+    "polymarket_implied_prob",
+    "polymarket_fee_cents",
+    "analyze_polymarket_bet",
     "STANDARD_IMPLIED_PROB",
 ]

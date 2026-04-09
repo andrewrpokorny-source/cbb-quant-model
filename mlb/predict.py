@@ -25,10 +25,11 @@ from betting import (
     get_rating,
     recommended_units,
     kalshi_implied_prob,
+    polymarket_implied_prob,
     EdgeRating,
     VALUE_RATINGS,
 )
-from betting.ev_calculator import kalshi_fee_cents
+from betting.ev_calculator import kalshi_fee_cents, polymarket_fee_cents
 from league_config import (
     get_league_artifact_paths,
     get_scoreboard_base_url,
@@ -507,6 +508,96 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
     return result
 
 
+def _get_polymarket_edge(client, mapper, home_team, away_team, game_date,
+                         prob_home_win, pick, game_time=""):
+    """Calculate edge against Polymarket GAME market prices.
+
+    Mirrors _get_kalshi_edge but uses Polymarket fee model and passes
+    game_time for doubleheader disambiguation.
+    """
+    result = {
+        "Poly_Ticker": None,
+        "Poly_Side": None,
+        "Poly_Price": None,
+        "Poly_Fee": None,
+        "Poly_Edge": None,
+        "Poly_Edge_Pct": None,
+        "Poly_Rating": EdgeRating.PASS.value,
+        "Poly_Units": None,
+    }
+
+    if not mapper or not client:
+        return result
+
+    try:
+        market = mapper.find_game_market(
+            home_team, away_team, game_date, game_time=game_time,
+        )
+    except Exception as e:
+        print(f"      Polymarket market lookup error for {away_team} @ {home_team}: {e}")
+        return result
+
+    if not market:
+        return result
+
+    prices = mapper.get_market_prices(market)
+    token_id = prices.get("token_id")
+    title = prices.get("title", "")
+
+    # Try live prices
+    if token_id:
+        try:
+            live = client.get_market_prices(token_id, title=title)
+            if live.get("yes_price") is not None:
+                prices = live
+        except Exception:
+            pass
+
+    yes_price = prices.get("yes_price")
+    no_price = prices.get("no_price")
+    if yes_price is None:
+        return result
+
+    yes_team = mapper.infer_yes_team(market, home_team, away_team)
+    if not yes_team:
+        return result
+
+    # Determine our side
+    if pick == yes_team:
+        our_price = yes_price
+        our_side = "YES"
+    else:
+        our_price = no_price if no_price else (100 - yes_price)
+        our_side = "NO"
+
+    if our_price is None or our_price <= 0:
+        return result
+
+    model_prob = prob_home_win if pick == home_team else (1.0 - prob_home_win)
+    implied_prob = polymarket_implied_prob(our_price)
+    fee = polymarket_fee_cents(our_price) / 100.0
+
+    raw_edge = calculate_edge(model_prob, implied_prob)
+    edge = min(raw_edge, KALSHI_EDGE_CAP)
+    rating = _get_kalshi_game_rating(edge, model_prob, our_price)
+    units = (
+        recommended_units(edge, implied_prob)
+        if rating in VALUE_RATINGS
+        else 0.0
+    )
+
+    result["Poly_Ticker"] = token_id
+    result["Poly_Side"] = our_side
+    result["Poly_Price"] = our_price
+    result["Poly_Fee"] = round(fee, 4)
+    result["Poly_Edge"] = round(edge, 4)
+    result["Poly_Edge_Pct"] = f"{edge * 100:+.1f}%"
+    result["Poly_Rating"] = rating
+    result["Poly_Units"] = min(units, 0.5)
+
+    return result
+
+
 def generate_predictions(league=LEAGUE):
     """Generate daily MLB predictions."""
     league = normalize_league(league)
@@ -555,6 +646,24 @@ def generate_predictions(league=LEAGUE):
         except requests.RequestException as e:
             print(f"   Kalshi: API error loading markets: {e}")
 
+    poly_client = None
+    poly_mapper = None
+    proxy = os.environ.get("POLYMARKET_PROXY")
+    if not proxy:
+        print("   Polymarket: POLYMARKET_PROXY not set, skipping")
+    else:
+        try:
+            from polymarket import PolymarketClient, PolymarketMarketMapper
+            poly_client = PolymarketClient(proxy_url=proxy)
+            poly_markets = poly_client.get_sports_markets("MLB")
+            if poly_markets:
+                poly_mapper = PolymarketMarketMapper(poly_markets)
+                print(f"   Polymarket: {len(poly_markets)} MLB markets loaded")
+            else:
+                print("   Polymarket: no MLB markets found")
+        except Exception as e:
+            print(f"   Polymarket: error loading markets: {e}")
+
     # Fetch schedule
     games = fetch_schedule(league)
     if not games:
@@ -591,10 +700,17 @@ def generate_predictions(league=LEAGUE):
         conf = max(prob_home_win, prob_away_win)
         pick = game["home_team"] if prob_home_win > 0.5 else game["away_team"]
 
-        # Kalshi edge calculation -- pass game_time for doubleheader disambiguation
+        # Market edge calculations -- pass game_time for doubleheader disambiguation
         game_time_utc = game["game_date"].strftime("%H:%M") if hasattr(game["game_date"], "strftime") else ""
         kalshi_data = _get_kalshi_edge(
             kalshi_client, kalshi_mapper,
+            game["home_team"], game["away_team"],
+            game["game_date"],
+            prob_home_win, pick,
+            game_time=game_time_utc,
+        )
+        poly_data = _get_polymarket_edge(
+            poly_client, poly_mapper,
             game["home_team"], game["away_team"],
             game["game_date"],
             prob_home_win, pick,
@@ -631,6 +747,7 @@ def generate_predictions(league=LEAGUE):
             "Std_Units": round(std_units, 1),
             "Std_Odds": ml_odds_str or "",
             **kalshi_data,
+            **poly_data,
         }
         predictions.append(pred)
 
@@ -644,6 +761,12 @@ def generate_predictions(league=LEAGUE):
             print(f"      Kalshi: Buy {side} @ {kalshi_data['Kalshi_Price']}c"
                   f" + {k_fee:.1f}c fee | Edge: {kalshi_data['Edge_Pct']}"
                   f" | {kalshi_data['Units']:.1f}U")
+        if poly_data.get("Poly_Rating") in VALUE_RATINGS:
+            p_side = poly_data.get("Poly_Side", "?")
+            p_fee = poly_data.get("Poly_Fee", 0) or 0
+            print(f"      Poly: Buy {p_side} @ {poly_data['Poly_Price']}c"
+                  f" + {p_fee:.1f}c fee | Edge: {poly_data['Poly_Edge_Pct']}"
+                  f" | {poly_data['Poly_Units']:.1f}U")
         if std_rating in VALUE_RATINGS:
             print(f"      DK: Edge {pred['Std_Edge_Pct']}"
                   f" | {std_units:.1f}U")

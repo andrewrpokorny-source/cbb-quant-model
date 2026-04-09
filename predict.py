@@ -21,7 +21,7 @@ except ImportError:
 
 from kalshi import KalshiClient, MarketMapper
 from betting import calculate_edge, get_rating, recommended_units, EdgeRating, STANDARD_IMPLIED_PROB, VALUE_RATINGS, RATING_RANK, kalshi_implied_prob, american_odds_to_implied_prob
-from betting.ev_calculator import kalshi_fee_cents
+from betting.ev_calculator import kalshi_fee_cents, polymarket_implied_prob, polymarket_fee_cents
 from betting import calculate_line_shopping
 from betting.line_shopping import LineShoppingResult
 from hasla import HASLA_GAME_FEATURE_COLUMNS, load_snapshot_file as load_hasla_snapshot_file, load_team_map as load_hasla_team_map, matchup_features_for_game as hasla_matchup_features_for_game
@@ -747,6 +747,236 @@ def get_kalshi_game_edge(
         return result
 
 
+# ---------------------------------------------------------------------------
+# Polymarket integration
+# ---------------------------------------------------------------------------
+
+def fetch_polymarket_markets(league=None):
+    """Fetch Polymarket sports markets and build mapper.
+
+    Returns (client, mapper) or (None, None) if unconfigured/unavailable.
+    """
+    target_league = ACTIVE_LEAGUE if league is None else normalize_league(league)
+    proxy = os.getenv("POLYMARKET_PROXY")
+    if not proxy:
+        print("      POLYMARKET_PROXY not set. Skipping Polymarket integration.")
+        return None, None
+
+    poly_league_map = {
+        "mens": "NCAAB",
+        "womens": "NCAAB",
+        "mlb": "MLB",
+    }
+    poly_league = poly_league_map.get(target_league, "NCAAB")
+    print(f"   -> Fetching Polymarket markets ({poly_league})...")
+
+    try:
+        from polymarket import PolymarketClient, PolymarketMarketMapper
+
+        client = PolymarketClient(proxy_url=proxy)
+        markets = client.get_sports_markets(poly_league)
+        if markets:
+            print(f"      Found {len(markets)} Polymarket {poly_league} markets")
+            mapper = PolymarketMarketMapper(markets)
+            return client, mapper
+        else:
+            print(f"      No Polymarket {poly_league} markets found")
+            return client, None
+    except (FileNotFoundError, OSError, ValueError) as e:
+        print(f"      Polymarket error: {e}")
+        return None, None
+
+
+def get_polymarket_spread_edge(
+    client, mapper, home_team, away_team, game_date,
+    spread, model_prob, picked_team, picked_spread,
+):
+    """Get Polymarket spread market data and calculate edge.
+
+    Returns dict with Poly_* keys, parallel to get_kalshi_edge().
+    """
+    from kalshi.market_mapper import extract_school_keyword
+
+    result = {
+        "Poly_Yes": None,
+        "Poly_No": None,
+        "Poly_Price": None,
+        "Poly_Fee": None,
+        "Poly_Edge": None,
+        "Poly_Edge_Pct": None,
+        "Poly_Rating": None,
+        "Poly_Units": None,
+        "Poly_Ticker": None,
+        "Poly_Side": None,
+        "Poly_Title": None,
+    }
+
+    if not client or not mapper:
+        return result
+
+    try:
+        market = mapper.find_spread_market(home_team, away_team, game_date, spread)
+        if not market:
+            return result
+
+        prices = mapper.get_market_prices(market)
+        token_id = prices.get("token_id")
+        title = prices.get("title", "")
+
+        # Try live prices if we have a token
+        if token_id:
+            live = client.get_market_prices(token_id, title=title)
+            if live.get("yes_price") is not None:
+                prices = live
+
+        yes_price = prices.get("yes_price")
+        no_price = prices.get("no_price")
+
+        # Determine side: same logic as Kalshi spread edge
+        is_underdog = picked_spread > 0
+        if is_underdog:
+            poly_side = "NO"
+            bet_price = no_price
+        else:
+            poly_side = "YES"
+            bet_price = yes_price
+
+        if bet_price is None:
+            return result
+
+        implied_prob = polymarket_implied_prob(bet_price)
+        edge = calculate_edge(model_prob, implied_prob)
+        rating = get_rating(edge)
+        units = recommended_units(edge, implied_prob)
+
+        result = {
+            "Poly_Yes": yes_price,
+            "Poly_No": no_price,
+            "Poly_Price": bet_price,
+            "Poly_Fee": round(polymarket_fee_cents(bet_price), 1),
+            "Poly_Edge": edge,
+            "Poly_Edge_Pct": f"{edge * 100:+.1f}%",
+            "Poly_Rating": rating.value,
+            "Poly_Units": units,
+            "Poly_Ticker": token_id,
+            "Poly_Side": poly_side,
+            "Poly_Title": title,
+        }
+    except Exception as e:
+        print(f"      Polymarket spread error for {away_team} @ {home_team}: {type(e).__name__}: {e}")
+
+    return result
+
+
+def get_polymarket_game_edge(
+    client, mapper, home_team, away_team, game_date, model_home_win_prob,
+):
+    """Get best Polymarket GAME market side and edge based on P(home wins).
+
+    Returns dict with Poly_* keys, parallel to get_kalshi_game_edge().
+    """
+    result = {
+        "Poly_Yes": None,
+        "Poly_No": None,
+        "Poly_Price": None,
+        "Poly_Fee": None,
+        "Poly_Edge": None,
+        "Poly_Edge_Pct": None,
+        "Poly_Rating": None,
+        "Poly_Units": None,
+        "Poly_Ticker": None,
+        "Poly_Side": None,
+        "Poly_Title": None,
+        "Poly_Yes_Team": None,
+        "Poly_Picked_Team": None,
+    }
+
+    if not client or not mapper:
+        return result
+
+    try:
+        market = mapper.find_game_market(home_team, away_team, game_date)
+        if not market:
+            return result
+
+        yes_team = mapper.infer_yes_team(market, home_team, away_team)
+        if not yes_team:
+            return result
+
+        prices = mapper.get_market_prices(market)
+        token_id = prices.get("token_id")
+        title = prices.get("title", "")
+
+        # Try live prices
+        if token_id:
+            live = client.get_market_prices(token_id, title=title)
+            if live.get("yes_price") is not None:
+                prices = live
+
+        yes_price = prices.get("yes_price")
+        no_price = prices.get("no_price")
+        if yes_price is None and no_price is None:
+            return result
+
+        yes_prob = model_home_win_prob if yes_team == home_team else (1.0 - model_home_win_prob)
+        side_candidates = []
+
+        if yes_price is not None:
+            implied_yes = polymarket_implied_prob(yes_price)
+            edge_yes = calculate_edge(yes_prob, implied_yes)
+            side_candidates.append({
+                "side": "YES", "price": yes_price,
+                "prob": yes_prob, "edge": edge_yes,
+                "picked_team": yes_team,
+            })
+
+        if no_price is not None:
+            no_prob = 1.0 - yes_prob
+            implied_no = polymarket_implied_prob(no_price)
+            edge_no = calculate_edge(no_prob, implied_no)
+            picked_team = away_team if yes_team == home_team else home_team
+            side_candidates.append({
+                "side": "NO", "price": no_price,
+                "prob": no_prob, "edge": edge_no,
+                "picked_team": picked_team,
+            })
+
+        if not side_candidates:
+            return result
+
+        best = max(side_candidates, key=lambda c: c["edge"])
+
+        # Apply same live rating gates as Kalshi GAME markets
+        rating = get_kalshi_game_live_rating(
+            best["edge"], best["prob"], best["price"],
+        )
+        units = (
+            recommended_units(best["edge"], polymarket_implied_prob(best["price"]))
+            if rating in VALUE_RATINGS
+            else 0.0
+        )
+
+        result = {
+            "Poly_Yes": yes_price,
+            "Poly_No": no_price,
+            "Poly_Price": best["price"],
+            "Poly_Fee": round(polymarket_fee_cents(best["price"]), 1),
+            "Poly_Edge": best["edge"],
+            "Poly_Edge_Pct": f"{best['edge'] * 100:+.1f}%",
+            "Poly_Rating": rating,
+            "Poly_Units": min(units, 0.5),
+            "Poly_Ticker": token_id,
+            "Poly_Side": best["side"],
+            "Poly_Title": title,
+            "Poly_Yes_Team": yes_team,
+            "Poly_Picked_Team": best["picked_team"],
+        }
+    except Exception as e:
+        print(f"      Polymarket GAME error for {away_team} @ {home_team}: {type(e).__name__}: {e}")
+
+    return result
+
+
 def calculate_production_features(row, h_stats, a_stats, game_date=None, torvik_context=None):
     """Calculate features needed for prediction."""
     # --- Original Features ---
@@ -962,9 +1192,10 @@ def main(spread_overrides=None, league="mens"):
         print(f"   WARNING: Data is {days_old} days old. Run main.py to update!")
 
     # Fetch network resources in parallel while loading local model/venue data
-    with ThreadPoolExecutor(max_workers=2) as _io_pool:
+    with ThreadPoolExecutor(max_workers=3) as _io_pool:
         _schedule_future = _io_pool.submit(fetch_schedule)
         _kalshi_future = _io_pool.submit(fetch_kalshi_markets, ACTIVE_LEAGUE)
+        _poly_future = _io_pool.submit(fetch_polymarket_markets, ACTIVE_LEAGUE)
 
         win_bundle = None
         try:
@@ -995,6 +1226,12 @@ def main(spread_overrides=None, league="mens"):
         except Exception as e:
             print(f"   WARNING: Kalshi market fetch failed: {e}")
             kalshi_client, kalshi_mapper = None, None
+
+        try:
+            poly_client, poly_mapper = _poly_future.result()
+        except Exception as e:
+            print(f"   WARNING: Polymarket fetch failed: {e}")
+            poly_client, poly_mapper = None, None
 
     spread_predictions = []
     game_predictions = []
@@ -1110,13 +1347,21 @@ def main(spread_overrides=None, league="mens"):
         except (TypeError, AttributeError):
             time_str = g['date'].strftime("%m/%d %I:%M %p")
 
-        # Build GAME market picks (Kalshi-only) from P(win) model.
+        # Build GAME market picks from P(win) model (Kalshi + Polymarket).
         if win_bundle is not None:
             try:
                 home_win_prob, win_variant = predict_home_win_prob(row, win_bundle)
                 game_kalshi = get_kalshi_game_edge(
                     kalshi_client,
                     kalshi_mapper,
+                    g['home_raw'],
+                    g['away_raw'],
+                    g['date'],
+                    home_win_prob,
+                )
+                game_poly = get_polymarket_game_edge(
+                    poly_client,
+                    poly_mapper,
                     g['home_raw'],
                     g['away_raw'],
                     g['date'],
@@ -1157,7 +1402,10 @@ def main(spread_overrides=None, league="mens"):
                         )
                     )
 
-                    if game_kalshi.get("Rating") in VALUE_RATINGS and side_prob >= GAME_GOOD_MIN_PROB:
+                    # Check if either Kalshi or Polymarket has a value rating
+                    kalshi_is_value = game_kalshi.get("Rating") in VALUE_RATINGS
+                    poly_is_value = game_poly.get("Poly_Rating") in VALUE_RATINGS
+                    if (kalshi_is_value or poly_is_value) and side_prob >= GAME_GOOD_MIN_PROB:
                         game_predictions.append({
                             "Bet_Type": "game",
                             "Date/Time": time_str,
@@ -1189,6 +1437,14 @@ def main(spread_overrides=None, league="mens"):
                             "Std_Rating": "PASS",
                             "Std_Units": 0.0,
                             "Breakeven_Spread": np.nan,
+                            # Polymarket game data
+                            "Poly_Side": game_poly.get("Poly_Side"),
+                            "Poly_Price": game_poly.get("Poly_Price"),
+                            "Poly_Fee": game_poly.get("Poly_Fee"),
+                            "Poly_Edge_Pct": game_poly.get("Poly_Edge_Pct"),
+                            "Poly_Rating": game_poly.get("Poly_Rating"),
+                            "Poly_Units": game_poly.get("Poly_Units"),
+                            "Poly_Ticker": game_poly.get("Poly_Ticker"),
                         })
             except (KeyError, TypeError, ValueError) as e:
                 print(f"      WARNING: GAME market prediction failed for {matchup_key}: {e}")
@@ -1260,6 +1516,18 @@ def main(spread_overrides=None, league="mens"):
             picked_spread,
         )
 
+        poly_data = get_polymarket_spread_edge(
+            poly_client,
+            poly_mapper,
+            g['home_raw'],
+            g['away_raw'],
+            g['date'],
+            resolved_spread,
+            conf,
+            picked_team,
+            picked_spread,
+        )
+
         is_home_pick = (prob > 0.5)
         try:
             line_shopping = calculate_line_shopping(
@@ -1308,6 +1576,14 @@ def main(spread_overrides=None, league="mens"):
             "Std_Rating": get_rating(std_edge).value,
             "Std_Units": recommended_units(std_edge, std_implied) if std_edge > 0 else 0.0,
             "Std_Odds": g.get("home_spread_odds", "") if is_home_pick else g.get("away_spread_odds", ""),
+            # Polymarket spread data
+            "Poly_Side": poly_data.get("Poly_Side"),
+            "Poly_Price": poly_data.get("Poly_Price"),
+            "Poly_Fee": poly_data.get("Poly_Fee"),
+            "Poly_Edge_Pct": poly_data.get("Poly_Edge_Pct"),
+            "Poly_Rating": poly_data.get("Poly_Rating"),
+            "Poly_Units": poly_data.get("Poly_Units"),
+            "Poly_Ticker": poly_data.get("Poly_Ticker"),
         }
 
         if g['home_raw'] not in pick_str and g['away_raw'] not in pick_str:
@@ -1377,7 +1653,8 @@ def main(spread_overrides=None, league="mens"):
 
         value_bets = csv_df[
             (csv_df['Std_Rating'].isin(VALUE_RATINGS)) |
-            (csv_df['Rating'].isin(VALUE_RATINGS))
+            (csv_df['Rating'].isin(VALUE_RATINGS)) |
+            (csv_df.get('Poly_Rating', pd.Series(dtype=str)).isin(VALUE_RATINGS))
         ]
         if len(value_bets) > 0:
             print(f"\nVALUE BETS ({len(value_bets)} found):")
@@ -1386,14 +1663,28 @@ def main(spread_overrides=None, league="mens"):
                 if pd.isna(std_rating):
                     std_rating = 'PASS'
                 kalshi_rating = row.get('Rating', None) if pd.notna(row.get('Rating')) else None
+                poly_r = row.get('Poly_Rating', 'PASS')
+                if pd.isna(poly_r):
+                    poly_r = 'PASS'
                 std_rank = RATING_RANK.get(std_rating, 0)
                 kalshi_rank = RATING_RANK.get(kalshi_rating, 0)
-                best_rating = kalshi_rating if kalshi_rank > std_rank else std_rating
+                poly_rank = RATING_RANK.get(poly_r, 0)
+                best_rank = max(std_rank, kalshi_rank, poly_rank)
+                best_rating = (
+                    kalshi_rating if kalshi_rank == best_rank else
+                    poly_r if poly_rank == best_rank else
+                    std_rating
+                )
                 print(f"   [{row.get('Bet_Type', 'spread')}:{best_rating}] {row['Pick']}")
                 if kalshi_rating in VALUE_RATINGS:
                     side = row['Kalshi_Side'] if row['Kalshi_Side'] else "?"
                     fee = row.get('Kalshi_Fee', 0) or 0
                     print(f"      Kalshi: Buy {side} @ {row['Kalshi_Price']}c + {fee:.1f}c fee | Edge: {row['Edge_Pct']} | {row['Units']:.1f}U")
+                poly_rating = row.get('Poly_Rating', 'PASS')
+                if poly_rating in VALUE_RATINGS:
+                    p_side = row.get('Poly_Side', '?')
+                    p_fee = row.get('Poly_Fee', 0) or 0
+                    print(f"      Poly: Buy {p_side} @ {row.get('Poly_Price', '?')}c + {p_fee:.1f}c fee | Edge: {row.get('Poly_Edge_Pct', 'N/A')} | {row.get('Poly_Units', 0):.1f}U")
                 if std_rating in VALUE_RATINGS:
                     print(f"      Std Book: Edge {row['Std_Edge_Pct']} | {row['Std_Units']:.1f}U")
     else:
