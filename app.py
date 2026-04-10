@@ -804,8 +804,10 @@ def _fetch_kalshi_positions():
         return []
 
 
-def _event_ticker(ticker: str) -> str:
+def _event_ticker(ticker) -> str:
     """Extract event ticker (drop market suffix) for game-level matching."""
+    if not ticker or not isinstance(ticker, str):
+        return ""
     parts = ticker.rsplit("-", 1)
     return parts[0] if len(parts) > 1 else ticker
 
