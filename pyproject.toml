@@ -9,7 +9,7 @@ dependencies = [
     "scikit-learn",
     "joblib",
     "brotli",
-    "requests",
+    "requests[socks]",
     "pytz",
     "streamlit",
     "altair",

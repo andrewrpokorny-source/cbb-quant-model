@@ -655,7 +655,7 @@ def generate_predictions(league=LEAGUE):
         try:
             from polymarket import PolymarketClient, PolymarketMarketMapper
             poly_client = PolymarketClient(proxy_url=proxy)
-            poly_markets = poly_client.get_sports_markets("MLB")
+            poly_markets = poly_client.get_sports_game_markets("MLB")
             if poly_markets:
                 poly_mapper = PolymarketMarketMapper(poly_markets)
                 print(f"   Polymarket: {len(poly_markets)} MLB markets loaded")

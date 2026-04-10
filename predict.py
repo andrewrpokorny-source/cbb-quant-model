@@ -774,7 +774,7 @@ def fetch_polymarket_markets(league=None):
         from polymarket import PolymarketClient, PolymarketMarketMapper
 
         client = PolymarketClient(proxy_url=proxy)
-        markets = client.get_sports_markets(poly_league)
+        markets = client.get_sports_game_markets(poly_league)
         if markets:
             print(f"      Found {len(markets)} Polymarket {poly_league} markets")
             mapper = PolymarketMarketMapper(markets)
