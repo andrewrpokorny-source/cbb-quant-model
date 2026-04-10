@@ -1303,7 +1303,7 @@ def _render_spread_bets(col, lg, position_lookup=None):
                     kalshi_fee = row.get('Kalshi_Fee')
                     fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
                     cbb_pick = _esc(row.get('Pick', ''))
-                    kalshi_text = f"Kalshi {cbb_pick} @ {_esc(kalshi_price)}&#162;{fee_str} ({_esc(kalshi_side)} side) &middot; {kalshi_edge}"
+                    kalshi_text = f"Kalshi: Buy {_esc(kalshi_side)} @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_url = _esc(kalshi_event_url(kalshi_ticker))
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_url}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
@@ -1321,7 +1321,7 @@ def _render_spread_bets(col, lg, position_lookup=None):
                     poly_fee = row.get('Poly_Fee')
                     poly_fee_str = f" + {_esc(poly_fee)}&#162; fee" if pd.notna(poly_fee) and poly_fee else ""
                     poly_ticker = row.get('Poly_Ticker', '')
-                    poly_text = f"Poly {_esc(row.get('Pick', ''))} @ {_esc(poly_price)}&#162;{poly_fee_str} ({_esc(poly_side)} side) &middot; {poly_edge}"
+                    poly_text = f"Poly: Buy {_esc(poly_side)} @ {_esc(poly_price)}&#162;{poly_fee_str} &middot; {poly_edge}"
                     if poly_ticker:
                         poly_url = _esc(polymarket_event_url(poly_ticker))
                         poly_html = f'<div class="poly-row"><a href="{poly_url}" target="_blank" class="poly-link">{poly_text}</a></div>'
@@ -1417,7 +1417,7 @@ def _render_game_bets(col, lg, position_lookup=None):
             game_fee_str = f" + {game_fee_val:.1f}&#162; fee" if game_fee_val else ""
             game_pick = _esc(row.get('Pick', ''))
             game_side = _esc(row.get('Kalshi_Side', ''))
-            game_kalshi_text = f"Kalshi {game_pick} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str} ({game_side} side)"
+            game_kalshi_text = f"Kalshi: Buy {game_side} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
             game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
             if game_kalshi_url:
                 game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
@@ -1432,7 +1432,7 @@ def _render_game_bets(col, lg, position_lookup=None):
                 game_poly_fee = row.get('Poly_Fee')
                 game_poly_fee_str = f" + {float(game_poly_fee):.1f}&#162; fee" if pd.notna(game_poly_fee) and game_poly_fee else ""
                 game_poly_ticker = row.get('Poly_Ticker', '')
-                game_poly_text = f"Poly {game_pick} @ {_esc(row.get('Poly_Price', ''))}&#162;{game_poly_fee_str} ({_esc(game_poly_side)} side) &middot; {game_poly_edge}"
+                game_poly_text = f"Poly: Buy {_esc(game_poly_side)} @ {_esc(row.get('Poly_Price', ''))}&#162;{game_poly_fee_str} &middot; {game_poly_edge}"
                 if game_poly_ticker:
                     game_poly_url = _esc(polymarket_event_url(game_poly_ticker))
                     game_poly_html = f'<div class="poly-row"><a href="{game_poly_url}" target="_blank" class="poly-link">{game_poly_text}</a></div>'
