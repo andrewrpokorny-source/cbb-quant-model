@@ -627,45 +627,51 @@ def generate_predictions(league=LEAGUE):
     known_teams = set(latest_stats.keys())
     print(f"   Stats loaded for {len(known_teams)} teams, {len(pitcher_stats)} pitchers")
 
-    # Fetch Kalshi markets
-    kalshi_client = None
-    kalshi_mapper = None
-    api_key = os.environ.get("KALSHI_API_KEY")
-    if not api_key:
-        print("   Kalshi: KALSHI_API_KEY not set, skipping")
-    else:
+    # Fetch schedule + market data in parallel
+    def _fetch_kalshi():
+        api_key = os.environ.get("KALSHI_API_KEY")
+        if not api_key:
+            print("   Kalshi: KALSHI_API_KEY not set, skipping")
+            return None, None
         from kalshi import KalshiClient, MLBMarketMapper
-        kalshi_client = KalshiClient(api_key)
+        client = KalshiClient(api_key)
         try:
-            markets = kalshi_client.get_mlb_markets()
+            markets = client.get_mlb_markets()
             if markets:
-                kalshi_mapper = MLBMarketMapper(markets)
                 print(f"   Kalshi: {len(markets)} MLB markets loaded")
-            else:
-                print("   Kalshi: no MLB markets found")
+                return client, MLBMarketMapper(markets)
+            print("   Kalshi: no MLB markets found")
+            return client, None
         except requests.RequestException as e:
             print(f"   Kalshi: API error loading markets: {e}")
+            return None, None
 
-    poly_client = None
-    poly_mapper = None
-    proxy = os.environ.get("POLYMARKET_PROXY")
-    if not proxy:
-        print("   Polymarket: POLYMARKET_PROXY not set, skipping")
-    else:
+    def _fetch_poly():
+        proxy = os.environ.get("POLYMARKET_PROXY")
+        if not proxy:
+            print("   Polymarket: POLYMARKET_PROXY not set, skipping")
+            return None, None
         try:
             from polymarket import PolymarketClient, PolymarketMarketMapper
-            poly_client = PolymarketClient(proxy_url=proxy)
-            poly_markets = poly_client.get_sports_game_markets("MLB")
-            if poly_markets:
-                poly_mapper = PolymarketMarketMapper(poly_markets)
-                print(f"   Polymarket: {len(poly_markets)} MLB markets loaded")
-            else:
-                print("   Polymarket: no MLB markets found")
+            client = PolymarketClient(proxy_url=proxy)
+            markets = client.get_sports_game_markets("MLB")
+            if markets:
+                print(f"   Polymarket: {len(markets)} MLB markets loaded")
+                return client, PolymarketMarketMapper(markets)
+            print("   Polymarket: no MLB markets found")
+            return client, None
         except Exception as e:
             print(f"   Polymarket: error loading markets: {e}")
+            return None, None
 
-    # Fetch schedule
-    games = fetch_schedule(league)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        _sched_f = pool.submit(fetch_schedule, league)
+        _kalshi_f = pool.submit(_fetch_kalshi)
+        _poly_f = pool.submit(_fetch_poly)
+
+        games = _sched_f.result()
+        kalshi_client, kalshi_mapper = _kalshi_f.result()
+        poly_client, poly_mapper = _poly_f.result()
     if not games:
         print("   No upcoming games found.")
         return []
