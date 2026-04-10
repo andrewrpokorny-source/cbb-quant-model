@@ -46,6 +46,7 @@ from betting import VALUE_RATINGS
 from kalshi.market_mapper import normalize_team_name
 from settle_bets import settle_pending_bets
 from settle_kalshi import settle_to_csv
+from settle_polymarket import settle_to_csv as settle_polymarket_to_csv
 
 load_dotenv()
 
@@ -2204,6 +2205,17 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             logger.exception("Kalshi settlement fetch failed")
             msg_parts.append("Kalshi: fetch failed")
+
+        # 3) Import settled Polymarket positions
+        try:
+            poly_result = settle_polymarket_to_csv()
+            if poly_result["settled"]:
+                msg_parts.append(f"Polymarket: +{poly_result['settled']} settled")
+            if poly_result["errors"]:
+                msg_parts.append(f"Polymarket: {poly_result['errors']} errors")
+        except Exception:
+            logger.exception("Polymarket settlement fetch failed")
+            msg_parts.append("Polymarket: fetch failed")
 
         await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.", reply_markup=MAIN_KEYBOARD)
 
