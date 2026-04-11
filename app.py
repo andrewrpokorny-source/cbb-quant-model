@@ -688,11 +688,11 @@ def kalshi_event_url(ticker) -> str:
     return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event_ticker.lower()}"
 
 
-def polymarket_event_url(token_id) -> str:
-    """Build a Polymarket URL from a token/condition ID or slug."""
-    if not token_id or not isinstance(token_id, str):
+def polymarket_event_url(slug_or_id) -> str:
+    """Build a Polymarket event URL from an event slug or token ID."""
+    if not slug_or_id or not isinstance(slug_or_id, str):
         return ""
-    return f"https://polymarket.com/event/{token_id}"
+    return f"https://polymarket.com/event/{slug_or_id}"
 
 
 def _esc(val) -> str:

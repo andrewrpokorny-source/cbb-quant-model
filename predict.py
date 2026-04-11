@@ -822,6 +822,7 @@ def get_polymarket_spread_edge(
         prices = mapper.get_market_prices(market)
         token_id = prices.get("token_id")
         title = prices.get("title", "")
+        event_slug = market.get("event_slug", "")
 
         # Try live prices if we have a token
         if token_id:
@@ -858,7 +859,7 @@ def get_polymarket_spread_edge(
             "Poly_Edge_Pct": f"{edge * 100:+.1f}%",
             "Poly_Rating": rating.value,
             "Poly_Units": units,
-            "Poly_Ticker": token_id,
+            "Poly_Ticker": event_slug or token_id,
             "Poly_Side": poly_side,
             "Poly_Title": title,
         }
@@ -906,6 +907,7 @@ def get_polymarket_game_edge(
         prices = mapper.get_market_prices(market)
         token_id = prices.get("token_id")
         title = prices.get("title", "")
+        event_slug = market.get("event_slug", "")
 
         # Try live prices
         if token_id:
@@ -965,7 +967,7 @@ def get_polymarket_game_edge(
             "Poly_Edge_Pct": f"{best['edge'] * 100:+.1f}%",
             "Poly_Rating": rating,
             "Poly_Units": min(units, 0.5),
-            "Poly_Ticker": token_id,
+            "Poly_Ticker": event_slug or token_id,
             "Poly_Side": best["side"],
             "Poly_Title": title,
             "Poly_Yes_Team": yes_team,

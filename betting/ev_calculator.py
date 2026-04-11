@@ -187,7 +187,7 @@ POLYMARKET_TAKER_FEE_COEFF = 0.03
 
 
 def polymarket_fee_cents(price_cents: float) -> float:
-    """Polymarket fee in cents for a single contract (currently 0)."""
+    """Polymarket taker fee in cents for a single contract (3% sports rate)."""
     p = price_cents / 100.0
     return POLYMARKET_TAKER_FEE_COEFF * p * (1.0 - p) * 100.0
 

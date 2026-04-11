@@ -1,6 +1,6 @@
 """Map ESPN games to Polymarket sports market tokens.
 
-Polymarket sports markets are fetched via the CLI's ``sports list`` command.
+Polymarket sports markets are fetched via the Gamma API (see ``client.py``).
 Because the exact JSON schema may evolve, field names are auto-detected from
 the first market dict with fallbacks for common variants.
 """

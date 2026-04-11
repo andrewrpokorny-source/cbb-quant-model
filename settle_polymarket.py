@@ -1,6 +1,6 @@
 """Fetch settled Polymarket positions and log them to betting_history.csv.
 
-Uses the Polymarket CLI to query closed positions for a wallet address.
+Uses the Polymarket Gamma API to query closed positions for a wallet address.
 Mirrors settle_kalshi.py's approach: parse positions, match to pending bets,
 append new rows to the shared CSV ledger.
 """
