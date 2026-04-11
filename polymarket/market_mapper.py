@@ -359,13 +359,16 @@ class PolymarketMarketMapper:
     def get_market_prices(self, market: dict) -> dict:
         """Extract prices from a market dict (cached data, no API call).
 
-        Returns dict with yes_price, no_price (0-100 scale), token_id, title.
+        Returns dict with yes_price, no_price (0-100 scale), yes_token_id,
+        no_token_id, token_id (alias for yes), and title.
         """
         yes_price, no_price = self._get_prices(market)
         return {
             "yes_price": yes_price,
             "no_price": no_price,
-            "token_id": self._get_token_id(market),
+            "token_id": self._get_yes_token(market),
+            "yes_token_id": self._get_yes_token(market),
+            "no_token_id": self._get_no_token(market),
             "title": self._get_title(market),
         }
 

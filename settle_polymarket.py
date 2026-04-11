@@ -77,8 +77,9 @@ def _parse_position(pos: dict) -> dict | None:
 
     Returns None if the position can't be parsed.
     """
-    # The exact fields depend on CLI output; adapt as needed after discovery.
-    token_id = pos.get("token_id") or pos.get("conditionId") or pos.get("id", "")
+    # Fields per https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
+    token_id = pos.get("conditionId") or pos.get("token_id") or pos.get("id", "")
+    asset = pos.get("asset", "")  # specific token (YES or NO) traded
     title = pos.get("title") or pos.get("question") or pos.get("name", "")
     outcome = pos.get("outcome") or pos.get("result", "")
 
@@ -128,7 +129,7 @@ def _parse_position(pos: dict) -> dict | None:
         "result": result,
         "payout": round(payout, 2),
         "profit": profit,
-        "bet_id": f"poly_{token_id}",
+        "bet_id": f"poly_{token_id}_{outcome or side}_{asset[-8:]}" if asset else f"poly_{token_id}_{outcome or side}",
         "league": "",
     }
 

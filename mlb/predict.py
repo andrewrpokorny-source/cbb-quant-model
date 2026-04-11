@@ -542,12 +542,13 @@ def _get_polymarket_edge(client, mapper, home_team, away_team, game_date,
 
     prices = mapper.get_market_prices(market)
     token_id = prices.get("token_id")
+    no_token_id = prices.get("no_token_id")
     title = prices.get("title", "")
 
-    # Try live prices
+    # Try live prices -- fetch YES and NO tokens independently
     if token_id:
         try:
-            live = client.get_market_prices(token_id, title=title)
+            live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
                 prices = live
         except (requests.RequestException, ValueError, KeyError) as e:

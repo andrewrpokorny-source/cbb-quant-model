@@ -29,6 +29,7 @@ SPORT_TAG_IDS = {
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 CLOB_BASE = "https://clob.polymarket.com"
+DATA_BASE = "https://data-api.polymarket.com"
 
 
 class PolymarketClient:
@@ -162,47 +163,69 @@ class PolymarketClient:
 
     # -- Market price helpers --
 
-    def get_market_prices(self, token_id: str, title: str = "") -> dict:
+    def get_market_prices(
+        self,
+        yes_token_id: str,
+        title: str = "",
+        no_token_id: Optional[str] = None,
+    ) -> dict:
         """Get YES/NO prices normalized to 0-100 cent scale.
+
+        Polymarket markets have distinct YES and NO token IDs, each with
+        their own order book. When ``no_token_id`` is provided, the NO
+        price is fetched independently (not complemented from YES).
 
         Polymarket native prices are 0-1 (probability). We multiply by 100
         to match the Kalshi convention used in ev_calculator.py.
         """
-        mid = self.get_midpoint(token_id)
+        # Fetch YES price
+        yes_price = None
+        mid = self.get_midpoint(yes_token_id)
         if mid is not None:
             yes_price = round(mid * 100.0, 2)
-            no_price = round(100.0 - yes_price, 2)
         else:
-            buy = self.get_price(token_id, "BUY")
+            buy = self.get_price(yes_token_id, "BUY")
             if buy is not None:
                 yes_price = round(buy * 100.0, 2)
-                no_price = round(100.0 - yes_price, 2)
+
+        # Fetch NO price from its own token (independent order book)
+        no_price = None
+        if no_token_id:
+            no_mid = self.get_midpoint(no_token_id)
+            if no_mid is not None:
+                no_price = round(no_mid * 100.0, 2)
             else:
-                yes_price = None
-                no_price = None
+                no_buy = self.get_price(no_token_id, "BUY")
+                if no_buy is not None:
+                    no_price = round(no_buy * 100.0, 2)
+
+        # Fallback: complement from YES if NO token wasn't provided
+        if no_price is None and yes_price is not None and not no_token_id:
+            no_price = round(100.0 - yes_price, 2)
 
         return {
             "yes_price": yes_price,
             "no_price": no_price,
-            "token_id": token_id,
+            "token_id": yes_token_id,
             "title": title,
         }
 
-    # -- Position/portfolio data (public, by wallet address) --
+    # -- Position/portfolio data (Data API, public by wallet address) --
+    # https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
 
     def get_positions(self, wallet_address: str) -> list[dict]:
         """Get open positions for a wallet address."""
         result = self._get(
-            f"{GAMMA_BASE}/data/positions",
-            {"address": wallet_address},
+            f"{DATA_BASE}/positions",
+            {"user": wallet_address},
         )
         return result if isinstance(result, list) else []
 
     def get_closed_positions(self, wallet_address: str) -> list[dict]:
         """Get closed/settled positions for a wallet address."""
         result = self._get(
-            f"{GAMMA_BASE}/data/closed-positions",
-            {"address": wallet_address},
+            f"{DATA_BASE}/closed-positions",
+            {"user": wallet_address},
         )
         return result if isinstance(result, list) else []
 

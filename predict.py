@@ -821,12 +821,13 @@ def get_polymarket_spread_edge(
 
         prices = mapper.get_market_prices(market)
         token_id = prices.get("token_id")
+        no_token_id = prices.get("no_token_id")
         title = prices.get("title", "")
         event_slug = market.get("event_slug", "")
 
-        # Try live prices if we have a token
+        # Try live prices -- fetch YES and NO tokens independently
         if token_id:
-            live = client.get_market_prices(token_id, title=title)
+            live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
                 prices = live
 
@@ -906,12 +907,13 @@ def get_polymarket_game_edge(
 
         prices = mapper.get_market_prices(market)
         token_id = prices.get("token_id")
+        no_token_id = prices.get("no_token_id")
         title = prices.get("title", "")
         event_slug = market.get("event_slug", "")
 
-        # Try live prices
+        # Try live prices -- fetch YES and NO tokens independently
         if token_id:
-            live = client.get_market_prices(token_id, title=title)
+            live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
                 prices = live
 
