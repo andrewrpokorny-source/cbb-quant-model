@@ -550,8 +550,8 @@ def _get_polymarket_edge(client, mapper, home_team, away_team, game_date,
             live = client.get_market_prices(token_id, title=title)
             if live.get("yes_price") is not None:
                 prices = live
-        except Exception:
-            pass
+        except (requests.RequestException, ValueError, KeyError) as e:
+            print(f"      Polymarket live price fetch failed for {token_id}: {e}")
 
     yes_price = prices.get("yes_price")
     no_price = prices.get("no_price")

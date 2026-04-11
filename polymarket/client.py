@@ -188,6 +188,24 @@ class PolymarketClient:
             "title": title,
         }
 
+    # -- Position/portfolio data (public, by wallet address) --
+
+    def get_positions(self, wallet_address: str) -> list[dict]:
+        """Get open positions for a wallet address."""
+        result = self._get(
+            f"{GAMMA_BASE}/data/positions",
+            {"address": wallet_address},
+        )
+        return result if isinstance(result, list) else []
+
+    def get_closed_positions(self, wallet_address: str) -> list[dict]:
+        """Get closed/settled positions for a wallet address."""
+        result = self._get(
+            f"{GAMMA_BASE}/data/closed-positions",
+            {"address": wallet_address},
+        )
+        return result if isinstance(result, list) else []
+
     # -- Connectivity checks --
 
     def check_geoblock(self) -> dict:

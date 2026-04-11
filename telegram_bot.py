@@ -2213,9 +2213,9 @@ async def cmd_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg_parts.append(f"Polymarket: +{poly_result['settled']} settled")
             if poly_result["errors"]:
                 msg_parts.append(f"Polymarket: {poly_result['errors']} errors")
-        except Exception:
+        except Exception as e:
             logger.exception("Polymarket settlement fetch failed")
-            msg_parts.append("Polymarket: fetch failed")
+            msg_parts.append(f"Polymarket: fetch failed ({type(e).__name__})")
 
         await update.message.reply_text("\n".join(msg_parts) if msg_parts else "Nothing new.", reply_markup=MAIN_KEYBOARD)
 

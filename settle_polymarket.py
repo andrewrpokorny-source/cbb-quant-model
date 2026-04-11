@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ def settle_to_csv(wallet_address: str | None = None, dry_run: bool = False) -> d
             for row in rows_to_write:
                 writer.writerow(row)
 
-        _write_sync_ts(datetime.utcnow().isoformat())
+        _write_sync_ts(datetime.now(timezone.utc).isoformat())
         print(f"Polymarket: {settled} settled, {skipped} already recorded, {errors} errors")
     elif dry_run:
         print(f"Polymarket (dry run): {settled} would be settled, {skipped} already recorded")
