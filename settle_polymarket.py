@@ -124,7 +124,7 @@ def _parse_position(pos: dict) -> dict | None:
     title_lower = title.lower()
     if "spread" in title_lower or "wins by" in title_lower:
         bet_type = "spread"
-    elif "total" in title_lower or "over" in title_lower or "under" in title_lower:
+    elif "total" in title_lower or "over" in title_lower or "under" in title_lower or "o/u" in title_lower:
         bet_type = "total"
     else:
         bet_type = "game"
