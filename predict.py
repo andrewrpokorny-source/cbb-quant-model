@@ -825,11 +825,14 @@ def get_polymarket_spread_edge(
         title = prices.get("title", "")
         event_slug = market.get("event_slug", "")
 
-        # Try live prices -- fetch YES and NO tokens independently
+        # Try live prices -- merge selectively so cached values survive
+        # when one side's live fetch fails
         if token_id:
             live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
-                prices = live
+                prices["yes_price"] = live["yes_price"]
+            if live.get("no_price") is not None:
+                prices["no_price"] = live["no_price"]
 
         yes_price = prices.get("yes_price")
         no_price = prices.get("no_price")
@@ -911,11 +914,13 @@ def get_polymarket_game_edge(
         title = prices.get("title", "")
         event_slug = market.get("event_slug", "")
 
-        # Try live prices -- fetch YES and NO tokens independently
+        # Try live prices -- merge selectively so cached values survive
         if token_id:
             live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
-                prices = live
+                prices["yes_price"] = live["yes_price"]
+            if live.get("no_price") is not None:
+                prices["no_price"] = live["no_price"]
 
         yes_price = prices.get("yes_price")
         no_price = prices.get("no_price")

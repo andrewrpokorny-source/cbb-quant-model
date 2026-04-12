@@ -75,35 +75,49 @@ def _existing_bet_ids() -> set[str]:
 def _parse_position(pos: dict) -> dict | None:
     """Parse a single closed Polymarket position into a CSV-ready dict.
 
+    Uses the documented closed-positions schema:
+    https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
+
+    Key fields: conditionId, asset, outcome, avgPrice, totalBought,
+    realizedPnl, timestamp (int64 epoch seconds).
+
     Returns None if the position can't be parsed.
     """
-    # Fields per https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user
     token_id = pos.get("conditionId") or pos.get("token_id") or pos.get("id", "")
-    asset = pos.get("asset", "")  # specific token (YES or NO) traded
+    asset = pos.get("asset", "")
     title = pos.get("title") or pos.get("question") or pos.get("name", "")
     outcome = pos.get("outcome") or pos.get("result", "")
 
-    # Cost and payout
-    cost = pos.get("cost") or pos.get("avgPrice", 0)
-    payout = pos.get("payout") or pos.get("redeemed", 0)
+    # Financial fields -- use realizedPnl as the source of truth for profit.
+    # totalBought is the total USDC spent; avgPrice is per-share.
     try:
-        cost = float(cost)
-        payout = float(payout)
+        realized_pnl = float(pos.get("realizedPnl", 0) or 0)
+        total_bought = float(pos.get("totalBought", 0) or 0)
     except (TypeError, ValueError):
-        cost = 0.0
-        payout = 0.0
+        realized_pnl = 0.0
+        total_bought = 0.0
 
-    profit = round(payout - cost, 2)
+    profit = round(realized_pnl, 2)
+    wager = round(total_bought, 2)
+    payout = round(wager + profit, 2)
     result = "win" if profit > 0 else ("loss" if profit < 0 else "push")
 
-    # Date
+    # Date -- timestamp is int64 epoch seconds per the API docs.
     date_str = ""
-    raw_date = pos.get("created_at") or pos.get("date") or pos.get("timestamp", "")
+    raw_date = pos.get("timestamp") or pos.get("created_at") or pos.get("date", "")
     if raw_date:
         try:
-            dt = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+            if isinstance(raw_date, (int, float)):
+                dt = datetime.fromtimestamp(raw_date, tz=timezone.utc)
+            else:
+                raw_str = str(raw_date)
+                # Try parsing as epoch integer string first
+                if raw_str.isdigit():
+                    dt = datetime.fromtimestamp(int(raw_str), tz=timezone.utc)
+                else:
+                    dt = datetime.fromisoformat(raw_str.replace("Z", "+00:00"))
             date_str = dt.strftime("%Y-%m-%d")
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OSError):
             date_str = str(raw_date)[:10]
 
     # Bet type inference from title
@@ -115,7 +129,6 @@ def _parse_position(pos: dict) -> dict | None:
     else:
         bet_type = "game"
 
-    # Side
     side = pos.get("side", "YES").upper()
 
     return {
@@ -125,9 +138,9 @@ def _parse_position(pos: dict) -> dict | None:
         "bet_type": bet_type,
         "line": f"{title} {side}",
         "odds": "n/a",
-        "wager": round(cost, 2),
+        "wager": wager,
         "result": result,
-        "payout": round(payout, 2),
+        "payout": payout,
         "profit": profit,
         "bet_id": f"poly_{token_id}_{outcome or side}_{asset[-8:]}" if asset else f"poly_{token_id}_{outcome or side}",
         "league": "",

@@ -545,12 +545,14 @@ def _get_polymarket_edge(client, mapper, home_team, away_team, game_date,
     no_token_id = prices.get("no_token_id")
     title = prices.get("title", "")
 
-    # Try live prices -- fetch YES and NO tokens independently
+    # Try live prices -- merge selectively so cached values survive
     if token_id:
         try:
             live = client.get_market_prices(token_id, title=title, no_token_id=no_token_id)
             if live.get("yes_price") is not None:
-                prices = live
+                prices["yes_price"] = live["yes_price"]
+            if live.get("no_price") is not None:
+                prices["no_price"] = live["no_price"]
         except (requests.RequestException, ValueError, KeyError) as e:
             print(f"      Polymarket live price fetch failed for {token_id}: {e}")
 
