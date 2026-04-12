@@ -386,6 +386,28 @@ p, span, div, .stMarkdown {
     color: var(--green-700);
 }
 
+/* Polymarket badge */
+.poly-row {
+    background: var(--neutral-50);
+    border: 1px solid #c7d2fe;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #312e81;
+}
+.poly-link {
+    color: #6366f1;
+    text-decoration: none;
+    font-size: 0.72rem;
+    font-weight: 500;
+}
+.poly-link:hover {
+    text-decoration: underline;
+    color: #4f46e5;
+}
+
 /* Summary KPI row */
 .kpi-row {
     display: flex;
@@ -666,6 +688,13 @@ def kalshi_event_url(ticker) -> str:
     return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event_ticker.lower()}"
 
 
+def polymarket_event_url(slug_or_id) -> str:
+    """Build a Polymarket event URL from an event slug or token ID."""
+    if not slug_or_id or not isinstance(slug_or_id, str):
+        return ""
+    return f"https://polymarket.com/event/{slug_or_id}"
+
+
 def _esc(val) -> str:
     """HTML-escape a value for safe embedding in st.markdown."""
     return html_mod.escape(str(val)) if val is not None else ""
@@ -775,8 +804,10 @@ def _fetch_kalshi_positions():
         return []
 
 
-def _event_ticker(ticker: str) -> str:
+def _event_ticker(ticker) -> str:
     """Extract event ticker (drop market suffix) for game-level matching."""
+    if not ticker or not isinstance(ticker, str):
+        return ""
     parts = ticker.rsplit("-", 1)
     return parts[0] if len(parts) > 1 else ticker
 
@@ -1202,15 +1233,21 @@ def _render_spread_bets(col, lg, position_lookup=None):
         spread_value_bets = pd.DataFrame(columns=spread_df.columns) if not spread_df.empty else pd.DataFrame()
         if not spread_df.empty and 'Std_Rating' in spread_df.columns:
             spread_rating = spread_df['Rating'] if 'Rating' in spread_df.columns else pd.Series('PASS', index=spread_df.index)
+            poly_spread_rating = spread_df['Poly_Rating'] if 'Poly_Rating' in spread_df.columns else pd.Series('PASS', index=spread_df.index)
             spread_value_bets = spread_df[
                 (spread_df['Std_Rating'].isin(VALUE_RATINGS)) |
-                (spread_rating.isin(VALUE_RATINGS))
+                (spread_rating.isin(VALUE_RATINGS)) |
+                (poly_spread_rating.isin(VALUE_RATINGS))
             ].copy()
 
         if len(spread_value_bets) > 0:
+            poly_edge = _parse_edge(spread_value_bets['Poly_Edge_Pct']) if 'Poly_Edge_Pct' in spread_value_bets.columns else pd.Series(0.0, index=spread_value_bets.index)
             spread_value_bets['_best_edge'] = np.maximum(
-                _parse_edge(spread_value_bets['Std_Edge_Pct']),
-                _parse_edge(spread_value_bets['Edge_Pct']),
+                np.maximum(
+                    _parse_edge(spread_value_bets['Std_Edge_Pct']),
+                    _parse_edge(spread_value_bets['Edge_Pct']),
+                ),
+                poly_edge,
             )
             spread_value_bets = (
                 spread_value_bets
@@ -1224,16 +1261,27 @@ def _render_spread_bets(col, lg, position_lookup=None):
                 conf = row['Conf']
                 game_time = row.get('Date/Time', '')
 
+                poly_rating = row.get('Poly_Rating', 'PASS') if pd.notna(row.get('Poly_Rating')) else 'PASS'
                 std_rank_val = RATING_RANK.get(std_rating, 0)
                 kalshi_rank_val = RATING_RANK.get(kalshi_rating, 0)
-                kalshi_is_primary = kalshi_rank_val > std_rank_val
-                best_rating = kalshi_rating if kalshi_is_primary else std_rating
+                poly_rank_val = RATING_RANK.get(poly_rating, 0)
+                best_rank = max(std_rank_val, kalshi_rank_val, poly_rank_val)
+                if kalshi_rank_val == best_rank:
+                    best_rating = kalshi_rating
+                elif poly_rank_val == best_rank:
+                    best_rating = poly_rating
+                else:
+                    best_rating = std_rating
                 badge_css = best_rating.lower()
 
-                if kalshi_is_primary:
+                if kalshi_rank_val == best_rank and kalshi_rank_val > 0:
                     display_edge = row.get('Edge_Pct', 'N/A')
                     display_units = row.get('Units', 0) or 0
                     edge_source = "Kalshi Edge"
+                elif poly_rank_val == best_rank and poly_rank_val > 0:
+                    display_edge = row.get('Poly_Edge_Pct', 'N/A')
+                    display_units = row.get('Poly_Units', 0) or 0
+                    edge_source = "Poly Edge"
                 else:
                     display_edge = row.get('Std_Edge_Pct', 'N/A')
                     display_units = row.get('Std_Units', 0) or 0
@@ -1255,12 +1303,30 @@ def _render_spread_bets(col, lg, position_lookup=None):
                     kalshi_fee = row.get('Kalshi_Fee')
                     fee_str = f" + {_esc(kalshi_fee)}&#162; fee" if pd.notna(kalshi_fee) and kalshi_fee else ""
                     cbb_pick = _esc(row.get('Pick', ''))
-                    kalshi_text = f"Kalshi {cbb_pick} @ {_esc(kalshi_price)}&#162;{fee_str} ({_esc(kalshi_side)} side) &middot; {kalshi_edge}"
+                    kalshi_text = f"Kalshi: Buy {_esc(kalshi_side)} @ {_esc(kalshi_price)}&#162;{fee_str} &middot; {kalshi_edge}"
                     if kalshi_ticker:
                         kalshi_url = _esc(kalshi_event_url(kalshi_ticker))
                         kalshi_html = f'<div class="kalshi-row"><a href="{kalshi_url}" target="_blank" class="kalshi-link">{kalshi_text}</a></div>'
                     else:
                         kalshi_html = f'<div class="kalshi-row"><span class="kalshi-label">{kalshi_text}</span></div>'
+
+                # Polymarket spread display
+                poly_side = row.get('Poly_Side')
+                poly_price = row.get('Poly_Price')
+                has_poly = pd.notna(poly_side) and poly_side if isinstance(poly_side, str) else False
+
+                poly_html = ""
+                if has_poly:
+                    poly_edge = _esc(row.get('Poly_Edge_Pct', 'N/A'))
+                    poly_fee = row.get('Poly_Fee')
+                    poly_fee_str = f" + {_esc(poly_fee)}&#162; fee" if pd.notna(poly_fee) and poly_fee else ""
+                    poly_ticker = row.get('Poly_Ticker', '')
+                    poly_text = f"Poly: Buy {_esc(poly_side)} @ {_esc(poly_price)}&#162;{poly_fee_str} &middot; {poly_edge}"
+                    if poly_ticker:
+                        poly_url = _esc(polymarket_event_url(poly_ticker))
+                        poly_html = f'<div class="poly-row"><a href="{poly_url}" target="_blank" class="poly-link">{poly_text}</a></div>'
+                    else:
+                        poly_html = f'<div class="poly-row"><span class="kalshi-label">{poly_text}</span></div>'
 
                 placed_html = _placed_badge_html(kalshi_ticker, position_lookup or {})
 
@@ -1295,6 +1361,7 @@ def _render_spread_bets(col, lg, position_lookup=None):
                         </div>
                     </div>
                     {kalshi_html}
+                    {poly_html}
                 </div>
                 ''', unsafe_allow_html=True)
 
@@ -1330,7 +1397,9 @@ def _render_game_bets(col, lg, position_lookup=None):
             st.caption("No ML game markets on this slate.")
             return
 
-        game_value = game_df[game_df['Rating'].isin(VALUE_RATINGS)].copy() if 'Rating' in game_df.columns else pd.DataFrame()
+        kalshi_game_val = game_df['Rating'].isin(VALUE_RATINGS) if 'Rating' in game_df.columns else pd.Series(False, index=game_df.index)
+        poly_game_val = game_df['Poly_Rating'].isin(VALUE_RATINGS) if 'Poly_Rating' in game_df.columns else pd.Series(False, index=game_df.index)
+        game_value = game_df[kalshi_game_val | poly_game_val].copy()
         if game_value.empty:
             st.caption("No ML game markets on this slate.")
             return
@@ -1348,12 +1417,28 @@ def _render_game_bets(col, lg, position_lookup=None):
             game_fee_str = f" + {game_fee_val:.1f}&#162; fee" if game_fee_val else ""
             game_pick = _esc(row.get('Pick', ''))
             game_side = _esc(row.get('Kalshi_Side', ''))
-            game_kalshi_text = f"Kalshi {game_pick} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str} ({game_side} side)"
+            game_kalshi_text = f"Kalshi: Buy {game_side} @ {_esc(row.get('Kalshi_Price', ''))}&#162;{game_fee_str}"
             game_kalshi_url = _esc(kalshi_event_url(game_kalshi_ticker))
             if game_kalshi_url:
                 game_kalshi_html = f'<a href="{game_kalshi_url}" target="_blank" class="kalshi-link">{game_kalshi_text}</a>'
             else:
                 game_kalshi_html = f'<span class="kalshi-label">{game_kalshi_text}</span>'
+            # Polymarket game display
+            game_poly_side = row.get('Poly_Side')
+            game_has_poly = pd.notna(game_poly_side) and game_poly_side if isinstance(game_poly_side, str) else False
+            game_poly_html = ""
+            if game_has_poly:
+                game_poly_edge = _esc(row.get('Poly_Edge_Pct', 'N/A'))
+                game_poly_fee = row.get('Poly_Fee')
+                game_poly_fee_str = f" + {float(game_poly_fee):.1f}&#162; fee" if pd.notna(game_poly_fee) and game_poly_fee else ""
+                game_poly_ticker = row.get('Poly_Ticker', '')
+                game_poly_text = f"Poly: Buy {_esc(game_poly_side)} @ {_esc(row.get('Poly_Price', ''))}&#162;{game_poly_fee_str} &middot; {game_poly_edge}"
+                if game_poly_ticker:
+                    game_poly_url = _esc(polymarket_event_url(game_poly_ticker))
+                    game_poly_html = f'<div class="poly-row"><a href="{game_poly_url}" target="_blank" class="poly-link">{game_poly_text}</a></div>'
+                else:
+                    game_poly_html = f'<div class="poly-row"><span class="kalshi-label">{game_poly_text}</span></div>'
+
             placed_html = _placed_badge_html(game_kalshi_ticker, position_lookup or {})
             st.markdown(f'''
             <div class="bet-card {badge_css} {card_extra}">
@@ -1386,6 +1471,7 @@ def _render_game_bets(col, lg, position_lookup=None):
                     </div>
                 </div>
                 <div class="kalshi-row">{game_kalshi_html}</div>
+                {game_poly_html}
             </div>
             ''', unsafe_allow_html=True)
 

@@ -88,15 +88,35 @@ def fetch_completed_games(date_obj, league="mens"):
                         f"for {away_name} @ {home_name}"
                     )
             
-            # Store with multiple key formats for easier matching
+            # Extract game start time in Eastern for doubleheader disambiguation.
+            # ESPN returns UTC; predictions display Eastern -- must match.
+            game_start = event.get("date", "")
+            game_time_str = ""
+            if game_start:
+                try:
+                    from datetime import datetime as _dt, timezone as _tz
+                    import pytz as _pytz
+                    gdt = _dt.fromisoformat(game_start.replace("Z", "+00:00"))
+                    eastern = _pytz.timezone("US/Eastern")
+                    gdt_eastern = gdt.astimezone(eastern)
+                    game_time_str = gdt_eastern.strftime("%H:%M")
+                except (ValueError, TypeError, ImportError):
+                    pass
+
             game_key = (home_name, away_name)
-            games[game_key] = {
+            game_data = {
                 'home_score': home_score,
                 'away_score': away_score,
                 'spread': spread,
                 'home_name': home_name,
-                'away_name': away_name
+                'away_name': away_name,
+                'game_time': game_time_str,
             }
+            # Handle doubleheaders: if key exists, use (home, away, N)
+            if game_key in games:
+                games[(home_name, away_name, 2)] = game_data
+            else:
+                games[game_key] = game_data
             
         print(f"      Found {len(games)} completed games")
         return games
@@ -108,31 +128,59 @@ def fetch_completed_games(date_obj, league="mens"):
         print(f"      ESPN fetch/parse error: {e}")
         return {}
 
-def match_prediction_to_game(pred_matchup, games):
+def match_prediction_to_game(pred_matchup, games, pred_time=""):
     """
     Try to match a prediction matchup to an actual game.
     pred_matchup format: "Away @ Home"
+    pred_time: optional "HH:MM" to disambiguate doubleheaders
     """
     # Parse prediction matchup
     parts = pred_matchup.split(' @ ')
     if len(parts) != 2:
         return None
-    
+
     pred_away, pred_home = parts
-    
-    # Try exact match first
-    for (game_home, game_away), result in games.items():
+
+    def _is_match(game_home, game_away):
+        # Exact match
         if game_home == pred_home and game_away == pred_away:
-            return result
-    
-    # Try fuzzy matching
-    for (game_home, game_away), result in games.items():
-        # Check if key parts of names match
+            return True
+        # Fuzzy match
         if (pred_home in game_home or game_home in pred_home) and \
            (pred_away in game_away or game_away in pred_away):
-            return result
-    
-    return None
+            return True
+        return False
+
+    # Collect all matching games (may be >1 for doubleheaders)
+    matches = []
+    for key, result in games.items():
+        # Keys are (home, away) or (home, away, game_number)
+        game_home = key[0]
+        game_away = key[1]
+        if _is_match(game_home, game_away):
+            matches.append(result)
+
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+
+    # Doubleheader: pick the game closest to pred_time
+    if pred_time:
+        try:
+            pred_parts = pred_time.replace(":", "")[:4]
+            pred_min = int(pred_parts[:2]) * 60 + int(pred_parts[2:4])
+            def _time_dist(g):
+                gt = g.get("game_time", "")
+                if not gt:
+                    return 9999
+                gp = gt.replace(":", "")[:4]
+                return abs(int(gp[:2]) * 60 + int(gp[2:4]) - pred_min)
+            return min(matches, key=_time_dist)
+        except (ValueError, IndexError):
+            pass
+
+    return matches[0]
 
 def grade_pick(pick_str, spread, home_score, away_score, matchup):
     """
@@ -263,9 +311,10 @@ def grade_predictions(league="mens"):
         # Filter for actionable bets only (value-rated from either source)
         has_std = 'Std_Rating' in preds.columns
         has_kalshi = 'Rating' in preds.columns
+        has_poly = 'Poly_Rating' in preds.columns
 
-        if not has_std and not has_kalshi:
-            print("ERROR: Prediction file has neither 'Std_Rating' nor 'Rating' column.")
+        if not has_std and not has_kalshi and not has_poly:
+            print("ERROR: Prediction file has no rating columns.")
             print("   Cannot determine which bets are actionable.")
             print(f"   Columns found: {list(preds.columns)}")
             print("   Re-run predict.py to generate a file with rating columns.")
@@ -273,8 +322,11 @@ def grade_predictions(league="mens"):
 
         std_rating = preds['Std_Rating'] if has_std else pd.Series('PASS', index=preds.index)
         kalshi_rating = preds['Rating'].fillna('PASS') if has_kalshi else pd.Series('PASS', index=preds.index)
+        poly_rating = preds['Poly_Rating'].fillna('PASS') if has_poly else pd.Series('PASS', index=preds.index)
         preds = preds[
-            (std_rating.isin(VALUE_RATINGS)) | (kalshi_rating.isin(VALUE_RATINGS))
+            (std_rating.isin(VALUE_RATINGS)) |
+            (kalshi_rating.isin(VALUE_RATINGS)) |
+            (poly_rating.isin(VALUE_RATINGS))
         ].copy()
 
         print(f"   Filtered to {len(preds)} actionable bets (value-rated)")
@@ -318,8 +370,31 @@ def grade_predictions(league="mens"):
             pred_spread = 0.0
         bet_type = str(pred.get("Bet_Type", "spread") or "spread").strip().lower()
         
+        # Extract game time from prediction for doubleheader disambiguation.
+        # Both game_time (from ESPN) and pred_time are stored as Eastern.
+        # CBB format "04/09 07:00 PM" is already Eastern (from tz_convert).
+        # MLB format "2026-04-09 16:10" is UTC -- convert to Eastern.
+        pred_time_str = ""
+        raw_dt = pred.get("Date/Time", "")
+        if raw_dt and isinstance(raw_dt, str) and ":" in raw_dt:
+            try:
+                if "-" in raw_dt:
+                    # ISO-ish: "2026-04-09 16:10" (UTC from mlb/predict.py)
+                    from datetime import datetime as _dt, timezone as _tz
+                    import pytz as _pytz
+                    utc_dt = _dt.strptime(raw_dt.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=_tz.utc)
+                    eastern = _pytz.timezone("US/Eastern")
+                    pred_time_str = utc_dt.astimezone(eastern).strftime("%H:%M")
+                else:
+                    # "04/09 07:00 PM" (already Eastern from CBB predict.py)
+                    from datetime import datetime as _dt
+                    dt = _dt.strptime(raw_dt.strip(), "%m/%d %I:%M %p")
+                    pred_time_str = dt.strftime("%H:%M")
+            except (ValueError, IndexError):
+                pass
+
         # Find the corresponding game
-        game_result = match_prediction_to_game(matchup, completed_games)
+        game_result = match_prediction_to_game(matchup, completed_games, pred_time=pred_time_str)
         
         if game_result is None:
             # Couldn't find this game - might be for today/tomorrow

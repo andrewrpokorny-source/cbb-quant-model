@@ -177,3 +177,61 @@ def analyze_bet(model_prob: float, kalshi_yes_price: float) -> dict:
         "model_prob": model_prob,
         "ev": ev,
     }
+
+
+# -- Polymarket fee model --
+# Polymarket CLOB taker fee: rate * P * (1-P), same formula as Kalshi.
+# Sports markets: 3.0%, Crypto: 7.2%, Politics: 4.0%, Geopolitics: 0%.
+# https://docs.polymarket.com/trading/fees
+POLYMARKET_TAKER_FEE_COEFF = 0.03
+
+
+def polymarket_fee_cents(price_cents: float) -> float:
+    """Polymarket taker fee in cents for a single contract (3% sports rate)."""
+    p = price_cents / 100.0
+    return POLYMARKET_TAKER_FEE_COEFF * p * (1.0 - p) * 100.0
+
+
+def polymarket_implied_prob(price_cents: float) -> float:
+    """Convert Polymarket buy price to fee-adjusted implied probability.
+
+    Sports taker fee is 3% * P * (1-P), so breakeven probability
+    is (price + fee) / 100 -- same structure as Kalshi but cheaper.
+
+    Args:
+        price_cents: Polymarket buy price on 0-100 scale
+
+    Returns:
+        Fee-adjusted implied probability (0-1 scale)
+    """
+    p = price_cents / 100.0
+    fee = POLYMARKET_TAKER_FEE_COEFF * p * (1.0 - p)
+    return p + fee
+
+
+def analyze_polymarket_bet(model_prob: float, poly_yes_price: float) -> dict:
+    """Complete bet analysis for a Polymarket contract.
+
+    Args:
+        model_prob: Model's predicted probability (0-1)
+        poly_yes_price: Polymarket Yes price (0-100 scale)
+
+    Returns:
+        Dict with edge, edge_pct, rating, implied_prob, model_prob, ev
+    """
+    implied_prob = polymarket_implied_prob(poly_yes_price)
+    edge = calculate_edge(model_prob, implied_prob)
+    rating = get_rating(edge)
+
+    effective_cost = poly_yes_price + polymarket_fee_cents(poly_yes_price)
+    payout = (100 - effective_cost) / effective_cost if effective_cost > 0 else 0
+    ev = calculate_ev(model_prob, payout_if_win=payout, cost_if_loss=1.0)
+
+    return {
+        "edge": edge,
+        "edge_pct": edge * 100,
+        "rating": rating,
+        "implied_prob": implied_prob,
+        "model_prob": model_prob,
+        "ev": ev,
+    }
