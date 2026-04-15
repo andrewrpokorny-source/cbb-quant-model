@@ -314,6 +314,30 @@ def cmd_run(args):
     # ledger corruption aborts before we spend compute on the eval.
     rows_before = read_all_rows()
     _enforce_stop_conditions(rows_before)
+
+    # Enforce the baseline invariant. Every autonomous run must have exactly
+    # one committed `status=baseline` row in the ledger before any pending
+    # experiment can be recorded. The ONLY way to create that row is to
+    # explicitly pass `--status baseline` as a one-time bootstrap. This
+    # prevents silently "rebaselining" after a ledger wipe or manual edit.
+    has_baseline = any(r.get("status") == "baseline" for r in rows_before)
+    if args.status == "baseline":
+        if has_baseline:
+            sys.exit(
+                "A baseline row already exists in results.tsv. Refusing to "
+                "create a second one. If you want to re-baseline the whole "
+                "run, reset the ledger deliberately (human action, not agent)."
+            )
+    else:
+        if not has_baseline:
+            sys.exit(
+                "No baseline row found in results.tsv. Before running any "
+                "experiments, bootstrap with:\n"
+                "  uv run python mlb_research/run_experiment.py run "
+                "--config mlb_research/configs/baseline.json --change-type "
+                "baseline --description '...' --status baseline"
+            )
+
     best = running_best_optimizer(rows_before)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

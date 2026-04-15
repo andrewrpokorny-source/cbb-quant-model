@@ -38,19 +38,108 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss
 
-# Import from repo root so we reuse the production estimator class.
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-from model import TimeAwareCalibratedGBM  # noqa: E402
+# The anchor is DELIBERATELY self-contained: zero imports from repo-root
+# modules. A previous version imported TimeAwareCalibratedGBM from
+# /model.py, which meant an edit to that file (e.g. during an unrelated
+# production fix) silently shifted anchor scores and invalidated all prior
+# rows in results.tsv. The class is frozen here instead. If the live
+# production class is improved, the anchor stays pinned to this version
+# until the benchmark is deliberately re-frozen.
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ANCHOR_DIR = os.path.dirname(os.path.abspath(__file__))
 FROZEN_CSV = os.path.join(ANCHOR_DIR, "mlb_frozen.csv")
 MANIFEST_PATH = os.path.join(ANCHOR_DIR, "anchor_manifest.json")
+
+
+# Frozen copy of production TimeAwareCalibratedGBM as of commit b89f491
+# (repo-root /model.py lines 115-196). DO NOT refactor or "improve". Any
+# change here breaks comparability with prior experiment rows. If the
+# production class diverges, treat that as a DELIBERATE re-freeze event:
+# rerun snapshot_data.py --force and reset results.tsv.
+class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
+    """GBM with trailing-window sigmoid calibration instead of random CV folds."""
+
+    def __init__(
+        self,
+        n_estimators=150,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
+        calibration_fraction=0.2,
+        min_calibration_rows=200,
+    ):
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
+        self.max_depth = max_depth
+        self.random_state = random_state
+        self.calibration_fraction = calibration_fraction
+        self.min_calibration_rows = min_calibration_rows
+
+    def _base_estimator(self):
+        return GradientBoostingClassifier(
+            n_estimators=self.n_estimators,
+            learning_rate=self.learning_rate,
+            max_depth=self.max_depth,
+            random_state=self.random_state,
+        )
+
+    def fit(self, X, y):
+        X_df = pd.DataFrame(X).copy()
+        y_ser = pd.Series(y).astype(int).reset_index(drop=True)
+        X_df = X_df.reset_index(drop=True)
+        self.feature_names_in_ = X_df.columns.astype(str).to_numpy()
+        self.n_features_in_ = len(self.feature_names_in_)
+
+        split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
+        split_idx = min(split_idx, len(X_df) - 1)
+
+        use_calibration = (
+            len(X_df) >= self.min_calibration_rows
+            and split_idx < len(X_df)
+            and y_ser.iloc[:split_idx].nunique() > 1
+            and y_ser.iloc[split_idx:].nunique() > 1
+        )
+
+        base_X = X_df.iloc[:split_idx] if use_calibration else X_df
+        base_y = y_ser.iloc[:split_idx] if use_calibration else y_ser
+
+        self.base_estimator_ = self._base_estimator()
+        self.base_estimator_.fit(base_X, base_y)
+        self.classes_ = np.array([0, 1])
+
+        self.calibrator_ = None
+        self.calibration_rows_ = 0
+        if use_calibration:
+            calib_X = X_df.iloc[split_idx:]
+            calib_y = y_ser.iloc[split_idx:]
+            raw = np.clip(self.base_estimator_.predict_proba(calib_X)[:, 1], 1e-6, 1 - 1e-6)
+            self.calibrator_ = LogisticRegression(solver="lbfgs")
+            self.calibrator_.fit(raw.reshape(-1, 1), calib_y)
+            self.calibration_rows_ = len(calib_X)
+
+        return self
+
+    def predict_proba(self, X):
+        X_df = pd.DataFrame(X).copy()
+        raw = np.clip(self.base_estimator_.predict_proba(X_df)[:, 1], 1e-6, 1 - 1e-6)
+        if self.calibrator_ is not None:
+            calibrated = self.calibrator_.predict_proba(raw.reshape(-1, 1))[:, 1]
+        else:
+            calibrated = raw
+        return np.column_stack([1 - calibrated, calibrated])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    @property
+    def feature_importances_(self):
+        return self.base_estimator_.feature_importances_
 
 # Pinned at the harness level. Configs are NOT allowed to override this --
 # a per-experiment threshold knob makes opt_roi non-comparable across rows

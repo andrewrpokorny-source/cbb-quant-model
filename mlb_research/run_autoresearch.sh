@@ -42,6 +42,18 @@ if [[ ! -f "$LEDGER" ]]; then
     echo "ERROR: results.tsv not found. Run the baseline experiment first."
     exit 1
 fi
+# Explicit baseline-invariant check: a row with status=baseline must exist.
+# Otherwise the loop would silently promote its first KEEP to implicit
+# baseline with no audit trail.
+if ! awk -F'\t' 'NR>1 && $15=="baseline" {found=1} END {exit !found}' "$LEDGER"; then
+    echo "ERROR: no row with status=baseline in ${LEDGER}."
+    echo "Bootstrap the ledger first, e.g.:"
+    echo "  uv run python mlb_research/run_experiment.py run \\"
+    echo "    --config mlb_research/configs/baseline.json \\"
+    echo "    --change-type baseline --status baseline \\"
+    echo "    --description 'Production MLB baseline'"
+    exit 1
+fi
 if [[ ! -f "$PROGRAM" ]]; then
     echo "ERROR: program.md not found."
     exit 1
@@ -84,7 +96,9 @@ if changed:
     print(f"Swept {changed} dangling pending row(s) to status=superseded.")
 PY
 
-BASELINE=$(head -2 "$LEDGER" | tail -1 | cut -f3)
+# Read the baseline row by status rather than by line number, since later
+# rows may appear above it in unusual recovery scenarios.
+BASELINE=$(awk -F'\t' 'NR>1 && $15=="baseline" {print $3; exit}' "$LEDGER")
 echo "Preflight OK. Baseline opt_brier=${BASELINE}."
 
 # Scrub live-service credentials. The research loop must not touch Kalshi or
