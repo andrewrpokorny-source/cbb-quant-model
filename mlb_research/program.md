@@ -9,43 +9,60 @@ you should continue.
 
 **Primary objective:** minimize `opt_brier` in `mlb_research/results.tsv`.
 
-**Secondary gate:** `opt_roi` must not regress more than `3.0` units
-compared to the running best.
+**Keep-eligibility rules** (enforced by the runner, also stated here):
+- `opt_brier` must improve by at least **0.010** vs. the running best.
+  Smaller improvements are within the max-of-50-trials noise floor
+  (SE(Brier) at n=1403 ≈ 0.007, expected max over 50 trials ≈ 0.015).
+- `opt_roi` must not regress more than **3.0 units** vs. the running
+  best.
+- `opt_n_hc` must be at least **500**. A KEEP with fewer than 500
+  high-conf picks is almost certainly a resolution-collapse artifact
+  (Brier floor is 0.25 for uniform 0.5 output) rather than real alpha.
 
 **Hidden overfit guards:** `mon25_*` and `mon26_*` columns in
 `results.tsv` exist for human review only. They detect whether your
 improvements are real or are overfitting the 2025 Apr-Jul window. You
-MUST NOT reference them when forming hypotheses or when deciding keep vs
-revert. Pretend they are not there.
+MUST NOT reference them when forming hypotheses or when deciding keep
+vs revert. Pretend they are not there.
 
 ## Rules
 
-1. **Edit scope.** You may create/modify any file under `mlb_research/`.
-   You MUST NOT edit any of the following (they belong to the live
-   production pipeline or define the frozen benchmark):
-   - `mlb/` (any file)
-   - `model.py`, `backtest.py`, `predict.py`, `main.py`, `features.py`
-   - `mlb_training_data_processed.csv`
-   - `mlb_research/anchor/mlb_frozen.csv` (the frozen benchmark data)
+1. **Edit scope (WHITELIST).** The ONLY files you may create or modify
+   are under `mlb_research/`, with these specific exceptions EVEN
+   WITHIN that directory that are also read-only during a run:
+   - `mlb_research/anchor/mlb_frozen.csv`
    - `mlb_research/anchor/anchor_manifest.json`
    - `mlb_research/anchor/snapshot_data.py`
-   - `mlb_research/anchor/anchor_eval.py` (evaluation must not change
-     mid-run; changing it invalidates all prior rows in `results.tsv`)
+   - `mlb_research/anchor/anchor_eval.py` (changing evaluation
+     mid-run invalidates all prior rows)
+   - `mlb_research/run_experiment.py` (same)
+   - `mlb_research/program.md` (this file)
+
+   **Everything outside `mlb_research/` is read-only.** This includes
+   but is not limited to `mlb/`, `model.py`, `backtest.py`,
+   `predict.py`, `main.py`, `features.py`, `league_config.py`,
+   `kalshi/`, `betting/`, the root training CSVs, `settings.py`,
+   anything in `.claude/`. You may READ these files to understand
+   production behavior; you may NOT edit them. If your hypothesis
+   requires changing code outside `mlb_research/`, shadow the
+   relevant logic inside `mlb_research/` and wrap it.
 
    You MUST NOT run `mlb_research/anchor/snapshot_data.py --force`
-   during the loop. Re-freezing mid-run changes the anchor SHA256 and
-   invalidates every previously recorded metric. Re-freezing is a
-   human decision to end and restart the run.
+   during the loop. Re-freezing mid-run changes the anchor SHA256
+   and invalidates every previously recorded metric.
 
    `rest_days` is a reserved derived column: `anchor_eval.py`
-   recomputes it from `team` + `date` at load time to match production
-   backtest semantics. Adding `rest_days` to a config's feature list
-   uses the recomputed value; you cannot override it. If you want an
+   recomputes it from `team` + `date` at load time to match
+   production backtest semantics. Adding `rest_days` to a config's
+   feature list uses the recomputed value. If you want an
    alternative rest-quality feature, give it a new name.
 
-   To test a new model family, new feature, or new training scheme:
-   write your own module under `mlb_research/`, emit a config JSON, and
-   call the runner. Wrap, don't edit.
+   `high_conf_threshold` is pinned at the harness level (0.53).
+   Setting it in a config will cause the eval to exit with an error.
+
+   To test a new model family, feature, or training scheme: write
+   your own module under `mlb_research/`, emit a config JSON, and
+   call the runner. Wrap, do not edit.
 
 2. **Every experiment goes through the runner.**
    ```
@@ -206,3 +223,39 @@ Baseline is the first row in `mlb_research/results.tsv`:
 `opt_brier=0.2553, opt_roi=+54.55U` over 795 high-confidence picks
 on 1403 games (2025 Apr-Jul walk-forward). That is the number to
 beat.
+
+## Known caveats (document in RUN_SUMMARY.md)
+
+These are limitations of the benchmark itself that no amount of
+agent effort can fix. Your final summary must acknowledge them:
+
+1. **The 2025 benchmark is partially burned.** The human operator
+   has previously analyzed this data while diagnosing live-model
+   bugs (April 2026 early-season issues). Any feature or
+   hyperparameter the operator already suspected was useful is
+   implicitly part of the prior. A strong-looking result here may
+   be a confirmation of priors, not a novel discovery.
+
+2. **The 2026 monitor is thin.** ~190 rows / ~84-95 games / ~50-80
+   high-conf picks. SE(Brier) on the 2026 monitor is ~0.018, which
+   is *larger* than the optimizer's noise floor. It can veto
+   disasters; it cannot confirm subtle alpha.
+
+3. **Optimizer ↔ 2025-tail monitor share season-level signal.** Same
+   rosters, same bullpens, overlapping team-quality signals. A
+   feature that overfits 2025-level team strengths will look fine
+   on the tail monitor. The 2026 monitor is the only true
+   regime-change check, and it's thin (see #2).
+
+4. **ROI is computed at flat -110.** Real MLB moneylines range
+   roughly -300 to +250. A strategy that preferentially picks heavy
+   favorites gets a flattered ROI here. Brier is not affected; ROI
+   is. Interpret ROI as a directional tie-breaker, not an absolute.
+
+5. **`opt_roi` has wide SE.** At n_hc≈795, SE(ROI) ≈ 27 units. The
+   3-unit regression cap filters only catastrophes, not sub-noise
+   regressions.
+
+Any alpha that survives on BOTH the Aug-Oct monitor AND the 2026
+monitor (even weakly) with `opt_brier` down by ≥0.010 is a real
+candidate. Anything less is probably noise.

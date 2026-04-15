@@ -1,0 +1,1 @@
+SMOKE: shrink toward 0.5 to test n_hc floor

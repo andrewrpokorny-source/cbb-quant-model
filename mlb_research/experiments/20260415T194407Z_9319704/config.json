@@ -1,0 +1,6 @@
+{
+  "features": ["is_home", "rest_days", "prev_win_pct", "opp_win_pct"],
+  "hyperparams": {"n_estimators": 20, "max_depth": 2, "learning_rate": 0.03, "calibration_fraction": 0.2, "min_calibration_rows": 200, "random_state": 42},
+  "calibrated": true,
+  "target": "home_win"
+}

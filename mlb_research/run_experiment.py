@@ -42,6 +42,21 @@ EXPERIMENTS_DIR = os.path.join(RESEARCH_DIR, "experiments")
 
 PER_EXPERIMENT_TIMEOUT_SECONDS = 600  # 10 min hard cap
 
+# Stop conditions -- enforced in code, not just program.md.
+MAX_EXPERIMENTS_SINCE_BASELINE = 50
+MAX_CONSECUTIVE_NON_KEEPS = 15
+
+# Keep-eligibility rules (applied by `recommendation`). At n=1403 games in the
+# optimizer window, Brier standard error is ~0.007, so a single run's max-of-50
+# Gaussian noise floor is ~ΔBrier ~= 0.015. We require a stricter 0.010 delta
+# to be confident an improvement is not within-noise.
+MIN_BRIER_DELTA_FOR_KEEP = 0.010
+# Baseline produces ~795 high-confidence picks over the optimizer window. A
+# genuine improvement should not gut the pick population by > ~35%. Otherwise
+# a win may be "shrink toward 0.5" (Brier floor is 0.25 for uniform 0.5 output)
+# which is not real alpha.
+MIN_N_HC_FOR_KEEP = 500
+
 LEDGER_COLUMNS = [
     "timestamp_utc",
     "commit",
@@ -170,12 +185,17 @@ def fmt(v, digits=4):
 def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) -> str:
     """Recommend keep vs revert against the running-best optimizer row.
 
-    Refuses to recommend KEEP when any metric is missing: a None metric
-    almost always means zero-fold training or zero high-conf picks, neither
-    of which is a real improvement.
+    KEEP requires ALL of:
+      - brier and roi_units both non-None
+      - brier improves by at least MIN_BRIER_DELTA_FOR_KEEP (0.010).
+        Smaller improvements are within the max-of-50-trials noise floor.
+      - roi_units does not regress by more than roi_regression_cap units.
+      - n_high_conf >= MIN_N_HC_FOR_KEEP (guards against "shrink toward 0.5"
+        wins that improve Brier by killing resolution).
     """
     new_brier = opt.get("brier")
     new_roi = opt.get("roi_units")
+    new_n_hc = opt.get("n_high_conf", 0)
     if new_brier is None or new_roi is None:
         return (
             "REVERT (optimizer metric missing -- "
@@ -183,23 +203,38 @@ def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) 
             "picks or zero trained folds."
         )
 
+    if new_n_hc < MIN_N_HC_FOR_KEEP:
+        return (
+            f"REVERT (n_high_conf={new_n_hc} below floor "
+            f"{MIN_N_HC_FOR_KEEP}). A win with < {MIN_N_HC_FOR_KEEP} picks "
+            "is likely resolution collapse, not alpha."
+        )
+
     if best_opt is None:
         return "KEEP (no prior best -- this becomes the baseline)."
 
     best_brier = best_opt["brier"]
     best_roi = best_opt["roi_units"]
+    delta = best_brier - new_brier
 
-    brier_better = new_brier < best_brier
     roi_ok = new_roi > best_roi - roi_regression_cap
+    brier_significant = delta >= MIN_BRIER_DELTA_FOR_KEEP
 
-    if brier_better and roi_ok:
+    if brier_significant and roi_ok:
         return (
             f"KEEP (opt_brier {best_brier:.4f} -> {new_brier:.4f}, "
-            f"opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U)."
+            f"Δ={delta:+.4f}; opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U; "
+            f"n_hc={new_n_hc})."
         )
     reasons = []
-    if not brier_better:
-        reasons.append(f"opt_brier did not improve ({best_brier:.4f} vs {new_brier:.4f})")
+    if not brier_significant:
+        if delta > 0:
+            reasons.append(
+                f"opt_brier improved by only {delta:.4f} (< floor "
+                f"{MIN_BRIER_DELTA_FOR_KEEP}, within-noise at 50 trials)"
+            )
+        else:
+            reasons.append(f"opt_brier did not improve ({best_brier:.4f} vs {new_brier:.4f})")
     if not roi_ok:
         reasons.append(
             f"opt_roi regressed beyond cap {roi_regression_cap}U "
@@ -235,6 +270,37 @@ def running_best_optimizer(rows: list[dict]) -> dict | None:
     return best
 
 
+def _enforce_stop_conditions(rows: list[dict]):
+    """Exit cleanly if either hard cap has been reached.
+
+    These are also stated in program.md but code enforcement exists so a
+    confused agent cannot blow past them.
+    """
+    non_baseline = [r for r in rows if r.get("status") != "baseline"]
+    if len(non_baseline) >= MAX_EXPERIMENTS_SINCE_BASELINE:
+        sys.exit(
+            f"STOP: experiment cap reached ({len(non_baseline)} rows since "
+            f"baseline, cap {MAX_EXPERIMENTS_SINCE_BASELINE}). Write "
+            "mlb_research/RUN_SUMMARY.md and end the run."
+        )
+
+    # Trailing non-keeps (reverted / not-kept / pending). `pending` rows are
+    # treated as implicit revert pressure since they indicate an experiment
+    # that never completed.
+    streak = 0
+    for r in reversed(rows):
+        if r.get("status") in {"reverted", "not-kept", "pending"}:
+            streak += 1
+        else:
+            break
+    if streak >= MAX_CONSECUTIVE_NON_KEEPS:
+        sys.exit(
+            f"STOP: {streak} consecutive non-keeps (cap "
+            f"{MAX_CONSECUTIVE_NON_KEEPS}). The hypothesis menu has likely "
+            "plateaued. Write mlb_research/RUN_SUMMARY.md and end the run."
+        )
+
+
 def cmd_run(args):
     if args.change_type not in VALID_CHANGE_TYPES:
         sys.exit(f"--change-type must be one of {sorted(VALID_CHANGE_TYPES)}")
@@ -246,7 +312,9 @@ def cmd_run(args):
     # Running best is established BEFORE the eval so the recommendation can
     # be computed from a known-consistent snapshot of the ledger, and any
     # ledger corruption aborts before we spend compute on the eval.
-    best = running_best_optimizer(read_all_rows())
+    rows_before = read_all_rows()
+    _enforce_stop_conditions(rows_before)
+    best = running_best_optimizer(rows_before)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = git_head_sha()
@@ -346,13 +414,11 @@ def cmd_finalize(args):
     if idx is None:
         sys.exit("No pending row found in results.tsv.")
 
+    # Always stamp HEAD. Allowing an explicit --commit override was an
+    # attribution-lie vector: an agent could finalize with any SHA string
+    # it liked. HEAD at finalize time is the source of truth.
     rows[idx]["status"] = args.status
-    if args.commit:
-        rows[idx]["commit"] = args.commit
-    else:
-        sha = git_head_sha()
-        if sha:
-            rows[idx]["commit"] = sha
+    rows[idx]["commit"] = git_head_sha()
 
     rewrite_rows(rows)
     print(f"Finalized row {idx + 1}: status={args.status} commit={rows[idx]['commit']}")
@@ -389,7 +455,6 @@ def main():
         required=True,
         help="kept | reverted | not-kept | superseded | baseline",
     )
-    p_fin.add_argument("--commit", default=None, help="Git SHA (defaults to HEAD).")
     p_fin.set_defaults(func=cmd_finalize)
 
     args = parser.parse_args()

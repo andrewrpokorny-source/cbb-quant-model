@@ -52,7 +52,10 @@ ANCHOR_DIR = os.path.dirname(os.path.abspath(__file__))
 FROZEN_CSV = os.path.join(ANCHOR_DIR, "mlb_frozen.csv")
 MANIFEST_PATH = os.path.join(ANCHOR_DIR, "anchor_manifest.json")
 
-HIGH_CONF_THRESHOLD_DEFAULT = 0.53
+# Pinned at the harness level. Configs are NOT allowed to override this --
+# a per-experiment threshold knob makes opt_roi non-comparable across rows
+# (a config with threshold=0.99 trivially gets n_hc=0 and roi=None).
+HIGH_CONF_THRESHOLD = 0.53
 MIN_TRAIN_ROWS = 50
 
 # Production-default feature list for MLB (mirrors MLB_FEATURES in model.py).
@@ -104,8 +107,37 @@ def load_manifest() -> dict:
         return json.load(f)
 
 
+def _sha256_of_file(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def load_frozen_df() -> pd.DataFrame:
+    """Load the frozen CSV, asserting its SHA256 matches the manifest.
+
+    The 444 permission is an honor system; a malicious or buggy agent can
+    chmod + rewrite the file. Re-hashing on every eval is cheap (~30ms for
+    5 MB) and closes the tampering + corruption paths in one shot.
+    """
+    manifest = load_manifest()
+    actual = _sha256_of_file(FROZEN_CSV)
+    expected = manifest["sha256"]
+    if actual != expected:
+        raise RuntimeError(
+            f"Frozen CSV SHA256 mismatch: expected {expected}, got {actual}. "
+            "The anchor has been modified since snapshot. Refusing to evaluate."
+        )
+
     df = pd.read_csv(FROZEN_CSV, low_memory=False)
+    if len(df) != manifest["row_count"]:
+        raise RuntimeError(
+            f"Frozen CSV row count mismatch: expected {manifest['row_count']}, "
+            f"got {len(df)}."
+        )
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
@@ -305,9 +337,15 @@ def main():
     else:
         config = {}
 
+    if "high_conf_threshold" in config:
+        sys.exit(
+            "Config must not set 'high_conf_threshold'. The harness pins "
+            f"it at {HIGH_CONF_THRESHOLD} so opt_roi is comparable across "
+            "experiments. Remove the key and try again."
+        )
+
     features = config.get("features") or DEFAULT_MLB_FEATURES
     target = config.get("target", "home_win")
-    high_conf_threshold = config.get("high_conf_threshold", HIGH_CONF_THRESHOLD_DEFAULT)
 
     manifest = load_manifest()
     df = load_frozen_df()
@@ -318,7 +356,7 @@ def main():
     for key in ("optimizer", "monitor_2025_tail", "monitor_2026"):
         start, end_exclusive = parse_window_bounds(manifest, key)
         preds, diag = walk_forward_window(df, features, target, start, end_exclusive, factory)
-        results[key] = summarize(preds, high_conf_threshold)
+        results[key] = summarize(preds, HIGH_CONF_THRESHOLD)
         diagnostics_by_window[key] = diag
 
     results["_meta"] = {
@@ -326,7 +364,7 @@ def main():
         "n_features": len(features),
         "calibrated": config.get("calibrated", True),
         "target": target,
-        "high_conf_threshold": high_conf_threshold,
+        "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],
         "hyperparams": {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})},
         "diagnostics": diagnostics_by_window,

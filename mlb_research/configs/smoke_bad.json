@@ -10,6 +10,5 @@
     "random_state": 42
   },
   "calibrated": false,
-  "target": "home_win",
-  "high_conf_threshold": 0.53
+  "target": "home_win"
 }
