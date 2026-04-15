@@ -1,0 +1,48 @@
+{
+  "optimizer": {
+    "brier": 0.2505046058988927,
+    "log_loss": 0.6941564933360224,
+    "accuracy": 0.4746682750301568,
+    "high_conf_accuracy": null,
+    "roi_units": 0.0,
+    "n_games": 1658,
+    "n_high_conf": 0
+  },
+  "monitor_2025_tail": {
+    "brier": 0.2504615202614214,
+    "log_loss": 0.6940702875200612,
+    "accuracy": 0.47080745341614905,
+    "high_conf_accuracy": null,
+    "roi_units": 0.0,
+    "n_games": 805,
+    "n_high_conf": 0
+  },
+  "monitor_2026": {
+    "brier": 0.25106906752605324,
+    "log_loss": 0.6952854126606975,
+    "accuracy": 0.4105263157894737,
+    "high_conf_accuracy": null,
+    "roi_units": 0.0,
+    "n_games": 95,
+    "n_high_conf": 0
+  },
+  "_meta": {
+    "features_used": [
+      "is_home",
+      "rest_days"
+    ],
+    "n_features": 2,
+    "calibrated": false,
+    "target": "home_win",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+    "hyperparams": {
+      "n_estimators": 1,
+      "max_depth": 1,
+      "learning_rate": 0.01,
+      "calibration_fraction": 0.2,
+      "min_calibration_rows": 200,
+      "random_state": 42
+    }
+  }
+}

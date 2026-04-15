@@ -1,0 +1,74 @@
+{
+  "optimizer": {
+    "brier": 0.2552993286903339,
+    "log_loss": 0.7206773151301168,
+    "accuracy": 0.5395580898075553,
+    "high_conf_accuracy": 0.559748427672956,
+    "roi_units": 54.545454545454504,
+    "n_games": 1403,
+    "n_high_conf": 795
+  },
+  "monitor_2025_tail": {
+    "brier": 0.23967432821447474,
+    "log_loss": 0.6722148541402391,
+    "accuracy": 0.6016483516483516,
+    "high_conf_accuracy": 0.6195426195426196,
+    "roi_units": 87.90909090909088,
+    "n_games": 728,
+    "n_high_conf": 481
+  },
+  "monitor_2026": {
+    "brier": 0.18709096023179428,
+    "log_loss": 0.5627944580861518,
+    "accuracy": 0.7857142857142857,
+    "high_conf_accuracy": 0.782051282051282,
+    "roi_units": 38.45454545454545,
+    "n_games": 84,
+    "n_high_conf": 78
+  },
+  "_meta": {
+    "features_used": [
+      "is_home",
+      "rest_days",
+      "sp_era",
+      "opp_sp_era",
+      "sp_roll_era",
+      "sp_roll_whip",
+      "sp_roll_k9",
+      "sp_roll_ip",
+      "opp_sp_roll_era",
+      "prev_roll10_runs_per_game",
+      "prev_roll10_runs_allowed",
+      "prev_season_runs_per_game",
+      "prev_season_runs_allowed",
+      "prev_games_played",
+      "opp_win_pct",
+      "prev_win_pct",
+      "prev_roll10_win_pct",
+      "roll10_rpg_diff",
+      "roll10_ra_diff",
+      "sp_era_diff",
+      "sp_roll_era_diff",
+      "prev_volatility",
+      "prev_season_pyth_wpct",
+      "prev_roll10_pyth_wpct",
+      "pyth_wpct_diff",
+      "wind_speed",
+      "bullpen_era_diff",
+      "roll5_rpg_diff"
+    ],
+    "n_features": 28,
+    "calibrated": true,
+    "target": "home_win",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+    "hyperparams": {
+      "n_estimators": 150,
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "calibration_fraction": 0.2,
+      "min_calibration_rows": 200,
+      "random_state": 42
+    }
+  }
+}

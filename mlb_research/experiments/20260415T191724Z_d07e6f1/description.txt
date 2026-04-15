@@ -1,0 +1,1 @@
+SMOKE TEST: intentionally bad (1-stump, 2 feats, no cal)
