@@ -148,24 +148,31 @@ def walk_forward_window(
     window_start: datetime,
     window_end: datetime,
     estimator_factory: Callable,
-) -> pd.DataFrame | None:
+) -> tuple[pd.DataFrame | None, dict]:
     """Walk-forward over a single date window.
 
     Trains on all games in `df` strictly before each weekly cutoff; tests on
     home-team rows within that week (home-only to avoid double-counting each
-    game). Returns a per-prediction DataFrame with prob_home, target, conf.
+    game). Returns (per-prediction DataFrame, diagnostics). Diagnostics
+    include train-row sizes per fold and skip counts -- these surface silent
+    row-drops from ``dropna`` when a new feature has coverage gaps.
     """
     missing = [f for f in features if f not in df.columns]
     if missing:
         raise ValueError(f"Config references features not in frozen CSV: {missing}")
 
     fold_logs = []
+    train_sizes = []
+    skipped_thin_train = 0
+    skipped_empty_week = 0
+
     current = window_start
     while current < window_end:
         next_week = current + timedelta(days=7)
 
         train = df[df["date"] < current].dropna(subset=features + [target])
         if len(train) < MIN_TRAIN_ROWS:
+            skipped_thin_train += 1
             current = next_week
             continue
 
@@ -176,6 +183,7 @@ def walk_forward_window(
         )
         week = df.loc[week_mask].dropna(subset=features + [target])
         if week.empty:
+            skipped_empty_week += 1
             current = next_week
             continue
 
@@ -183,6 +191,7 @@ def walk_forward_window(
         est.fit(train[features].astype(float), train[target].astype(int))
         probs = est.predict_proba(week[features].astype(float))[:, 1]
 
+        train_sizes.append(int(len(train)))
         fold_logs.append(
             pd.DataFrame(
                 {
@@ -195,9 +204,17 @@ def walk_forward_window(
         )
         current = next_week
 
+    diagnostics = {
+        "n_folds_trained": len(fold_logs),
+        "n_folds_skipped_thin_train": skipped_thin_train,
+        "n_folds_skipped_empty_week": skipped_empty_week,
+        "train_rows_min": min(train_sizes) if train_sizes else None,
+        "train_rows_max": max(train_sizes) if train_sizes else None,
+        "train_rows_mean": (sum(train_sizes) / len(train_sizes)) if train_sizes else None,
+    }
     if not fold_logs:
-        return None
-    return pd.concat(fold_logs, ignore_index=True)
+        return None, diagnostics
+    return pd.concat(fold_logs, ignore_index=True), diagnostics
 
 
 def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> dict:
@@ -217,8 +234,6 @@ def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> d
     pred_class = (p > 0.5).astype(int)
 
     brier = float(brier_score_loss(y, p))
-    # Clip for numerical stability. sklearn log_loss handles this internally
-    # with epsilon but being explicit keeps the metric reproducible.
     p_clipped = np.clip(p, 1e-6, 1 - 1e-6)
     ll = float(log_loss(y, p_clipped, labels=[0, 1]))
     acc = float((pred_class == y).mean())
@@ -229,17 +244,20 @@ def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> d
         hc_correct = int((pred_class[hc_mask.values] == y[hc_mask.values]).sum())
         hc_acc = hc_correct / n_hc
         payout = 100.0 / 110.0  # -110 break-even payout
-        roi = (hc_correct * payout) - (n_hc - hc_correct)
+        roi = float((hc_correct * payout) - (n_hc - hc_correct))
     else:
+        # Zero high-conf picks: ROI is undefined, not zero. A `0.0` here would
+        # be indistinguishable from a break-even 54-pick slate and would fool
+        # the keep/revert rule.
         hc_acc = None
-        roi = 0.0
+        roi = None
 
     return {
         "brier": brier,
         "log_loss": ll,
         "accuracy": acc,
         "high_conf_accuracy": hc_acc,
-        "roi_units": float(roi),
+        "roi_units": roi,
         "n_games": int(len(predictions)),
         "n_high_conf": n_hc,
     }
@@ -254,12 +272,30 @@ def parse_window_bounds(manifest: dict, key: str) -> tuple[datetime, datetime]:
     return start, end_inclusive + timedelta(days=1)
 
 
+def atomic_write_json(path: str, obj: dict):
+    """Write JSON atomically so a crash mid-write cannot leave a half-file."""
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp, path)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model-config",
         default=None,
         help="Path to model config JSON. Defaults to production MLB setup.",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "If given, write results JSON atomically to this path (runner "
+            "uses this to avoid parsing stdout which can be corrupted by "
+            "stray prints from imported modules). If omitted, print to "
+            "stdout for interactive use."
+        ),
     )
     args = parser.parse_args()
 
@@ -278,10 +314,12 @@ def main():
     factory = build_estimator_factory(config)
 
     results = {}
+    diagnostics_by_window = {}
     for key in ("optimizer", "monitor_2025_tail", "monitor_2026"):
         start, end_exclusive = parse_window_bounds(manifest, key)
-        preds = walk_forward_window(df, features, target, start, end_exclusive, factory)
+        preds, diag = walk_forward_window(df, features, target, start, end_exclusive, factory)
         results[key] = summarize(preds, high_conf_threshold)
+        diagnostics_by_window[key] = diag
 
     results["_meta"] = {
         "features_used": features,
@@ -291,9 +329,13 @@ def main():
         "high_conf_threshold": high_conf_threshold,
         "anchor_sha256": manifest["sha256"],
         "hyperparams": {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})},
+        "diagnostics": diagnostics_by_window,
     }
 
-    print(json.dumps(results, indent=2))
+    if args.output:
+        atomic_write_json(args.output, results)
+    else:
+        print(json.dumps(results, indent=2))
 
 
 if __name__ == "__main__":

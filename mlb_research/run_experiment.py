@@ -29,6 +29,7 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -77,18 +78,23 @@ VALID_CHANGE_TYPES = {
 }
 
 
-def ensure_ledger_exists():
-    if not os.path.exists(RESULTS_TSV):
-        with open(RESULTS_TSV, "w", newline="") as f:
-            w = csv.writer(f, delimiter="\t")
-            w.writerow(LEDGER_COLUMNS)
+def _write_tsv_atomic(rows: list[dict]):
+    """Write the whole ledger via tmp-file + os.replace. A crash mid-write
+    cannot leave a truncated results.tsv."""
+    tmp = RESULTS_TSV + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=LEDGER_COLUMNS, delimiter="\t")
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: r.get(c, "") for c in LEDGER_COLUMNS})
+    os.replace(tmp, RESULTS_TSV)
 
 
 def append_row(row: dict):
-    ensure_ledger_exists()
-    with open(RESULTS_TSV, "a", newline="") as f:
-        w = csv.writer(f, delimiter="\t")
-        w.writerow([row.get(c, "") for c in LEDGER_COLUMNS])
+    """Append one row. Reads-then-rewrites so the write is atomic."""
+    rows = read_all_rows()
+    rows.append(row)
+    _write_tsv_atomic(rows)
 
 
 def read_all_rows() -> list[dict]:
@@ -99,31 +105,36 @@ def read_all_rows() -> list[dict]:
 
 
 def rewrite_rows(rows: list[dict]):
-    with open(RESULTS_TSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=LEDGER_COLUMNS, delimiter="\t")
-        w.writeheader()
-        for r in rows:
-            w.writerow({c: r.get(c, "") for c in LEDGER_COLUMNS})
+    _write_tsv_atomic(rows)
 
 
 def git_head_sha() -> str:
+    """Return short HEAD SHA. Hard-fail if git is unavailable -- commit
+    attribution is load-bearing for the ledger."""
     try:
         out = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=REPO_ROOT,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=10,
         )
-        return out.decode().strip()
-    except subprocess.CalledProcessError:
-        return ""
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"Unable to resolve git HEAD SHA (required for attribution): {e}")
+    sha = out.decode().strip()
+    if not sha:
+        sys.exit("git rev-parse returned empty SHA.")
+    return sha
 
 
-def run_eval(config_path: str | None) -> dict:
-    cmd = [sys.executable, ANCHOR_EVAL]
+def run_eval(config_path: str | None, output_path: str) -> dict:
+    """Run anchor_eval.py writing its JSON to `output_path`. Using a file
+    instead of stdout avoids silent corruption from stray prints in the
+    import chain (which would blow up json.loads)."""
+    cmd = [sys.executable, ANCHOR_EVAL, "--output", output_path]
     if config_path:
         cmd += ["--model-config", config_path]
     try:
-        proc = subprocess.run(
+        subprocess.run(
             cmd,
             cwd=REPO_ROOT,
             capture_output=True,
@@ -131,12 +142,20 @@ def run_eval(config_path: str | None) -> dict:
             timeout=PER_EXPERIMENT_TIMEOUT_SECONDS,
             check=True,
         )
-    except subprocess.TimeoutExpired:
-        sys.exit(f"anchor_eval.py exceeded {PER_EXPERIMENT_TIMEOUT_SECONDS}s timeout.")
+    except subprocess.TimeoutExpired as e:
+        stderr = (e.stderr or "").strip()
+        sys.exit(
+            f"anchor_eval.py exceeded {PER_EXPERIMENT_TIMEOUT_SECONDS}s timeout."
+            + (f"\nLast stderr: {stderr[-500:]}" if stderr else "")
+        )
     except subprocess.CalledProcessError as e:
-        sys.stderr.write(e.stderr)
+        sys.stderr.write(e.stderr or "")
         sys.exit(f"anchor_eval.py failed with exit code {e.returncode}.")
-    return json.loads(proc.stdout)
+
+    if not os.path.exists(output_path):
+        sys.exit(f"anchor_eval.py did not write {output_path}.")
+    with open(output_path) as f:
+        return json.load(f)
 
 
 def fmt(v, digits=4):
@@ -149,16 +168,26 @@ def fmt(v, digits=4):
 
 
 def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) -> str:
-    """Recommend keep vs revert against the running-best optimizer row."""
+    """Recommend keep vs revert against the running-best optimizer row.
+
+    Refuses to recommend KEEP when any metric is missing: a None metric
+    almost always means zero-fold training or zero high-conf picks, neither
+    of which is a real improvement.
+    """
+    new_brier = opt.get("brier")
+    new_roi = opt.get("roi_units")
+    if new_brier is None or new_roi is None:
+        return (
+            "REVERT (optimizer metric missing -- "
+            f"brier={new_brier}, roi={new_roi}). Likely zero high-conf "
+            "picks or zero trained folds."
+        )
+
     if best_opt is None:
         return "KEEP (no prior best -- this becomes the baseline)."
-    try:
-        new_brier = float(opt["brier"])
-        new_roi = float(opt["roi_units"])
-        best_brier = float(best_opt["brier"])
-        best_roi = float(best_opt["roi_units"])
-    except (TypeError, ValueError, KeyError):
-        return "UNDECIDED (missing metrics)."
+
+    best_brier = best_opt["brier"]
+    best_roi = best_opt["roi_units"]
 
     brier_better = new_brier < best_brier
     roi_ok = new_roi > best_roi - roi_regression_cap
@@ -180,20 +209,30 @@ def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) 
 
 
 def running_best_optimizer(rows: list[dict]) -> dict | None:
-    """Best opt_brier among rows with status in {baseline, kept}."""
+    """Best opt_brier among rows with status in {baseline, kept}.
+
+    Hard-fails if a baseline/kept row has an unparseable opt_brier or opt_roi:
+    a corrupted comparator silently hides regressions and is the most
+    dangerous form of ledger rot in an unattended run.
+    """
     best = None
-    for r in rows:
+    for idx, r in enumerate(rows):
         if r.get("status") not in {"baseline", "kept"}:
             continue
+        raw_brier = r.get("opt_brier", "")
+        raw_roi = r.get("opt_roi", "")
         try:
-            brier = float(r["opt_brier"])
-        except (TypeError, ValueError, KeyError):
-            continue
-        if best is None or brier < float(best["opt_brier"]):
-            best = r
-    if best is None:
-        return None
-    return {"brier": best["opt_brier"], "roi_units": best["opt_roi"]}
+            brier = float(raw_brier)
+            roi = float(raw_roi)
+        except (TypeError, ValueError) as e:
+            sys.exit(
+                f"Corrupt ledger row #{idx + 1} "
+                f"(status={r.get('status')}, commit={r.get('commit')}): "
+                f"cannot parse opt_brier={raw_brier!r} / opt_roi={raw_roi!r} ({e})"
+            )
+        if best is None or brier < best["brier"]:
+            best = {"brier": brier, "roi_units": roi, "row_idx": idx}
+    return best
 
 
 def cmd_run(args):
@@ -204,28 +243,33 @@ def cmd_run(args):
     if config_path and not os.path.isabs(config_path):
         config_path = os.path.abspath(config_path)
 
-    results = run_eval(config_path)
+    # Running best is established BEFORE the eval so the recommendation can
+    # be computed from a known-consistent snapshot of the ledger, and any
+    # ledger corruption aborts before we spend compute on the eval.
+    best = running_best_optimizer(read_all_rows())
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = git_head_sha()
-    archive_dir = os.path.join(EXPERIMENTS_DIR, f"{timestamp}_{commit or 'no-commit'}")
+    archive_dir = os.path.join(EXPERIMENTS_DIR, f"{timestamp}_{commit}")
     os.makedirs(archive_dir, exist_ok=True)
 
-    archived_config = ""
-    if config_path and os.path.exists(config_path):
-        archived_config = os.path.join(archive_dir, "config.json")
-        with open(config_path) as src, open(archived_config, "w") as dst:
-            dst.write(src.read())
-    else:
-        # No config given: record that default was used.
-        with open(os.path.join(archive_dir, "config.json"), "w") as dst:
-            json.dump({"_note": "anchor_eval defaults"}, dst, indent=2)
-        archived_config = os.path.join(archive_dir, "config.json")
+    metrics_path = os.path.join(archive_dir, "metrics.json")
+    results = run_eval(config_path, metrics_path)
 
-    with open(os.path.join(archive_dir, "metrics.json"), "w") as f:
-        json.dump(results, f, indent=2)
+    archived_config_path = os.path.join(archive_dir, "config.json")
+    if config_path and os.path.exists(config_path):
+        shutil.copyfile(config_path, archived_config_path)
+    else:
+        with open(archived_config_path, "w") as dst:
+            json.dump({"_note": "anchor_eval defaults"}, dst, indent=2)
     with open(os.path.join(archive_dir, "description.txt"), "w") as f:
         f.write(args.description + "\n")
+
+    # Validate shape before writing anything to results.tsv. A KeyError here
+    # would leave the archive dir orphaned with no ledger row.
+    for key in ("optimizer", "monitor_2025_tail", "monitor_2026"):
+        if key not in results:
+            sys.exit(f"anchor_eval output missing top-level key: {key}")
 
     opt = results["optimizer"]
     mon25 = results["monitor_2025_tail"]
@@ -249,25 +293,37 @@ def cmd_run(args):
         "status": args.status,
         "change_type": args.change_type,
         "description": args.description,
-        "config_path": archived_config,
+        "config_path": os.path.relpath(archived_config_path, REPO_ROOT),
         "archive_dir": os.path.relpath(archive_dir, REPO_ROOT),
     }
     append_row(row)
 
-    # Summary + recommendation (optimizer columns only).
-    existing_rows = read_all_rows()[:-1]  # exclude the row we just wrote
-    best = running_best_optimizer(existing_rows)
     rec = recommendation(opt, best, args.roi_regression_cap)
 
+    # Monitor columns are deliberately NOT printed. They exist in
+    # results.tsv for human review but should not influence the agent's
+    # next hypothesis. Monitors are also archived in metrics.json.
     print("=" * 72)
     print(f"EXPERIMENT: {args.description}")
     print(f"  change_type={args.change_type}  status={args.status}")
     print(f"  archive={row['archive_dir']}")
     print()
-    print(f"  OPTIMIZER    brier={fmt(opt['brier'])} roi={fmt(opt['roi_units'],2):>7}U  n_hc={opt['n_high_conf']}")
-    print(f"  (monitors, for human review -- do NOT drive decisions)")
-    print(f"  mon_2025_tail brier={fmt(mon25['brier'])} roi={fmt(mon25['roi_units'],2):>7}U  n_hc={mon25['n_high_conf']}")
-    print(f"  mon_2026      brier={fmt(mon26['brier'])} roi={fmt(mon26['roi_units'],2):>7}U  n_hc={mon26['n_high_conf']}")
+    print(
+        f"  OPTIMIZER  brier={fmt(opt['brier'])}  "
+        f"roi={fmt(opt['roi_units'], 2)}U  "
+        f"n_hc={opt['n_high_conf']}  n_games={opt['n_games']}"
+    )
+    diag = results.get("_meta", {}).get("diagnostics", {}).get("optimizer", {})
+    if diag:
+        print(
+            f"  (folds={diag.get('n_folds_trained')}, "
+            f"skipped={diag.get('n_folds_skipped_thin_train')}+"
+            f"{diag.get('n_folds_skipped_empty_week')}, "
+            f"train_rows min/mean/max="
+            f"{diag.get('train_rows_min')}/"
+            f"{int(diag['train_rows_mean']) if diag.get('train_rows_mean') else None}/"
+            f"{diag.get('train_rows_max')})"
+        )
     print()
     print(f"  Recommendation: {rec}")
     print("=" * 72)

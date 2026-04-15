@@ -22,7 +22,7 @@ revert. Pretend they are not there.
 
 1. **Edit scope.** You may create/modify any file under `mlb_research/`.
    You MUST NOT edit any of the following (they belong to the live
-   production pipeline):
+   production pipeline or define the frozen benchmark):
    - `mlb/` (any file)
    - `model.py`, `backtest.py`, `predict.py`, `main.py`, `features.py`
    - `mlb_training_data_processed.csv`
@@ -31,6 +31,17 @@ revert. Pretend they are not there.
    - `mlb_research/anchor/snapshot_data.py`
    - `mlb_research/anchor/anchor_eval.py` (evaluation must not change
      mid-run; changing it invalidates all prior rows in `results.tsv`)
+
+   You MUST NOT run `mlb_research/anchor/snapshot_data.py --force`
+   during the loop. Re-freezing mid-run changes the anchor SHA256 and
+   invalidates every previously recorded metric. Re-freezing is a
+   human decision to end and restart the run.
+
+   `rest_days` is a reserved derived column: `anchor_eval.py`
+   recomputes it from `team` + `date` at load time to match production
+   backtest semantics. Adding `rest_days` to a config's feature list
+   uses the recomputed value; you cannot override it. If you want an
+   alternative rest-quality feature, give it a new name.
 
    To test a new model family, new feature, or new training scheme:
    write your own module under `mlb_research/`, emit a config JSON, and
@@ -55,14 +66,17 @@ revert. Pretend they are not there.
      git commit -m "Exp N: <desc> -- opt_brier=0.xxxx (was 0.yyyy)"
      uv run python mlb_research/run_experiment.py finalize --status kept
      ```
-   - **Revert** if the runner says `REVERT` -- discard edits and mark
-     the row reverted:
+   - **Revert** if the runner says `REVERT` -- discard edits to tracked
+     files and remove untracked files *under mlb_research/* only:
      ```
-     git restore . && git clean -fd
+     git restore .
+     git clean -fd -e 'mlb_research/experiments/' -e 'mlb_research/results.tsv'
      uv run python mlb_research/run_experiment.py finalize --status reverted
      ```
-     The row stays in `results.tsv` with `status=reverted` so you do
-     not retry the same dead end.
+     Do NOT run a repo-wide `git clean -fd`; it will wipe archived
+     experiment directories and the pending ledger row's referenced
+     metrics. The row stays in `results.tsv` with `status=reverted`
+     so you do not retry the same dead end.
    - Rows with `status=reverted` and `status=not-kept` are evidence.
      Before forming a new hypothesis, read them. Do not repeat what
      already failed.
