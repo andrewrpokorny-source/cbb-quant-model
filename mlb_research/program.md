@@ -176,12 +176,17 @@ This is a starting menu, not exhaustive. Add your own.
 - Subsampling / feature fraction (GradientBoostingClassifier does not
   natively support col sampling -- a LightGBM swap does).
 
-### Model family swap
-- LightGBM via `lightgbm.LGBMClassifier` (wrap it, expose same
-  `fit`/`predict_proba` interface).
-- XGBoost via `xgboost.XGBClassifier`.
-- CatBoost via `catboost.CatBoostClassifier`.
-- Simple two-model averaging ensemble.
+### Model family swap (NOW REACHABLE)
+- Set `"model_family": "lightgbm"` in config. Supported families:
+  `sklearn_gbm` (default), `lightgbm`, `xgboost`.
+- LightGBM and XGBoost also accept `subsample` and
+  `colsample_bytree` in hyperparams (default 0.8 each).
+- `calibrated: true` only applies to `sklearn_gbm` (uses the
+  vendored `TimeAwareCalibratedGBM`). For LightGBM/XGBoost the
+  raw classifier is used directly -- explore Platt scaling or
+  isotonic as a follow-up.
+- Simple two-model averaging ensemble (write a wrapper estimator
+  under `mlb_research/` that exposes `fit`/`predict_proba`).
 - Stacked: GBM + logistic regression meta-learner.
 
 ### Calibration variants
@@ -223,6 +228,25 @@ Baseline is the first row in `mlb_research/results.tsv`:
 `opt_brier=0.2553, opt_roi=+54.55U` over 795 high-confidence picks
 on 1403 games (2025 Apr-Jul walk-forward). That is the number to
 beat.
+
+### Context from Run 1
+
+Run 1 (11 experiments, all reverted) established that:
+- **Regularization is the dominant lever.** `max_depth=1` reached
+  `opt_brier=0.2456` (delta -0.0097, missed 0.010 floor by 0.0003)
+  with ROI doubling to +105U. Both silent monitors corroborated.
+- Feature additions (park_factor, opponent raw features) did not
+  help; diffs already absorb the signal.
+- Disabling calibration was catastrophic (+0.010 Brier).
+- Moneyline/total_line/run_line are 100% NaN in the frozen CSV.
+
+**Promising direction for Run 2:** Try `max_depth=1` as a
+*combined* change with another knob (lr or n_estimators) since its
+individual delta was just under the floor. Also try LightGBM and
+XGBoost (now reachable via the `model_family` config key). Feature
+pruning is also untried.
+
+Read `mlb_research/RUN_SUMMARY.md` for the full Run 1 trajectory.
 
 ## Known caveats (document in RUN_SUMMARY.md)
 

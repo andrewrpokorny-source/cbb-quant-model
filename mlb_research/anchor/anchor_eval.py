@@ -238,12 +238,54 @@ def load_frozen_df() -> pd.DataFrame:
     return df
 
 
+SUPPORTED_MODEL_FAMILIES = {"sklearn_gbm", "lightgbm", "xgboost"}
+
+
 def build_estimator_factory(config: dict) -> Callable:
     hp = {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})}
     calibrated = config.get("calibrated", True)
+    family = config.get("model_family", "sklearn_gbm")
+    if family not in SUPPORTED_MODEL_FAMILIES:
+        sys.exit(
+            f"Unsupported model_family={family!r}. "
+            f"Must be one of {sorted(SUPPORTED_MODEL_FAMILIES)}."
+        )
+
+    def _build_base(hp_dict, fam):
+        if fam == "lightgbm":
+            import lightgbm as lgb
+            return lgb.LGBMClassifier(
+                n_estimators=hp_dict["n_estimators"],
+                learning_rate=hp_dict["learning_rate"],
+                max_depth=hp_dict["max_depth"],
+                random_state=hp_dict["random_state"],
+                subsample=hp_dict.get("subsample", 0.8),
+                colsample_bytree=hp_dict.get("colsample_bytree", 0.8),
+                verbosity=-1,
+            )
+        if fam == "xgboost":
+            import xgboost as xgb
+            return xgb.XGBClassifier(
+                n_estimators=hp_dict["n_estimators"],
+                learning_rate=hp_dict["learning_rate"],
+                max_depth=hp_dict["max_depth"],
+                random_state=hp_dict["random_state"],
+                subsample=hp_dict.get("subsample", 0.8),
+                colsample_bytree=hp_dict.get("colsample_bytree", 0.8),
+                eval_metric="logloss",
+                verbosity=0,
+            )
+        # Default: sklearn GBM
+        return GradientBoostingClassifier(
+            n_estimators=hp_dict["n_estimators"],
+            learning_rate=hp_dict["learning_rate"],
+            max_depth=hp_dict["max_depth"],
+            random_state=hp_dict["random_state"],
+        )
 
     def factory():
-        if calibrated:
+        if calibrated and family == "sklearn_gbm":
+            # Use the vendored TimeAwareCalibratedGBM only for sklearn GBM.
             return TimeAwareCalibratedGBM(
                 n_estimators=hp["n_estimators"],
                 learning_rate=hp["learning_rate"],
@@ -252,12 +294,10 @@ def build_estimator_factory(config: dict) -> Callable:
                 calibration_fraction=hp["calibration_fraction"],
                 min_calibration_rows=hp["min_calibration_rows"],
             )
-        return GradientBoostingClassifier(
-            n_estimators=hp["n_estimators"],
-            learning_rate=hp["learning_rate"],
-            max_depth=hp["max_depth"],
-            random_state=hp["random_state"],
-        )
+        # For LightGBM / XGBoost, or uncalibrated sklearn: return the raw
+        # classifier. Calibration wrapping for non-sklearn families can be
+        # explored in a future harness iteration.
+        return _build_base(hp, family)
 
     return factory
 

@@ -275,29 +275,46 @@ def _enforce_stop_conditions(rows: list[dict]):
 
     These are also stated in program.md but code enforcement exists so a
     confused agent cannot blow past them.
+
+    Experiment count and revert-streak are computed relative to the most
+    recent baseline/kept row, not all-time. This prevents pre-run artifacts
+    (smoke tests, prior-session reverts) from seeding the stop condition.
     """
-    non_baseline = [r for r in rows if r.get("status") != "baseline"]
-    if len(non_baseline) >= MAX_EXPERIMENTS_SINCE_BASELINE:
+    # Find the index of the most recent baseline or kept row.
+    anchor_idx = -1
+    for i, r in enumerate(rows):
+        if r.get("status") in {"baseline", "kept"}:
+            anchor_idx = i
+
+    experiments_since_anchor = rows[anchor_idx + 1:] if anchor_idx >= 0 else rows
+    real_experiments = [
+        r for r in experiments_since_anchor
+        if r.get("status") not in {"baseline", "superseded"}
+    ]
+
+    if len(real_experiments) >= MAX_EXPERIMENTS_SINCE_BASELINE:
         sys.exit(
-            f"STOP: experiment cap reached ({len(non_baseline)} rows since "
-            f"baseline, cap {MAX_EXPERIMENTS_SINCE_BASELINE}). Write "
-            "mlb_research/RUN_SUMMARY.md and end the run."
+            f"STOP: experiment cap reached ({len(real_experiments)} experiments "
+            f"since last baseline/kept, cap {MAX_EXPERIMENTS_SINCE_BASELINE}). "
+            "Write mlb_research/RUN_SUMMARY.md and end the run."
         )
 
-    # Trailing non-keeps (reverted / not-kept / pending). `pending` rows are
-    # treated as implicit revert pressure since they indicate an experiment
-    # that never completed.
+    # Trailing non-keeps counted from the most recent baseline/kept row
+    # forward. Superseded rows (crash-recovery markers) don't break streaks.
     streak = 0
-    for r in reversed(rows):
+    for r in reversed(experiments_since_anchor):
         if r.get("status") in {"reverted", "not-kept", "pending"}:
             streak += 1
+        elif r.get("status") == "superseded":
+            continue  # session boundary, ignore
         else:
             break
     if streak >= MAX_CONSECUTIVE_NON_KEEPS:
         sys.exit(
-            f"STOP: {streak} consecutive non-keeps (cap "
-            f"{MAX_CONSECUTIVE_NON_KEEPS}). The hypothesis menu has likely "
-            "plateaued. Write mlb_research/RUN_SUMMARY.md and end the run."
+            f"STOP: {streak} consecutive non-keeps since last baseline/kept "
+            f"(cap {MAX_CONSECUTIVE_NON_KEEPS}). The hypothesis menu has "
+            "likely plateaued. Write mlb_research/RUN_SUMMARY.md and end "
+            "the run."
         )
 
 
