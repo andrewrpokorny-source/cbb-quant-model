@@ -1,0 +1,14 @@
+{
+  "_description": "LightGBM stumps with learning_rate=0.03.",
+  "model_family": "lightgbm",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 1,
+    "learning_rate": 0.03,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
+  },
+  "calibrated": false,
+  "target": "home_win"
+}

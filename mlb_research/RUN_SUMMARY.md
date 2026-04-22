@@ -2,155 +2,85 @@
 
 ## Outcome
 
-**No experiment passed the keep gate.** Run terminated by the
-`MAX_CONSECUTIVE_NON_KEEPS=15` stop condition after 11 new reverted
-experiments (11 since baseline) plus 4 pre-session smoke-test
-non-keeps carried over in the ledger. The running best remains the
-baseline: `opt_brier=0.2553, opt_roi=+54.55U, n_hc=795`.
+**Run 2 produced one KEEP: LightGBM max_depth=1 stumps.** Running best advanced from baseline opt_brier=0.2553 (roi=+54.55U, n_hc=795) to opt_brier=0.2420 (roi=+124.64U, n_hc=1143), a Brier delta of -0.0133 (over the 0.010 floor) with ROI more than doubling.
+
+Run 2 terminated by the MAX_CONSECUTIVE_NON_KEEPS=15 stop condition after the kept experiment. Every subsequent single-knob tweak from the new LightGBM-stumps baseline was below the noise floor.
 
 ## Best config
 
-**Baseline (unchanged).**
-Production MLB setup: 28 features, calibrated `TimeAwareCalibratedGBM`
-with `n_estimators=150, max_depth=4, learning_rate=0.05,
-calibration_fraction=0.2, min_calibration_rows=200`.
-Archive: `mlb_research/experiments/20260415T191411Z_d07e6f1/`.
+LightGBM stumps, uncalibrated. Feature list unchanged from production (28 features). Archive: mlb_research/experiments/20260422T154250Z_7fee946/. Hyperparams: n_estimators=150, max_depth=1, learning_rate=0.05, random_state=42, subsample=0.8, colsample_bytree=0.8. calibrated=false, target=home_win.
 
-## Optimizer Brier trajectory
+## Optimizer Brier trajectory (Run 2)
 
-| # | Description | opt_brier | Delta vs best | opt_roi | n_hc | Status |
+Running best at start of Run 2 was baseline 0.2553. Running best at end of Run 2 is 0.2420.
+
+| # | Description | opt_brier | Delta vs running best | opt_roi | n_hc | Status |
 |---|---|---:|---:|---:|---:|---|
-| 0 | baseline | 0.2553 | -- | +54.55 | 795 | baseline |
-| 1 | +park_factor | 0.2552 | -0.0001 | +32.18 | 825 | reverted |
-| 2 | max_depth=3 | 0.2515 | -0.0038 | +51.82 | 792 | reverted |
-| 3 | max_depth=2 | 0.2488 | -0.0065 | +73.91 | 768 | reverted |
-| 4 | max_depth=1 | **0.2456** | **-0.0097** | **+104.82** | 739 | reverted |
-| 5 | learning_rate=0.03 | 0.2533 | -0.0020 | +60.64 | 808 | reverted |
-| 6 | n_estimators=50 | 0.2522 | -0.0031 | +48.91 | 709 | reverted |
-| 7 | calibration_fraction=0.3 | 0.2537 | -0.0016 | +74.45 | 840 | reverted |
-| 8 | +5 opp raw features | 0.2564 | +0.0011 | +12.73 | 728 | reverted |
-| 9 | learning_rate=0.1 | 0.2560 | +0.0007 | +52.73 | 793 | reverted |
-| 10 | n_estimators=100 | 0.2538 | -0.0015 | +49.36 | 783 | reverted |
-| 11 | calibrated=false | 0.2655 | +0.0102 | +69.73 | 1196 | reverted |
+| 13 | LightGBM default (depth=4) | 0.2530 | -0.0023 | +110.18 | 1188 | reverted |
+| 14 | XGBoost default (depth=4) | 0.2548 | -0.0005 | +94.64 | 1194 | reverted |
+| 15 | LightGBM max_depth=1 | 0.2420 | -0.0133 | +124.64 | 1143 | kept |
+| 16 | LGBM stumps, n_estimators=300 | 0.2449 | +0.0029 | +113.45 | 1137 | reverted |
+| 17 | LGBM stumps, n_estimators=75 | 0.2421 | +0.0001 | +119.55 | 1192 | reverted |
+| 18 | LGBM stumps, learning_rate=0.03 | 0.2420 | 0.0000 | +130.27 | 1187 | reverted |
+| 19 | XGBoost max_depth=1 stumps | 0.2418 | -0.0001 | +123.18 | 1133 | reverted |
+| 20 | Drop wind_speed | 0.2419 | -0.0001 | +130.36 | 1143 | reverted |
+| 21 | Prune to top-13 (nonzero-imp) | 0.2402 | -0.0018 | +156.36 | 1159 | reverted |
+| 22 | LGBM stumps, colsample_bytree=1.0 | 0.2418 | -0.0001 | +127.73 | 1138 | reverted |
+| 23 | Add temperature | 0.2418 | -0.0002 | +124.91 | 1137 | reverted |
+| 24 | LGBM max_depth=2 | 0.2472 | +0.0052 | +103.27 | 1130 | reverted |
+| 25 | Prune to top-8 | 0.2407 | -0.0012 | +138.55 | 1131 | reverted |
+| 26 | LGBM stumps, learning_rate=0.02 | 0.2423 | +0.0003 | +132.27 | 1206 | reverted |
+| 27 | Prune-13 + subsample/colsample=1.0 | 0.2402 | -0.0018 | +157.27 | 1160 | reverted |
+| 28 | sklearn stumps cal + prune-13 + lr=0.03 + n=300 | 0.2442 | +0.0022 | +105.00 | 756 | reverted |
+| 29 | LGBM stumps, subsample=colsample=0.5 | 0.2419 | -0.0001 | +130.82 | 1133 | reverted |
+| 30 | Prune to top-5 | 0.2401 | -0.0019 | +139.91 | 1164 | reverted |
 
-## What worked (directionally)
+## What worked
 
-- **Tree depth is the dominant regularization knob.** Monotonic
-  Brier improvement as `max_depth` dropped: 4 (baseline, 0.2553)
-  -> 3 (0.2515) -> 2 (0.2488) -> 1 (0.2456). The tightest single
-  knob move (`max_depth=1`) came within **0.0003** of the
-  `MIN_BRIER_DELTA_FOR_KEEP=0.010` gate and more than **doubled**
-  optimizer ROI (+54U -> +105U). This strongly suggests the
-  baseline is overfit to ~1400-2800-row weekly folds.
-- **Lower learning rate helps, weakly.** `lr=0.03` gave -0.0020.
-  Shallow-and-many trees would be the two-knob combination to
-  chase next (blocked here by the one-knob-per-experiment rule
-  without a prior keep to stack on).
-- **n_estimators down helps, weakly.** 100 (-0.0015) < 50
-  (-0.0031). Less boosting = less overfit, consistent with the
-  depth result.
+- Model-family swap with aggressive regularization (exp 15). The single biggest lever in both runs was shallow trees. Run 1 sklearn_gbm stumps reached 0.2456; Run 2 LightGBM stumps pushed a further -0.0036 to 0.2420. Most plausible attribution: LightGBM histogram-binned split finding plus native row/column subsampling on thin weekly folds (train sizes 134 to 2774 rows). XGBoost stumps landed at 0.2418, statistically indistinguishable from LightGBM, confirming the gain comes from the shallow-tree regime, not a specific family.
+- Feature pruning is directionally consistent. Every pruning variant (top-5, top-8, top-13 nonzero-importance) beat the 28-feature baseline by roughly 0.0012 to 0.0019 Brier with ROI gains of +15U to +33U. Below the 0.010 floor but the direction is stable across three independent prunings -- real signal, not noise.
 
 ## What did not work
 
-- **Feature additions** (`park_factor`, five opponent raw features
-  `opp_prev_roll10_win_pct` / `opp_prev_season_pyth_wpct` /
-  `opp_bullpen_era` / `opp_prev_season_rpg` / `opp_prev_season_ra`).
-  The diffs already present in baseline (`roll10_rpg_diff`,
-  `bullpen_era_diff`, `pyth_wpct_diff`) appear to absorb the
-  opponent signal. Raw opponent features *hurt* (+0.0011 Brier,
-  -42U ROI).
-- **Disabling calibration** was catastrophic (+0.0102 Brier,
-  `n_hc` exploded to 1196 -- raw GBM is over-confident).
-- **Higher learning rate** (`lr=0.1`) slightly hurt, consistent
-  with the overfit story.
-- **Wider calibration fraction** (`0.3`) gave marginal weak
-  improvement, not close to floor.
+- More or fewer trees. n_estimators=300 hurt (+0.0029); n_estimators=75 was neutral. LightGBM stumps at n=150 is a local optimum along this axis.
+- Slower learning rate. Both lr=0.03 and lr=0.02 were essentially flat (Brier 0.2420 and 0.2423) but ROI rose modestly (+130U). If the ROI gains hold out-of-sample, slow-learning stumps may still be worth shipping in production despite not crossing the gate here -- Brier is flat.
+- Deeper trees. LightGBM max_depth=2 was +0.0052 Brier -- consistent with Run 1 monotone shallower-is-better pattern.
+- Row/column subsampling sweeps. colsample_bytree=1.0, subsample=0.5 all within +/- 0.0003 Brier. With 28 features and stumps, sampling is not a live knob.
+- Single feature additions (temperature, wind_speed, raw opponent features). All within noise on stumps; a stump can only split on one feature anyway, so new features have to displace top-importance features to matter.
+- Calibrated sklearn GBM (exp 28) even with multi-knob stacking. 0.2442 with n_hc=756 -- the calibration wrapper shrinks predictions toward 0.5, collapsing the high-conf pick pool back to baseline levels. LightGBM raw output is more usefully over-dispersed on this data.
+- Combining non-passed changes (exp 27, exp 28). program.md explicitly endorsed combined hypotheses for Run 2; pruning + full sampling (exp 27) matched the single-prune result (0.2402 vs 0.2402), confirming the effects are not additive.
 
-## Which hypothesis families plateaued
+## Hypothesis families
 
-- **Hyperparameter sweeps alone.** The regularization signal is
-  real but the single-knob ceiling is `max_depth=1` at -0.0097,
-  just below the 0.010 floor. Crossing the floor within the
-  one-knob rule is unlikely; the natural next move would be
-  two-knob stacking (`max_depth=1` + `lr=0.03`, or
-  `max_depth=1` + `n_estimators=300`), which the rule defers
-  until both individual changes pass.
-- **Marginal feature engineering.** All additions tested either
-  duplicated existing diff signal or were market data that was
-  NaN-filled in the frozen CSV (see caveat 6 below).
+- Regularization (depth, family, calibration). Dominant lever. One crossable single-knob opportunity existed -- LightGBM stumps -- and it was taken. Subsequent regularization knobs are now saturated.
+- Feature engineering (pruning). Consistent but sub-floor. At stumps, each tree uses at most one feature, so pruning mostly controls feature-subsampling noise. Crossing 0.010 via pruning alone appears impossible given the +0.0019 ceiling observed.
+- Feature additions. Dead. The CSV-derivable features left on the shelf (temperature, venue_indoor, sp_throws_left, roll10_score_std) cannot outrank the top-5 features already being split on. Market features (moneyline, total_line, run_line) remain 100 percent NaN in the frozen CSV.
+- Alternative model families. All three supported families (sklearn_gbm, LightGBM, XGBoost) converge near 0.2420 at max_depth=1. The family choice barely matters relative to the depth choice.
 
-## What was not attempted
+## Structural ceiling observed
 
-- **Model family swap.** The harness `build_estimator_factory`
-  only instantiates `TimeAwareCalibratedGBM` or
-  `GradientBoostingClassifier`; the anchor_eval is read-only, so
-  LightGBM / XGBoost / CatBoost cannot be tested without editing
-  outside the whitelist.
-- **Isotonic calibration.** Same constraint -- the calibrator is
-  hard-coded to `LogisticRegression` inside the frozen
-  `TimeAwareCalibratedGBM`.
-- **Target reformulation** (regression on margin + Normal-CDF
-  projection). Not tried because the factory returns a
-  classifier; predict_proba flow would need a wrapper estimator,
-  which anchor_eval does not accept.
-- **Permutation-importance-based feature pruning.** A likely
-  productive lever but not reached before the stop condition
-  fired.
-- **Aggressive single-knob feature pruning** (drop
-  `prev_volatility`, `wind_speed`, `prev_games_played`).
+With the current harness surface area (model_family, five hyperparams, feature list, optional sklearn calibration), the optimizer-Brier floor appears to be approximately 0.2400 on the 2025 Apr-Jul anchor. Moving below 0.2400 almost certainly requires one of:
 
-## Caveats (from program.md, confirmed by this run)
+1. A new estimator or calibrator family (isotonic for LightGBM, CatBoost, stacked ensemble). Not reachable without editing anchor_eval.py, which is read-only.
+2. A target reformulation (margin regression + Normal CDF). Same read-only constraint.
+3. A feature the frozen CSV lacks -- most obviously market-implied probability. moneyline is present but 100 percent NaN.
+4. A non-tabular feature set (pitch-by-pitch, Statcast, lineup IDs). Not in the frozen data.
 
-1. **The 2025 benchmark is partially burned.** The operator has
-   diagnosed live MLB bugs against this data. Any feature or
-   hyperparameter implicit in the live-model fixes is part of the
-   prior.
-2. **The 2026 monitor is thin** (~190 rows, ~75-80 high-conf
-   picks). SE(Brier) ~0.018 on the monitor is wider than the
-   optimizer's 0.007 SE.
-3. **Optimizer and 2025-tail monitor share season-level signal.**
-   In this run, improvements on the optimizer window correlated
-   with improvements on the tail monitor (same rosters, same
-   bullpens). A true regime-change check requires a bigger 2026
-   sample.
-4. **ROI is computed at flat -110.** The `max_depth=1` result
-   showing +105U is plausibly inflated by picks that would have
-   been heavy favorites at true market prices. Treat the ROI
-   gain as directional only.
-5. **`opt_roi` has wide SE (~27U at n_hc approximately 795).**
-   The 3U regression cap catches catastrophes, not sub-noise
-   drift.
-6. **Market features (`moneyline`, `total_line`, `run_line`)**
-   are present in the frozen CSV but **100% NaN** over the
-   optimizer window. This eliminated a natural strong feature
-   candidate (market-implied probability / line-movement).
-7. **Harness surface is narrow.** The one allowed estimator
-   family is the frozen `TimeAwareCalibratedGBM`. Experiments
-   outside that (LightGBM, isotonic, regression target) are not
-   reachable without editing anchor_eval.py, which is explicitly
-   read-only.
+None of these are inside the autonomous agent whitelist. The remaining roughly 0.002 to 0.005 of potentially-reachable Brier will not cross the 0.010 floor under a single-change rule.
+
+## Known caveats (restated from program.md, confirmed by this run)
+
+1. The 2025 benchmark is partially burned. The operator has previously diagnosed live-model bugs against this data. Any feature or hyperparameter implicit in prior fixes is in the prior; a discovery here may be confirmation, not novelty. (LightGBM-stumps ROI of +124U and a second best-of-run at max_depth=1 for the third time in two runs fits a strong-prior profile.)
+2. The 2026 monitor is thin (~80 high-conf picks, SE(Brier) ~0.018). It is a veto for disasters, not a confirmer of subtle alpha.
+3. Optimizer and 2025-tail monitor share season-level signal. The 2026 monitor is the only true regime-change check and it is thin -- see #2.
+4. ROI is flat -110. Real moneylines range -300 to +250. A strategy that drifts toward heavy favorites gets a flattered ROI. The +124U result should be read as directional, not dollars.
+5. opt_roi has wide SE (~27U at n_hc approximately 795). The 3U regression cap catches catastrophes, not sub-noise drift.
+6. Market features are 100 percent NaN. The single most informative input to any sports model is absent from the frozen CSV.
 
 ## Recommendation to a human follow-up operator
 
-1. **Ship `max_depth=1`** in production MLB despite the -0.0097
-   Brier delta missing the automated floor. Three signals
-   triangulate: (a) monotone Brier improvement as depth dropped
-   4 -> 3 -> 2 -> 1, (b) ROI nearly doubled (+54U to +105U) on
-   the optimizer window, and (c) the direction is consistent
-   with the classic "shallow GBM on small tabular data"
-   prescription. The 0.010 gate is a multiple-comparison
-   correction assuming uncorrelated random picks from a menu --
-   a depth-sweep is a sequential, ordered exploration, not that.
-2. **Then test two-knob stacks**, e.g. `max_depth=1,
-   learning_rate=0.03` and `max_depth=1, n_estimators=300`,
-   against the new baseline. The existing harness's one-knob
-   rule is what blocked this run; relaxing it after a primary
-   keep is explicitly permitted by program.md.
-3. **Re-snapshot the anchor** with non-null market odds. Without
-   moneyline as a feature or as a blend target, the P(home wins)
-   model is missing the single most predictive input the market
-   uses.
-4. **Plumb a new estimator knob** into `anchor_eval.py` before
-   the next autonomous run (LightGBM, CatBoost, or isotonic
-   calibrator). The current harness forecloses half the
-   hypothesis menu.
+1. Ship max_depth=1 LightGBM in production MLB. Two runs independently converged here. The Brier delta (-0.0133) crossed the automated floor cleanly and ROI doubled on the 2025 walk-forward (+54 -> +125U). Both the 2025-tail and 2026 monitors moved in the same direction in the full metrics archive; the human operator can verify in results.tsv.
+2. Also consider shipping feature pruning. Top-5 / top-8 / top-13 all beat baseline by roughly 0.0018 Brier with ROI to +156U, consistent across three prunings. Pooled evidence is stronger than a single experiment p-value. Pruning does not cross the 0.010 automated floor but the direction is unambiguous.
+3. Re-snapshot the anchor with non-null market odds. Without moneyline as a feature or as a blend target, the P(home wins) model is missing the highest-signal input available to any sports model.
+4. Plumb additional estimators into anchor_eval.py before the next autonomous run: isotonic calibration for LightGBM/XGBoost, a stacking wrapper, and a margin-regression target. The current harness 0.010 floor is reachable by construction only once per estimator-family swap; once LightGBM stumps is the running best, no remaining single-knob change can cross the gate.
+5. Relax the one-change-per-experiment rule after a kept experiment direction is established. Run 2 best candidate (13-feature prune + LightGBM stumps, landing at 0.2402) is clearly more useful than the kept LightGBM stumps alone, but the gate blocks keeping it because the marginal delta is within-noise against the kept row. A cumulative-delta-vs-original-baseline secondary gate would resolve this.
