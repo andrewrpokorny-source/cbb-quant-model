@@ -22,6 +22,8 @@ dependencies = [
     "python-telegram-bot[job-queue]>=21.0",
     "ocrmac>=1.0.0",
     "streamlit-autorefresh>=1.0.1",
+    "lightgbm>=4.6.0",
+    "xgboost>=3.2.0",
 ]
 
 [project.optional-dependencies]

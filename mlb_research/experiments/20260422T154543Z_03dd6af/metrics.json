@@ -1,0 +1,87 @@
+{
+  "optimizer": {
+    "brier": 0.2401708672337014,
+    "log_loss": 0.6734441087949397,
+    "accuracy": 0.5744832501781896,
+    "high_conf_accuracy": 0.5944779982743744,
+    "roi_units": 156.36363636363637,
+    "n_games": 1403,
+    "n_high_conf": 1159
+  },
+  "monitor_2025_tail": {
+    "brier": 0.23483503191345867,
+    "log_loss": 0.6621161773680114,
+    "accuracy": 0.6016483516483516,
+    "high_conf_accuracy": 0.6399286987522281,
+    "roi_units": 124.36363636363637,
+    "n_games": 728,
+    "n_high_conf": 561
+  },
+  "monitor_2026": {
+    "brier": 0.18662890423228598,
+    "log_loss": 0.5603960959742627,
+    "accuracy": 0.7619047619047619,
+    "high_conf_accuracy": 0.7894736842105263,
+    "roi_units": 38.54545454545455,
+    "n_games": 84,
+    "n_high_conf": 76
+  },
+  "_meta": {
+    "features_used": [
+      "bullpen_era_diff",
+      "sp_era_diff",
+      "is_home",
+      "opp_sp_roll_era",
+      "sp_roll_era",
+      "sp_roll_era_diff",
+      "sp_era",
+      "sp_roll_ip",
+      "prev_roll10_runs_allowed",
+      "prev_season_runs_per_game",
+      "opp_sp_era",
+      "roll5_rpg_diff",
+      "roll10_ra_diff"
+    ],
+    "n_features": 13,
+    "calibrated": false,
+    "target": "home_win",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+    "hyperparams": {
+      "n_estimators": 150,
+      "max_depth": 1,
+      "learning_rate": 0.05,
+      "calibration_fraction": 0.2,
+      "min_calibration_rows": 200,
+      "random_state": 42,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    },
+    "diagnostics": {
+      "optimizer": {
+        "n_folds_trained": 17,
+        "n_folds_skipped_thin_train": 1,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 134,
+        "train_rows_max": 2774,
+        "train_rows_mean": 1468.1176470588234
+      },
+      "monitor_2025_tail": {
+        "n_folds_trained": 9,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 5,
+        "train_rows_min": 2840,
+        "train_rows_max": 4200,
+        "train_rows_mean": 3517.777777777778
+      },
+      "monitor_2026": {
+        "n_folds_trained": 2,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 4296,
+        "train_rows_max": 4426,
+        "train_rows_mean": 4361.0
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_description": "XGBoost with max_depth=1 stumps.",
+  "model_family": "xgboost",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 1,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
+  },
+  "calibrated": false,
+  "target": "home_win"
+}

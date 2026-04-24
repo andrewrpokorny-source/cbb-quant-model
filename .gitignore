@@ -49,3 +49,13 @@ screenshots/
 telegram_bot.log.*
 telegram_parse_audit.jsonl
 *-check.png
+
+# mlb_research runtime artifacts: keep the small JSON/TSV archive but
+# reject anything bulky the agent might emit (trained pickles, CSV dumps,
+# parquet, numpy arrays) to avoid repo bloat over a long autoresearch run.
+mlb_research/**/*.pkl
+mlb_research/**/*.parquet
+mlb_research/**/*.npy
+mlb_research/**/*.npz
+mlb_research/agent.log
+mlb_research/agent.log.*

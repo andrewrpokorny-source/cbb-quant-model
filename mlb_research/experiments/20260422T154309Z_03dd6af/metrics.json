@@ -1,0 +1,102 @@
+{
+  "optimizer": {
+    "brier": 0.24491434195554837,
+    "log_loss": 0.6843955922764874,
+    "accuracy": 0.556664290805417,
+    "high_conf_accuracy": 0.5760773966578716,
+    "roi_units": 113.45454545454538,
+    "n_games": 1403,
+    "n_high_conf": 1137
+  },
+  "monitor_2025_tail": {
+    "brier": 0.23223028660097894,
+    "log_loss": 0.6566243672923584,
+    "accuracy": 0.6236263736263736,
+    "high_conf_accuracy": 0.6362007168458781,
+    "roi_units": 119.72727272727269,
+    "n_games": 728,
+    "n_high_conf": 558
+  },
+  "monitor_2026": {
+    "brier": 0.1772419902698505,
+    "log_loss": 0.5383169750863599,
+    "accuracy": 0.75,
+    "high_conf_accuracy": 0.8133333333333334,
+    "roi_units": 41.45454545454545,
+    "n_games": 84,
+    "n_high_conf": 75
+  },
+  "_meta": {
+    "features_used": [
+      "is_home",
+      "rest_days",
+      "sp_era",
+      "opp_sp_era",
+      "sp_roll_era",
+      "sp_roll_whip",
+      "sp_roll_k9",
+      "sp_roll_ip",
+      "opp_sp_roll_era",
+      "prev_roll10_runs_per_game",
+      "prev_roll10_runs_allowed",
+      "prev_season_runs_per_game",
+      "prev_season_runs_allowed",
+      "prev_games_played",
+      "opp_win_pct",
+      "prev_win_pct",
+      "prev_roll10_win_pct",
+      "roll10_rpg_diff",
+      "roll10_ra_diff",
+      "sp_era_diff",
+      "sp_roll_era_diff",
+      "prev_volatility",
+      "prev_season_pyth_wpct",
+      "prev_roll10_pyth_wpct",
+      "pyth_wpct_diff",
+      "wind_speed",
+      "bullpen_era_diff",
+      "roll5_rpg_diff"
+    ],
+    "n_features": 28,
+    "calibrated": false,
+    "target": "home_win",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+    "hyperparams": {
+      "n_estimators": 300,
+      "max_depth": 1,
+      "learning_rate": 0.05,
+      "calibration_fraction": 0.2,
+      "min_calibration_rows": 200,
+      "random_state": 42,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    },
+    "diagnostics": {
+      "optimizer": {
+        "n_folds_trained": 17,
+        "n_folds_skipped_thin_train": 1,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 134,
+        "train_rows_max": 2774,
+        "train_rows_mean": 1468.1176470588234
+      },
+      "monitor_2025_tail": {
+        "n_folds_trained": 9,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 5,
+        "train_rows_min": 2840,
+        "train_rows_max": 4200,
+        "train_rows_mean": 3517.777777777778
+      },
+      "monitor_2026": {
+        "n_folds_trained": 2,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 4296,
+        "train_rows_max": 4426,
+        "train_rows_mean": 4361.0
+      }
+    }
+  }
+}

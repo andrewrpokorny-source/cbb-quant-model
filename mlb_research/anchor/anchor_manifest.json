@@ -1,0 +1,27 @@
+{
+  "snapshot_timestamp_utc": "2026-04-15T19:09:39Z",
+  "source_csv": "mlb_training_data_processed.csv",
+  "frozen_csv": "mlb_research/anchor/mlb_frozen.csv",
+  "row_count": 5130,
+  "column_count": 111,
+  "sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+  "date_min": "2025-03-27",
+  "date_max": "2026-04-02",
+  "windows": {
+    "optimizer": {
+      "start": "2025-04-01",
+      "end": "2025-07-31",
+      "row_count": 3200
+    },
+    "monitor_2025_tail": {
+      "start": "2025-08-01",
+      "end": "2025-10-31",
+      "row_count": 1610
+    },
+    "monitor_2026": {
+      "start": "2026-03-25",
+      "end": "2026-04-02",
+      "row_count": 190
+    }
+  }
+}

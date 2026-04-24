@@ -1,0 +1,24 @@
+{
+  "_description": "LightGBM stumps, top-8 features only.",
+  "model_family": "lightgbm",
+  "features": [
+    "bullpen_era_diff",
+    "sp_era_diff",
+    "is_home",
+    "opp_sp_roll_era",
+    "sp_roll_era",
+    "sp_roll_era_diff",
+    "sp_era",
+    "sp_roll_ip"
+  ],
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 1,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
+  },
+  "calibrated": false,
+  "target": "home_win"
+}

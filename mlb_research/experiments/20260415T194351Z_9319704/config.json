@@ -1,0 +1,6 @@
+{
+  "features": ["is_home"],
+  "hyperparams": {"n_estimators": 5, "max_depth": 2, "learning_rate": 0.01, "calibration_fraction": 0.5, "min_calibration_rows": 200, "random_state": 42},
+  "calibrated": true,
+  "target": "home_win"
+}

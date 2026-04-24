@@ -1,0 +1,13 @@
+{
+  "_description": "Hyperparams: max_depth=2 for aggressive regularization.",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 2,
+    "learning_rate": 0.05,
+    "calibration_fraction": 0.2,
+    "min_calibration_rows": 200,
+    "random_state": 42
+  },
+  "calibrated": true,
+  "target": "home_win"
+}

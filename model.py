@@ -387,18 +387,22 @@ def build_spread_estimator(league="mens", calibrated=None):
     if calibrated is None:
         calibrated = use_calibrated_spread_model(league)
 
+    # MLB: max_depth=1 (stumps). Human override of auto-research harness.
+    # See commit message for full justification chain.
+    max_depth = 1 if league == "mlb" else 4
+
     if calibrated:
         return TimeAwareCalibratedGBM(
             n_estimators=150,
             learning_rate=0.05,
-            max_depth=4,
+            max_depth=max_depth,
             random_state=42,
         )
 
     return GradientBoostingClassifier(
         n_estimators=150,
         learning_rate=0.05,
-        max_depth=4,
+        max_depth=max_depth,
         random_state=42,
     )
 
