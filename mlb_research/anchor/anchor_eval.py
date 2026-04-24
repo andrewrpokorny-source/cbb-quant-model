@@ -20,9 +20,10 @@ Config schema (example):
             "min_calibration_rows": 200,
             "random_state": 42
         },
+        "model_family": "sklearn_gbm",
         "calibrated": true,
-        "target": "home_win",
-        "high_conf_threshold": 0.53
+        "calibration_method": "sigmoid",
+        "target": "home_win"
     }
 
 All fields optional: missing values default to the live production MLB
@@ -40,6 +41,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss
 
@@ -141,6 +143,94 @@ class TimeAwareCalibratedGBM(BaseEstimator, ClassifierMixin):
     def feature_importances_(self):
         return self.base_estimator_.feature_importances_
 
+
+class TimeAwareCalibrated:
+    """Generalized time-aware calibration wrapper.
+
+    Mirrors TimeAwareCalibratedGBM's trailing-window fit/calibrate scheme but:
+      - accepts any base estimator via a zero-arg factory (LightGBM, XGBoost,
+        sklearn GBM), and
+      - supports isotonic calibration in addition to sigmoid (Platt).
+
+    TimeAwareCalibratedGBM stays pinned as a frozen snapshot so the baseline
+    row in results.tsv remains bit-reproducible; this class is the code path
+    for every other (family, calibration_method) combination.
+    """
+
+    def __init__(
+        self,
+        base_factory: Callable,
+        method: str = "sigmoid",
+        calibration_fraction: float = 0.2,
+        min_calibration_rows: int = 200,
+    ):
+        if method not in ("sigmoid", "isotonic"):
+            raise ValueError(f"method must be 'sigmoid' or 'isotonic', got {method!r}")
+        self.base_factory = base_factory
+        self.method = method
+        self.calibration_fraction = calibration_fraction
+        self.min_calibration_rows = min_calibration_rows
+
+    def fit(self, X, y):
+        X_df = pd.DataFrame(X).copy()
+        y_ser = pd.Series(y).astype(int).reset_index(drop=True)
+        X_df = X_df.reset_index(drop=True)
+        self.feature_names_in_ = X_df.columns.astype(str).to_numpy()
+        self.n_features_in_ = len(self.feature_names_in_)
+
+        split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
+        split_idx = min(split_idx, len(X_df) - 1)
+
+        use_calibration = (
+            len(X_df) >= self.min_calibration_rows
+            and split_idx < len(X_df)
+            and y_ser.iloc[:split_idx].nunique() > 1
+            and y_ser.iloc[split_idx:].nunique() > 1
+        )
+
+        base_X = X_df.iloc[:split_idx] if use_calibration else X_df
+        base_y = y_ser.iloc[:split_idx] if use_calibration else y_ser
+
+        self.base_estimator_ = self.base_factory()
+        self.base_estimator_.fit(base_X, base_y)
+        self.classes_ = np.array([0, 1])
+
+        self.calibrator_ = None
+        self.calibration_rows_ = 0
+        if use_calibration:
+            calib_X = X_df.iloc[split_idx:]
+            calib_y = y_ser.iloc[split_idx:]
+            raw = np.clip(self.base_estimator_.predict_proba(calib_X)[:, 1], 1e-6, 1 - 1e-6)
+            if self.method == "isotonic":
+                cal = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+                cal.fit(raw, calib_y.astype(float).to_numpy())
+            else:
+                cal = LogisticRegression(solver="lbfgs")
+                cal.fit(raw.reshape(-1, 1), calib_y)
+            self.calibrator_ = cal
+            self.calibration_rows_ = len(calib_X)
+
+        return self
+
+    def predict_proba(self, X):
+        X_df = pd.DataFrame(X).copy()
+        raw = np.clip(self.base_estimator_.predict_proba(X_df)[:, 1], 1e-6, 1 - 1e-6)
+        if self.calibrator_ is None:
+            calibrated = raw
+        elif self.method == "isotonic":
+            calibrated = np.clip(self.calibrator_.predict(raw), 1e-6, 1 - 1e-6)
+        else:
+            calibrated = self.calibrator_.predict_proba(raw.reshape(-1, 1))[:, 1]
+        return np.column_stack([1 - calibrated, calibrated])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    @property
+    def feature_importances_(self):
+        return self.base_estimator_.feature_importances_
+
+
 # Pinned at the harness level. Configs are NOT allowed to override this --
 # a per-experiment threshold knob makes opt_roi non-comparable across rows
 # (a config with threshold=0.99 trivially gets n_hc=0 and roi=None).
@@ -239,16 +329,23 @@ def load_frozen_df() -> pd.DataFrame:
 
 
 SUPPORTED_MODEL_FAMILIES = {"sklearn_gbm", "lightgbm", "xgboost"}
+SUPPORTED_CALIBRATION_METHODS = {"sigmoid", "isotonic"}
 
 
 def build_estimator_factory(config: dict) -> Callable:
     hp = {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})}
     calibrated = config.get("calibrated", True)
     family = config.get("model_family", "sklearn_gbm")
+    method = config.get("calibration_method", "sigmoid")
     if family not in SUPPORTED_MODEL_FAMILIES:
         sys.exit(
             f"Unsupported model_family={family!r}. "
             f"Must be one of {sorted(SUPPORTED_MODEL_FAMILIES)}."
+        )
+    if method not in SUPPORTED_CALIBRATION_METHODS:
+        sys.exit(
+            f"Unsupported calibration_method={method!r}. "
+            f"Must be one of {sorted(SUPPORTED_CALIBRATION_METHODS)}."
         )
 
     def _build_base(hp_dict, fam):
@@ -284,8 +381,9 @@ def build_estimator_factory(config: dict) -> Callable:
         )
 
     def factory():
-        if calibrated and family == "sklearn_gbm":
-            # Use the vendored TimeAwareCalibratedGBM only for sklearn GBM.
+        # Baseline path: sklearn_gbm + calibrated + sigmoid routes through the
+        # frozen TimeAwareCalibratedGBM so the baseline row stays bit-reproducible.
+        if calibrated and family == "sklearn_gbm" and method == "sigmoid":
             return TimeAwareCalibratedGBM(
                 n_estimators=hp["n_estimators"],
                 learning_rate=hp["learning_rate"],
@@ -294,9 +392,13 @@ def build_estimator_factory(config: dict) -> Callable:
                 calibration_fraction=hp["calibration_fraction"],
                 min_calibration_rows=hp["min_calibration_rows"],
             )
-        # For LightGBM / XGBoost, or uncalibrated sklearn: return the raw
-        # classifier. Calibration wrapping for non-sklearn families can be
-        # explored in a future harness iteration.
+        if calibrated:
+            return TimeAwareCalibrated(
+                base_factory=lambda: _build_base(hp, family),
+                method=method,
+                calibration_fraction=hp["calibration_fraction"],
+                min_calibration_rows=hp["min_calibration_rows"],
+            )
         return _build_base(hp, family)
 
     return factory
@@ -491,7 +593,9 @@ def main():
     results["_meta"] = {
         "features_used": features,
         "n_features": len(features),
+        "model_family": config.get("model_family", "sklearn_gbm"),
         "calibrated": config.get("calibrated", True),
+        "calibration_method": config.get("calibration_method", "sigmoid"),
         "target": target,
         "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],

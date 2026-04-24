@@ -181,10 +181,17 @@ This is a starting menu, not exhaustive. Add your own.
   `sklearn_gbm` (default), `lightgbm`, `xgboost`.
 - LightGBM and XGBoost also accept `subsample` and
   `colsample_bytree` in hyperparams (default 0.8 each).
-- `calibrated: true` only applies to `sklearn_gbm` (uses the
-  vendored `TimeAwareCalibratedGBM`). For LightGBM/XGBoost the
-  raw classifier is used directly -- explore Platt scaling or
-  isotonic as a follow-up.
+- `calibrated: true` applies to all three families. The
+  `sklearn_gbm` + default `calibration_method: "sigmoid"` path
+  routes through the frozen `TimeAwareCalibratedGBM` so the
+  baseline row stays bit-reproducible. Every other
+  `(family, method)` pair routes through the generalized
+  `TimeAwareCalibrated` wrapper, which does the same
+  trailing-window split but accepts any base estimator and
+  either sigmoid (Platt) or isotonic calibration. Set
+  `"calibration_method": "isotonic"` to try isotonic. LightGBM
+  and XGBoost calibrated + stumps is a concrete Run 3 starting
+  hypothesis (uncalibrated LGBM stumps was Run 2's best KEEP).
 - Simple two-model averaging ensemble (write a wrapper estimator
   under `mlb_research/` that exposes `fit`/`predict_proba`).
 - Stacked: GBM + logistic regression meta-learner.
