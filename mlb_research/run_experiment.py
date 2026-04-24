@@ -438,9 +438,16 @@ def cmd_run(args):
     print("=" * 72)
 
 
+FINALIZE_ALLOWED_STATUSES = VALID_STATUSES - {"pending", "baseline"}
+
+
 def cmd_finalize(args):
-    if args.status not in VALID_STATUSES or args.status == "pending":
-        sys.exit(f"--status must be one of {sorted(VALID_STATUSES - {'pending'})}")
+    if args.status not in FINALIZE_ALLOWED_STATUSES:
+        sys.exit(
+            f"--status must be one of {sorted(FINALIZE_ALLOWED_STATUSES)}. "
+            "'baseline' can only be set via the 'run' subcommand's --status flag "
+            "to prevent a second baseline from bypassing the single-baseline invariant."
+        )
 
     rows = read_all_rows()
     if not rows:
