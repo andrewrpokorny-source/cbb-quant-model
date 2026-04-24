@@ -223,9 +223,17 @@ This is a starting menu, not exhaustive. Add your own.
   feature).
 
 ### Target reformulation
-- Predict run-line cover instead of moneyline win.
-- Predict score margin (regression) and derive P(home wins) from
-  Normal CDF at 0 -- mirror CBB's CDF projection trick.
+- Predict run-line cover instead of moneyline win (not reachable --
+  run_line is 100% NaN in the frozen CSV).
+- **Margin regression + Normal CDF (NOW REACHABLE).** Set
+  `"target": "margin"` in config. The harness trains the chosen
+  `model_family` as a regressor on run margin, estimates residual
+  σ on a trailing holdout slice (same split discipline as the
+  calibration wrappers), and returns `P(home wins) = Φ(μ/σ)`. All
+  three families are supported. `calibrated: true` is rejected in
+  combination with `target: "margin"` -- post-hoc calibration on
+  top of CDF output is a separate hypothesis; add it later inside
+  `mlb_research/` if needed. Mirrors the CBB CDF projection trick.
 
 ### Data hygiene
 - Season-scoped rolling stats (reset at season boundary). Current CSV

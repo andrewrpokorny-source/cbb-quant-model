@@ -26,6 +26,15 @@ Config schema (example):
         "target": "home_win"
     }
 
+Supported targets:
+  - "home_win" (default): binary classifier; calibrated+sigmoid routes
+    through the frozen TimeAwareCalibratedGBM for sklearn_gbm, else through
+    the generalized TimeAwareCalibrated wrapper.
+  - "margin": regress run margin, convert to P(home wins) via Φ(μ/σ).
+    calibrated=true is rejected for this target (separate hypothesis).
+    hyperparams.calibration_fraction / min_calibration_rows control the
+    residual-std holdout slice.
+
 All fields optional: missing values default to the live production MLB
 setup (matches `model.py` / `backtest.py`).
 """
@@ -39,8 +48,9 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss
@@ -231,6 +241,83 @@ class TimeAwareCalibrated:
         return self.base_estimator_.feature_importances_
 
 
+class MarginCDFRegressor:
+    """Predict run margin, convert to P(home wins) via Normal CDF.
+
+    Mirrors the CBB CDF-projection trick (memory: `effective_margin = sigma *
+    norm.ppf(p) - spread`) but specialized to MLB where the frozen anchor has
+    no usable spread (moneyline/run_line are 100% NaN). P(home wins) = Φ(μ/σ)
+    where μ is the predicted margin and σ is the residual standard deviation
+    estimated on a trailing holdout slice (same split discipline as the
+    sigmoid/isotonic calibration wrappers, so σ is not an in-sample
+    underestimate).
+
+    Exposes a classifier-shaped interface (predict_proba, predict, classes_)
+    so the walk_forward_window driver does not need to special-case it.
+    """
+
+    def __init__(
+        self,
+        base_factory: Callable,
+        residual_fraction: float = 0.2,
+        min_residual_rows: int = 200,
+        min_sigma: float = 0.5,
+    ):
+        self.base_factory = base_factory
+        self.residual_fraction = residual_fraction
+        self.min_residual_rows = min_residual_rows
+        self.min_sigma = min_sigma
+
+    def fit(self, X, y):
+        X_df = pd.DataFrame(X).copy().reset_index(drop=True)
+        y_arr = np.asarray(y, dtype=float).reshape(-1)
+        if len(y_arr) != len(X_df):
+            raise ValueError("X and y length mismatch")
+        self.feature_names_in_ = X_df.columns.astype(str).to_numpy()
+        self.n_features_in_ = len(self.feature_names_in_)
+
+        split_idx = max(1, int(len(X_df) * (1 - self.residual_fraction)))
+        split_idx = min(split_idx, len(X_df) - 1)
+
+        use_holdout = len(X_df) >= self.min_residual_rows and split_idx < len(X_df)
+
+        base_X = X_df.iloc[:split_idx] if use_holdout else X_df
+        base_y = y_arr[:split_idx] if use_holdout else y_arr
+
+        self.base_estimator_ = self.base_factory()
+        self.base_estimator_.fit(base_X, base_y)
+        self.classes_ = np.array([0, 1])
+
+        if use_holdout:
+            held_X = X_df.iloc[split_idx:]
+            held_y = y_arr[split_idx:]
+            residuals = held_y - self.base_estimator_.predict(held_X)
+            self.residual_rows_ = len(held_X)
+        else:
+            residuals = y_arr - self.base_estimator_.predict(X_df)
+            self.residual_rows_ = 0
+
+        sigma = float(np.std(residuals, ddof=1)) if len(residuals) > 1 else float("nan")
+        if not np.isfinite(sigma) or sigma < self.min_sigma:
+            sigma = self.min_sigma
+        self.sigma_ = sigma
+        return self
+
+    def predict_proba(self, X):
+        X_df = pd.DataFrame(X).copy()
+        mu = np.asarray(self.base_estimator_.predict(X_df), dtype=float)
+        p_home = norm.cdf(mu / self.sigma_)
+        p_home = np.clip(p_home, 1e-6, 1 - 1e-6)
+        return np.column_stack([1 - p_home, p_home])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    @property
+    def feature_importances_(self):
+        return self.base_estimator_.feature_importances_
+
+
 # Pinned at the harness level. Configs are NOT allowed to override this --
 # a per-experiment threshold knob makes opt_roi non-comparable across rows
 # (a config with threshold=0.99 trivially gets n_hc=0 and roi=None).
@@ -330,6 +417,7 @@ def load_frozen_df() -> pd.DataFrame:
 
 SUPPORTED_MODEL_FAMILIES = {"sklearn_gbm", "lightgbm", "xgboost"}
 SUPPORTED_CALIBRATION_METHODS = {"sigmoid", "isotonic"}
+SUPPORTED_TARGETS = {"home_win", "margin"}
 
 
 def build_estimator_factory(config: dict) -> Callable:
@@ -337,6 +425,7 @@ def build_estimator_factory(config: dict) -> Callable:
     calibrated = config.get("calibrated", True)
     family = config.get("model_family", "sklearn_gbm")
     method = config.get("calibration_method", "sigmoid")
+    target = config.get("target", "home_win")
     if family not in SUPPORTED_MODEL_FAMILIES:
         sys.exit(
             f"Unsupported model_family={family!r}. "
@@ -347,8 +436,18 @@ def build_estimator_factory(config: dict) -> Callable:
             f"Unsupported calibration_method={method!r}. "
             f"Must be one of {sorted(SUPPORTED_CALIBRATION_METHODS)}."
         )
+    if target not in SUPPORTED_TARGETS:
+        sys.exit(
+            f"Unsupported target={target!r}. Must be one of {sorted(SUPPORTED_TARGETS)}."
+        )
+    if target == "margin" and calibrated:
+        sys.exit(
+            "calibrated=true is not supported with target='margin'. The margin "
+            "path already produces a Φ(μ/σ) probability; post-hoc calibration "
+            "on top is a separate hypothesis. Set calibrated=false."
+        )
 
-    def _build_base(hp_dict, fam):
+    def _build_base_classifier(hp_dict, fam):
         if fam == "lightgbm":
             import lightgbm as lgb
             return lgb.LGBMClassifier(
@@ -372,7 +471,6 @@ def build_estimator_factory(config: dict) -> Callable:
                 eval_metric="logloss",
                 verbosity=0,
             )
-        # Default: sklearn GBM
         return GradientBoostingClassifier(
             n_estimators=hp_dict["n_estimators"],
             learning_rate=hp_dict["learning_rate"],
@@ -380,7 +478,43 @@ def build_estimator_factory(config: dict) -> Callable:
             random_state=hp_dict["random_state"],
         )
 
+    def _build_base_regressor(hp_dict, fam):
+        if fam == "lightgbm":
+            import lightgbm as lgb
+            return lgb.LGBMRegressor(
+                n_estimators=hp_dict["n_estimators"],
+                learning_rate=hp_dict["learning_rate"],
+                max_depth=hp_dict["max_depth"],
+                random_state=hp_dict["random_state"],
+                subsample=hp_dict.get("subsample", 0.8),
+                colsample_bytree=hp_dict.get("colsample_bytree", 0.8),
+                verbosity=-1,
+            )
+        if fam == "xgboost":
+            import xgboost as xgb
+            return xgb.XGBRegressor(
+                n_estimators=hp_dict["n_estimators"],
+                learning_rate=hp_dict["learning_rate"],
+                max_depth=hp_dict["max_depth"],
+                random_state=hp_dict["random_state"],
+                subsample=hp_dict.get("subsample", 0.8),
+                colsample_bytree=hp_dict.get("colsample_bytree", 0.8),
+                verbosity=0,
+            )
+        return GradientBoostingRegressor(
+            n_estimators=hp_dict["n_estimators"],
+            learning_rate=hp_dict["learning_rate"],
+            max_depth=hp_dict["max_depth"],
+            random_state=hp_dict["random_state"],
+        )
+
     def factory():
+        if target == "margin":
+            return MarginCDFRegressor(
+                base_factory=lambda: _build_base_regressor(hp, family),
+                residual_fraction=hp["calibration_fraction"],
+                min_residual_rows=hp["min_calibration_rows"],
+            )
         # Baseline path: sklearn_gbm + calibrated + sigmoid routes through the
         # frozen TimeAwareCalibratedGBM so the baseline row stays bit-reproducible.
         if calibrated and family == "sklearn_gbm" and method == "sigmoid":
@@ -394,14 +528,17 @@ def build_estimator_factory(config: dict) -> Callable:
             )
         if calibrated:
             return TimeAwareCalibrated(
-                base_factory=lambda: _build_base(hp, family),
+                base_factory=lambda: _build_base_classifier(hp, family),
                 method=method,
                 calibration_fraction=hp["calibration_fraction"],
                 min_calibration_rows=hp["min_calibration_rows"],
             )
-        return _build_base(hp, family)
+        return _build_base_classifier(hp, family)
 
     return factory
+
+
+EVAL_TARGET = "home_win"
 
 
 def walk_forward_window(
@@ -419,10 +556,24 @@ def walk_forward_window(
     game). Returns (per-prediction DataFrame, diagnostics). Diagnostics
     include train-row sizes per fold and skip counts -- these surface silent
     row-drops from ``dropna`` when a new feature has coverage gaps.
+
+    The training target (`target`) may be either the binary `home_win`
+    (classifier path) or a continuous outcome like `margin` (regressor-plus-
+    CDF path). Evaluation is ALWAYS scored against the binary `home_win`
+    column so Brier / ROI / n_hc metrics stay comparable across targets.
     """
     missing = [f for f in features if f not in df.columns]
     if missing:
         raise ValueError(f"Config references features not in frozen CSV: {missing}")
+    if target not in df.columns:
+        raise ValueError(f"Training target {target!r} not in frozen CSV.")
+    if EVAL_TARGET not in df.columns:
+        raise ValueError(f"Evaluation target {EVAL_TARGET!r} not in frozen CSV.")
+
+    is_regression_target = target != EVAL_TARGET
+    dropna_cols = features + [target]
+    if is_regression_target:
+        dropna_cols = dropna_cols + [EVAL_TARGET]
 
     fold_logs = []
     train_sizes = []
@@ -433,7 +584,7 @@ def walk_forward_window(
     while current < window_end:
         next_week = current + timedelta(days=7)
 
-        train = df[df["date"] < current].dropna(subset=features + [target])
+        train = df[df["date"] < current].dropna(subset=dropna_cols)
         if len(train) < MIN_TRAIN_ROWS:
             skipped_thin_train += 1
             current = next_week
@@ -444,14 +595,17 @@ def walk_forward_window(
             & (df["date"] < next_week)
             & (df["is_home"] == 1)
         )
-        week = df.loc[week_mask].dropna(subset=features + [target])
+        week = df.loc[week_mask].dropna(subset=dropna_cols)
         if week.empty:
             skipped_empty_week += 1
             current = next_week
             continue
 
         est = estimator_factory()
-        est.fit(train[features].astype(float), train[target].astype(int))
+        if is_regression_target:
+            est.fit(train[features].astype(float), train[target].astype(float))
+        else:
+            est.fit(train[features].astype(float), train[target].astype(int))
         probs = est.predict_proba(week[features].astype(float))[:, 1]
 
         train_sizes.append(int(len(train)))
@@ -460,7 +614,7 @@ def walk_forward_window(
                 {
                     "date": week["date"].values,
                     "prob_home": probs,
-                    "target": week[target].astype(int).values,
+                    "target": week[EVAL_TARGET].astype(int).values,
                     "conf": np.maximum(probs, 1 - probs),
                 }
             )
