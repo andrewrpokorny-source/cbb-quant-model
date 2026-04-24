@@ -697,6 +697,57 @@ def atomic_write_json(path: str, obj: dict):
     os.replace(tmp, path)
 
 
+VALID_TOP_LEVEL_CONFIG_KEYS = {
+    "features",
+    "hyperparams",
+    "model_family",
+    "calibrated",
+    "calibration_method",
+    "target",
+}
+
+VALID_HYPERPARAM_KEYS = {
+    "n_estimators",
+    "max_depth",
+    "learning_rate",
+    "calibration_fraction",
+    "min_calibration_rows",
+    "random_state",
+    "subsample",
+    "colsample_bytree",
+}
+
+
+def validate_config_keys(config: dict):
+    """Reject unknown keys in config JSON to prevent silent-default footguns.
+
+    An autonomous agent can easily typo `model_familyy` or `n_estimator` --
+    without validation the runner silently falls back to defaults and the
+    experiment row lies about what was tested. Keys starting with `_` are
+    treated as comments by convention.
+    """
+    unknown_top = [
+        k for k in config
+        if not k.startswith("_") and k not in VALID_TOP_LEVEL_CONFIG_KEYS
+    ]
+    if unknown_top:
+        sys.exit(
+            f"Unknown top-level config key(s): {unknown_top}. "
+            f"Valid keys: {sorted(VALID_TOP_LEVEL_CONFIG_KEYS)} "
+            "(keys starting with `_` are treated as comments)."
+        )
+    hp = config.get("hyperparams") or {}
+    unknown_hp = [
+        k for k in hp
+        if not k.startswith("_") and k not in VALID_HYPERPARAM_KEYS
+    ]
+    if unknown_hp:
+        sys.exit(
+            f"Unknown hyperparams key(s): {unknown_hp}. "
+            f"Valid keys: {sorted(VALID_HYPERPARAM_KEYS)}."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -728,6 +779,8 @@ def main():
             f"it at {HIGH_CONF_THRESHOLD} so opt_roi is comparable across "
             "experiments. Remove the key and try again."
         )
+
+    validate_config_keys(config)
 
     features = config.get("features") or DEFAULT_MLB_FEATURES
     target = config.get("target", "home_win")
