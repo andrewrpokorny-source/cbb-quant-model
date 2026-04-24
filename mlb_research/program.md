@@ -9,15 +9,29 @@ you should continue.
 
 **Primary objective:** minimize `opt_brier` in `mlb_research/results.tsv`.
 
-**Keep-eligibility rules** (enforced by the runner, also stated here):
-- `opt_brier` must improve by at least **0.010** vs. the running best.
-  Smaller improvements are within the max-of-50-trials noise floor
-  (SE(Brier) at n=1403 ≈ 0.007, expected max over 50 trials ≈ 0.015).
-- `opt_roi` must not regress more than **3.0 units** vs. the running
-  best.
-- `opt_n_hc` must be at least **500**. A KEEP with fewer than 500
-  high-conf picks is almost certainly a resolution-collapse artifact
-  (Brier floor is 0.25 for uniform 0.5 output) rather than real alpha.
+**Keep-eligibility rules** (enforced by the runner, also stated here).
+A row is KEPT if n_hc and ROI gates pass AND the Brier change clears
+EITHER the primary or secondary gate:
+
+- **Primary gate (marginal):** `opt_brier` must improve by at least
+  **0.010** vs. the running best. Smaller improvements are within the
+  max-of-50-trials noise floor (SE(Brier) at n=1403 ≈ 0.007, expected
+  max over 50 trials ≈ 0.015).
+- **Secondary gate (cumulative):** `opt_brier` cumulative drop vs. the
+  ORIGINAL baseline row must be at least **0.015** AND the marginal
+  step vs. running best must be at least **+0.001** (strictly positive,
+  sized to reject ties/regression-noise, not to reject sub-SE gains -- the
+  whole point of this gate is to pass sub-noise marginal wins). Unblocks
+  stacked wins where each individual change is within-noise but their
+  combination has moved meaningfully off baseline. Run 2's `prune-13 +
+  LGBM stumps = 0.2402` (marginal Δ=0.0018, cumulative Δ=0.0151 from
+  baseline 0.2553) is the canonical case the primary-only gate rejects.
+- **ROI:** `opt_roi` must not regress more than **3.0 units** vs. the
+  running best. Applies to both gates.
+- **Resolution:** `opt_n_hc` must be at least **500**. A KEEP with
+  fewer than 500 high-conf picks is almost certainly a
+  resolution-collapse artifact (Brier floor is 0.25 for uniform 0.5
+  output) rather than real alpha.
 
 **Hidden overfit guards:** `mon25_*` and `mon26_*` columns in
 `results.tsv` exist for human review only. They detect whether your

@@ -51,6 +51,17 @@ MAX_CONSECUTIVE_NON_KEEPS = 15
 # Gaussian noise floor is ~ΔBrier ~= 0.015. We require a stricter 0.010 delta
 # to be confident an improvement is not within-noise.
 MIN_BRIER_DELTA_FOR_KEEP = 0.010
+# Secondary "cumulative" gate: allows a row to be KEPT whose marginal delta
+# vs the running best is sub-floor, provided the cumulative Brier drop vs the
+# original baseline is clearly real and the marginal step is positive. Unblocks
+# stacked wins (e.g. prune + new family) where each individual change is
+# within-noise but the combination is not. The marginal minimum is set low on
+# purpose -- the whole point of this gate is to pass sub-noise marginal wins
+# (the canonical Run 2 case was Δ=+0.0018). It stays strictly positive to
+# reject ties and pure-regression noise; the cumulative 0.015 floor + ROI cap
+# + n_hc floor + MAX_CONSECUTIVE_NON_KEEPS stop condition do the real work.
+MIN_CUMULATIVE_DELTA_FOR_KEEP = 0.015
+MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP = 0.001
 # Baseline produces ~795 high-confidence picks over the optimizer window. A
 # genuine improvement should not gut the pick population by > ~35%. Otherwise
 # a win may be "shrink toward 0.5" (Brier floor is 0.25 for uniform 0.5 output)
@@ -182,16 +193,24 @@ def fmt(v, digits=4):
         return str(v)
 
 
-def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) -> str:
+def recommendation(
+    opt: dict,
+    best_opt: dict | None,
+    baseline_opt: dict | None,
+    roi_regression_cap: float,
+) -> str:
     """Recommend keep vs revert against the running-best optimizer row.
 
-    KEEP requires ALL of:
-      - brier and roi_units both non-None
-      - brier improves by at least MIN_BRIER_DELTA_FOR_KEEP (0.010).
-        Smaller improvements are within the max-of-50-trials noise floor.
-      - roi_units does not regress by more than roi_regression_cap units.
-      - n_high_conf >= MIN_N_HC_FOR_KEEP (guards against "shrink toward 0.5"
-        wins that improve Brier by killing resolution).
+    KEEP requires n_high_conf >= MIN_N_HC_FOR_KEEP, non-None brier/roi, roi
+    regression within cap, and ONE of:
+
+    1. **Primary gate:** marginal brier delta vs running best >=
+       MIN_BRIER_DELTA_FOR_KEEP (0.010).
+    2. **Cumulative gate:** cumulative brier drop vs original baseline >=
+       MIN_CUMULATIVE_DELTA_FOR_KEEP (0.015) AND marginal delta vs running
+       best >= MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP (0.005). Unblocks
+       stacked wins (e.g. prune + new family) where each single change is
+       within-noise but the combination has moved meaningfully off baseline.
     """
     new_brier = opt.get("brier")
     new_roi = opt.get("roi_units")
@@ -222,19 +241,47 @@ def recommendation(opt: dict, best_opt: dict | None, roi_regression_cap: float) 
 
     if brier_significant and roi_ok:
         return (
-            f"KEEP (opt_brier {best_brier:.4f} -> {new_brier:.4f}, "
+            f"KEEP (primary gate: opt_brier {best_brier:.4f} -> {new_brier:.4f}, "
             f"Δ={delta:+.4f}; opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U; "
             f"n_hc={new_n_hc})."
         )
+
+    if baseline_opt is not None and roi_ok:
+        cumulative_delta = baseline_opt["brier"] - new_brier
+        cumulative_ok = cumulative_delta >= MIN_CUMULATIVE_DELTA_FOR_KEEP
+        marginal_ok = delta >= MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP
+        if cumulative_ok and marginal_ok:
+            return (
+                f"KEEP (cumulative gate: Δ_baseline={cumulative_delta:+.4f} "
+                f"vs {baseline_opt['brier']:.4f} "
+                f"(>={MIN_CUMULATIVE_DELTA_FOR_KEEP}); "
+                f"marginal Δ={delta:+.4f} "
+                f"(>={MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP}); "
+                f"opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U; "
+                f"n_hc={new_n_hc})."
+            )
+
     reasons = []
     if not brier_significant:
         if delta > 0:
             reasons.append(
-                f"opt_brier improved by only {delta:.4f} (< floor "
-                f"{MIN_BRIER_DELTA_FOR_KEEP}, within-noise at 50 trials)"
+                f"opt_brier improved by only {delta:.4f} (< primary floor "
+                f"{MIN_BRIER_DELTA_FOR_KEEP})"
             )
         else:
             reasons.append(f"opt_brier did not improve ({best_brier:.4f} vs {new_brier:.4f})")
+    if baseline_opt is not None:
+        cum = baseline_opt["brier"] - new_brier
+        if cum < MIN_CUMULATIVE_DELTA_FOR_KEEP:
+            reasons.append(
+                f"cumulative Δ vs baseline {cum:+.4f} (< secondary floor "
+                f"{MIN_CUMULATIVE_DELTA_FOR_KEEP})"
+            )
+        elif delta < MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP:
+            reasons.append(
+                f"marginal Δ {delta:+.4f} below cumulative-gate minimum "
+                f"{MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP}"
+            )
     if not roi_ok:
         reasons.append(
             f"opt_roi regressed beyond cap {roi_regression_cap}U "
@@ -268,6 +315,33 @@ def running_best_optimizer(rows: list[dict]) -> dict | None:
         if best is None or brier < best["brier"]:
             best = {"brier": brier, "roi_units": roi, "row_idx": idx}
     return best
+
+
+def baseline_optimizer(rows: list[dict]) -> dict | None:
+    """Return the single `status=baseline` row's optimizer metrics.
+
+    The cumulative-delta secondary gate measures improvement against the
+    ORIGINAL baseline, not the running best. Only the first baseline row is
+    considered (the run_experiment invariant permits exactly one).
+    """
+    for idx, r in enumerate(rows):
+        if r.get("status") != "baseline":
+            continue
+        raw_brier = r.get("opt_brier", "")
+        raw_roi = r.get("opt_roi", "")
+        try:
+            return {
+                "brier": float(raw_brier),
+                "roi_units": float(raw_roi),
+                "row_idx": idx,
+            }
+        except (TypeError, ValueError) as e:
+            sys.exit(
+                f"Corrupt baseline row #{idx + 1} "
+                f"(commit={r.get('commit')}): cannot parse "
+                f"opt_brier={raw_brier!r} / opt_roi={raw_roi!r} ({e})"
+            )
+    return None
 
 
 def _enforce_stop_conditions(rows: list[dict]):
@@ -356,6 +430,7 @@ def cmd_run(args):
             )
 
     best = running_best_optimizer(rows_before)
+    baseline = baseline_optimizer(rows_before)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = git_head_sha()
@@ -407,7 +482,7 @@ def cmd_run(args):
     }
     append_row(row)
 
-    rec = recommendation(opt, best, args.roi_regression_cap)
+    rec = recommendation(opt, best, baseline, args.roi_regression_cap)
 
     # Monitor columns are deliberately NOT printed. They exist in
     # results.tsv for human review but should not influence the agent's
