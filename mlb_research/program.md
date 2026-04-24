@@ -277,6 +277,57 @@ pruning is also untried.
 
 Read `mlb_research/RUN_SUMMARY.md` for the full Run 1 trajectory.
 
+### Context from Run 2
+
+Run 2 produced one KEEP (exp 15): LightGBM `max_depth=1` stumps,
+uncalibrated. Running best advanced from baseline `opt_brier=0.2553`
+to `opt_brier=0.2420` with ROI more than doubling (+54.55U ->
++124.64U). 18 subsequent experiments all reverted or hit the
+consecutive-non-keep cap; the run ended at 0.2420 with a clear
+"structural ceiling" around 0.2400 given the harness surface area
+available to Run 2.
+
+Three patterns showed directional signal but could not cross the
+0.010 primary floor alone:
+- **Feature pruning.** Top-5 / top-8 / top-13 nonzero-importance
+  prunings each beat LGBM-stumps-baseline by ~0.0018 Brier with
+  ROI gains to +156U. Three independent prunings converging is
+  pooled evidence for real signal, not noise.
+- **Slower LR on stumps.** `learning_rate=0.03` was Brier-flat
+  (0.2420) but ROI rose to +130U. Suggests pick composition
+  shifted toward higher-EV picks without improving resolution.
+- **Calibrated stumps (sklearn).** Sub-floor Brier drop but pick
+  population dropped sharply (resolution collapse), masking a
+  real effect. Was not reachable on LGBM/XGBoost in Run 2.
+
+**Promising direction for Run 3** (newly reachable in Run 3 prep,
+committed before this run started):
+
+1. **Stack the pruning+stumps win.** LGBM stumps + prune-13 was
+   `0.2402` in Run 2 (cumulative -0.0151 from baseline, marginal
+   -0.0018 from running best). The new secondary "cumulative
+   gate" (cumulative drop vs baseline >= 0.015 AND marginal > 0)
+   accepts exactly this case. Re-run as a multi-change
+   experiment and the KEEP should fire on the secondary gate.
+2. **Calibrated LGBM/XGBoost stumps** via the new
+   `calibration_method` knob (`"sigmoid"` or `"isotonic"`).
+   Run 2 could only test sklearn calibration, which resolution-
+   collapsed; LGBM/XGBoost raw output may respond better. Smoke
+   runs during Run 3 prep showed both hurt Brier on the obvious
+   naive application, so combine with feature pruning or
+   different `calibration_fraction` to avoid re-discovering
+   that failure mode.
+3. **Margin regression + Normal CDF** (`target: "margin"`).
+   Fundamentally different estimator surface -- the CBB model's
+   approach applied to MLB. Test all three families. Prep-time
+   smoke run (sklearn GBM depth=4 on margin) landed at 0.2554
+   Brier but with +115.73U ROI on 1171 picks -- ROI path looks
+   meaningfully different from the classifier path, so don't be
+   surprised if Brier parity hides real pick-quality alpha.
+
+Read `mlb_research/RUN_SUMMARY.md` for the full Run 2 trajectory
+and the recommendation that motivated Run 3's prep.
+
 ## Known caveats (document in RUN_SUMMARY.md)
 
 These are limitations of the benchmark itself that no amount of
