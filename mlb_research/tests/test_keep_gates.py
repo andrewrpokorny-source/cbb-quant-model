@@ -71,44 +71,39 @@ def test_secondary_gate_passes_stacked_win():
     assert "cumulative gate" in rec
 
 
-def test_secondary_gate_rejects_non_positive_marginal_even_if_cumulative_ok():
-    # A tie vs running best but cumulative gate would otherwise pass.
-    # Guards against keeping a row that makes no progress.
-    new = _opt(RUN2_BEST_0_2420["brier"])  # exact tie with running best
-    # But cumulative vs baseline is still 0.0133, which is below 0.015 anyway,
-    # so build a scenario where running best == some row already 0.015 ahead
-    # of baseline and new ties that row.
-    running_best = {"brier": 0.2400, "roi_units": 140.0}  # 0.015 off baseline
-    tied_new = _opt(0.2400, roi=135.0, n_hc=1100)
+def test_secondary_gate_rejects_non_positive_marginal_when_gate_available():
+    # Tie vs running best, with running best NOT yet past cumulative threshold
+    # (so the cumulative gate is still available). Even with cumulative drop
+    # qualifying, a zero marginal must REVERT.
+    running_best_below_threshold = {"brier": 0.2410, "roi_units": 130.0}  # 0.0143 from baseline
+    tied_new = _opt(0.2410, roi=130.0, n_hc=1100)  # marginal 0
     rec = recommendation(
-        tied_new, best_opt=running_best, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
+        tied_new,
+        best_opt=running_best_below_threshold,
+        baseline_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
     )
     assert rec.startswith("REVERT")
-    # Marginal delta is exactly 0 -- below the strictly positive minimum.
-    assert (
-        "below cumulative-gate minimum" in rec
-        or "did not improve" in rec
-    )
 
 
-def test_secondary_gate_rejects_marginal_below_0001_threshold():
-    # Marginal = 0.0005 (< 0.001 minimum). Cumulative would pass.
-    # Running best already 0.015 ahead of baseline; new tries 0.0005 beyond.
-    running_best = {"brier": 0.2400, "roi_units": 140.0}
-    new = _opt(0.2395, roi=142.0, n_hc=1100)  # marginal 0.0005, cumulative 0.0158
+def test_secondary_gate_rejects_marginal_below_0001_when_gate_available():
+    # Running best 0.0143 from baseline (< 0.015 threshold; gate available).
+    # Candidate cumulative = 0.0158 (>= 0.015) but marginal = 0.0005 (< 0.001).
+    running_best_below_threshold = {"brier": 0.2410, "roi_units": 130.0}
+    new = _opt(0.2405, roi=140.0, n_hc=1100)  # marginal 0.0005, cumulative 0.0148
     rec = recommendation(
-        new, best_opt=running_best, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
+        new, best_opt=running_best_below_threshold, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
     )
     assert rec.startswith("REVERT")
-    assert "below cumulative-gate minimum" in rec
 
 
-def test_secondary_gate_accepts_marginal_just_above_0001_threshold():
-    # Marginal = 0.0015 (> 0.001 minimum). Cumulative passes 0.015.
-    running_best = {"brier": 0.2400, "roi_units": 140.0}
-    new = _opt(0.2385, roi=145.0, n_hc=1100)  # marginal 0.0015, cumulative 0.0168
+def test_secondary_gate_accepts_marginal_just_above_0001_when_gate_available():
+    # Running best 0.0133 from baseline (gate still available). Candidate
+    # cumulative 0.0153, marginal 0.0020. Should KEEP via cumulative gate.
+    running_best_below_threshold = {"brier": 0.2420, "roi_units": 124.0}  # Run 2 LGBM stumps
+    new = _opt(0.2400, roi=135.0, n_hc=1140)  # marginal 0.0020, cumulative 0.0153
     rec = recommendation(
-        new, best_opt=running_best, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
+        new, best_opt=running_best_below_threshold, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
     )
     assert rec.startswith("KEEP")
     assert "cumulative gate" in rec
@@ -226,3 +221,58 @@ def test_constants_have_sensible_relationship():
     assert MIN_BRIER_DELTA_FOR_KEEP > MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP
     # Cumulative floor should exceed primary (it's a longer path of wins).
     assert MIN_CUMULATIVE_DELTA_FOR_KEEP >= MIN_BRIER_DELTA_FOR_KEEP
+
+
+def test_cumulative_gate_is_single_use_blocks_post_threshold_noise_stairstep():
+    # Adversarial-review case: once running best is already past 0.015 from
+    # baseline, the cumulative gate must NOT fire for sub-noise marginal wins.
+    # Otherwise the ledger stair-steps forward on 0.001 nudges indefinitely.
+    running_best_past_threshold = {"brier": 0.2402, "roi_units": 156.0}  # 0.0151 off baseline
+    new = _opt(0.2392, roi=158.0, n_hc=1100)  # marginal 0.0010, cumulative 0.0161
+    rec = recommendation(
+        new,
+        best_opt=running_best_past_threshold,
+        baseline_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+    )
+    assert rec.startswith("REVERT")
+    assert "cumulative gate exhausted" in rec or "primary floor" in rec
+
+
+def test_cumulative_gate_blocked_after_primary_keep_pushed_running_best_past_threshold():
+    # If a primary-gate keep already lifted running best beyond 0.015 from
+    # baseline (e.g. a strong family swap landing at 0.240), subsequent
+    # cumulative-gate attempts must be blocked even with sub-noise marginal.
+    running_best_via_primary = {"brier": 0.2400, "roi_units": 140.0}  # 0.0153 off baseline
+    new = _opt(0.2395, roi=145.0, n_hc=1100)  # marginal 0.0005, cumulative 0.0158
+    rec = recommendation(
+        new, best_opt=running_best_via_primary, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
+    )
+    assert rec.startswith("REVERT")
+
+
+def test_primary_gate_still_works_after_cumulative_exhaustion():
+    # Even after the cumulative gate is exhausted, a clean primary-floor
+    # crossing should still KEEP (this is the bound on how much the single-use
+    # rule restricts forward progress).
+    running_best_past_threshold = {"brier": 0.2400, "roi_units": 140.0}
+    new = _opt(0.2290, roi=180.0, n_hc=1100)  # marginal 0.0110, primary-clearing
+    rec = recommendation(
+        new, best_opt=running_best_past_threshold, baseline_opt=BASELINE_0_2553, roi_regression_cap=3.0
+    )
+    assert rec.startswith("KEEP")
+    assert "primary gate" in rec
+
+
+def test_cumulative_gate_fires_exactly_once_at_first_threshold_crossing():
+    # The CANONICAL case: running best 0.2420 (0.0133 off baseline, NOT yet
+    # crossed), candidate 0.2402 (cumulative 0.0151, marginal 0.0018). Must
+    # KEEP via cumulative gate. Run 2 exp 21 ground truth.
+    rec = recommendation(
+        _opt(0.2402, roi=156.36, n_hc=1159),
+        best_opt=RUN2_BEST_0_2420,  # 0.0133 from baseline -- gate available
+        baseline_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+    )
+    assert rec.startswith("KEEP")
+    assert "cumulative gate" in rec

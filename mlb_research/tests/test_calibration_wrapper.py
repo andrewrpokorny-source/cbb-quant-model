@@ -82,8 +82,28 @@ def test_wrapper_skips_calibration_below_min_rows():
     wrap.fit(X, y)
     assert wrap.calibrator_ is None
     assert wrap.calibration_rows_ == 0
+    assert wrap.calibrator_source_ == "skipped_thin_holdout"
     p = wrap.predict_proba(X)[:, 1]
     assert p.shape == (len(X),)
+
+
+def test_wrapper_holdout_size_gate_blocks_thin_holdout():
+    # 250 total rows + 20% split = 50 holdout. min_calibration_rows=200 is
+    # satisfied but min_holdout_rows=100 is not, so calibration must skip.
+    # The legacy gate (total only) would have fit a calibrator on 50 noisy
+    # predictions -- adversarial review caught this.
+    X, y = _synthetic(n=250, seed=11)
+    wrap = TimeAwareCalibrated(
+        base_factory=lambda: GradientBoostingClassifier(
+            n_estimators=20, max_depth=2, random_state=0
+        ),
+        method="sigmoid",
+        min_calibration_rows=200,
+        min_holdout_rows=100,
+    )
+    wrap.fit(X, y)
+    assert wrap.calibrator_ is None
+    assert wrap.calibrator_source_ == "skipped_thin_holdout"
 
 
 def test_rejects_unknown_method():

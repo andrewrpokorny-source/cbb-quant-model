@@ -173,6 +173,7 @@ class TimeAwareCalibrated:
         method: str = "sigmoid",
         calibration_fraction: float = 0.2,
         min_calibration_rows: int = 200,
+        min_holdout_rows: int = 50,
     ):
         if method not in ("sigmoid", "isotonic"):
             raise ValueError(f"method must be 'sigmoid' or 'isotonic', got {method!r}")
@@ -180,6 +181,7 @@ class TimeAwareCalibrated:
         self.method = method
         self.calibration_fraction = calibration_fraction
         self.min_calibration_rows = min_calibration_rows
+        self.min_holdout_rows = min_holdout_rows
 
     def fit(self, X, y):
         X_df = pd.DataFrame(X).copy()
@@ -190,9 +192,16 @@ class TimeAwareCalibrated:
 
         split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
         split_idx = min(split_idx, len(X_df) - 1)
+        holdout_size = len(X_df) - split_idx
 
+        # Gate on BOTH total rows and actual holdout slice size. The legacy
+        # gate (`len >= min_calibration_rows` only) admitted folds where the
+        # holdout slice was just `min_calibration_rows * calibration_fraction`
+        # rows -- e.g. 40 rows of an isotonic calibrator -- which produces
+        # noisy, overconfident calibrators in early walk-forward folds.
         use_calibration = (
             len(X_df) >= self.min_calibration_rows
+            and holdout_size >= self.min_holdout_rows
             and split_idx < len(X_df)
             and y_ser.iloc[:split_idx].nunique() > 1
             and y_ser.iloc[split_idx:].nunique() > 1
@@ -207,6 +216,7 @@ class TimeAwareCalibrated:
 
         self.calibrator_ = None
         self.calibration_rows_ = 0
+        self.calibrator_source_ = "skipped_thin_holdout"
         if use_calibration:
             calib_X = X_df.iloc[split_idx:]
             calib_y = y_ser.iloc[split_idx:]
@@ -219,6 +229,7 @@ class TimeAwareCalibrated:
                 cal.fit(raw.reshape(-1, 1), calib_y)
             self.calibrator_ = cal
             self.calibration_rows_ = len(calib_X)
+            self.calibrator_source_ = "holdout"
 
         return self
 
@@ -261,11 +272,13 @@ class MarginCDFRegressor:
         base_factory: Callable,
         residual_fraction: float = 0.2,
         min_residual_rows: int = 200,
+        min_holdout_rows: int = 50,
         min_sigma: float = 0.5,
     ):
         self.base_factory = base_factory
         self.residual_fraction = residual_fraction
         self.min_residual_rows = min_residual_rows
+        self.min_holdout_rows = min_holdout_rows
         self.min_sigma = min_sigma
 
     def fit(self, X, y):
@@ -278,8 +291,17 @@ class MarginCDFRegressor:
 
         split_idx = max(1, int(len(X_df) * (1 - self.residual_fraction)))
         split_idx = min(split_idx, len(X_df) - 1)
+        holdout_size = len(X_df) - split_idx
 
-        use_holdout = len(X_df) >= self.min_residual_rows and split_idx < len(X_df)
+        # Gate on BOTH total rows and holdout slice size. Without the
+        # holdout-size gate, the legacy code happily fit a regressor on
+        # 200-row folds and used a 40-row "holdout" for sigma -- noisy
+        # enough to produce overconfident probabilities in early folds.
+        use_holdout = (
+            len(X_df) >= self.min_residual_rows
+            and holdout_size >= self.min_holdout_rows
+            and split_idx < len(X_df)
+        )
 
         base_X = X_df.iloc[:split_idx] if use_holdout else X_df
         base_y = y_arr[:split_idx] if use_holdout else y_arr
@@ -293,11 +315,18 @@ class MarginCDFRegressor:
             held_y = y_arr[split_idx:]
             residuals = held_y - self.base_estimator_.predict(held_X)
             self.residual_rows_ = len(held_X)
+            self.sigma_source_ = "holdout"
+            sigma = float(np.std(residuals, ddof=1)) if len(residuals) > 1 else float("nan")
         else:
-            residuals = y_arr - self.base_estimator_.predict(X_df)
+            # Conservative fallback: std of training y itself. This is the
+            # variance of an unconditional model -- strictly >= the residual
+            # std of any honest out-of-sample fit -- so probabilities will
+            # collapse toward 0.5 in thin folds rather than spiking on the
+            # in-sample-residual underestimate that tree ensembles produce.
             self.residual_rows_ = 0
+            self.sigma_source_ = "std_of_y_fallback"
+            sigma = float(np.std(y_arr, ddof=1)) if len(y_arr) > 1 else float("nan")
 
-        sigma = float(np.std(residuals, ddof=1)) if len(residuals) > 1 else float("nan")
         if not np.isfinite(sigma) or sigma < self.min_sigma:
             sigma = self.min_sigma
         self.sigma_ = sigma

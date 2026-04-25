@@ -53,13 +53,19 @@ MAX_CONSECUTIVE_NON_KEEPS = 15
 MIN_BRIER_DELTA_FOR_KEEP = 0.010
 # Secondary "cumulative" gate: allows a row to be KEPT whose marginal delta
 # vs the running best is sub-floor, provided the cumulative Brier drop vs the
-# original baseline is clearly real and the marginal step is positive. Unblocks
-# stacked wins (e.g. prune + new family) where each individual change is
-# within-noise but the combination is not. The marginal minimum is set low on
-# purpose -- the whole point of this gate is to pass sub-noise marginal wins
-# (the canonical Run 2 case was Δ=+0.0018). It stays strictly positive to
-# reject ties and pure-regression noise; the cumulative 0.015 floor + ROI cap
-# + n_hc floor + MAX_CONSECUTIVE_NON_KEEPS stop condition do the real work.
+# original baseline is clearly real and the marginal step is positive. Single-
+# use by design: it fires ONLY when the running best has not yet crossed
+# MIN_CUMULATIVE_DELTA_FOR_KEEP from baseline. Once any row (primary or
+# secondary keep) puts the running best past that threshold, future
+# experiments must clear the primary 0.010 marginal floor -- otherwise the
+# ledger could stair-step forward on sub-noise 0.001 nudges indefinitely
+# (caught by adversarial review pre-Run-3).
+#
+# The marginal minimum on the secondary gate is set low on purpose: the
+# whole point of the gate is to pass sub-noise marginal wins (the canonical
+# Run 2 case was Δ=+0.0018). It stays strictly positive to reject ties and
+# pure-regression noise. The single-use semantics are what bounds the
+# downside; the marginal floor inside the gate is just a tie-breaker.
 MIN_CUMULATIVE_DELTA_FOR_KEEP = 0.015
 MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP = 0.001
 # Baseline produces ~795 high-confidence picks over the optimizer window. A
@@ -248,9 +254,12 @@ def recommendation(
 
     if baseline_opt is not None and roi_ok:
         cumulative_delta = baseline_opt["brier"] - new_brier
+        running_best_already_crossed = (
+            (baseline_opt["brier"] - best_brier) >= MIN_CUMULATIVE_DELTA_FOR_KEEP
+        )
         cumulative_ok = cumulative_delta >= MIN_CUMULATIVE_DELTA_FOR_KEEP
         marginal_ok = delta >= MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP
-        if cumulative_ok and marginal_ok:
+        if cumulative_ok and marginal_ok and not running_best_already_crossed:
             return (
                 f"KEEP (cumulative gate: Δ_baseline={cumulative_delta:+.4f} "
                 f"vs {baseline_opt['brier']:.4f} "
@@ -262,6 +271,10 @@ def recommendation(
             )
 
     reasons = []
+    cumulative_gate_exhausted = (
+        baseline_opt is not None
+        and (baseline_opt["brier"] - best_brier) >= MIN_CUMULATIVE_DELTA_FOR_KEEP
+    )
     if not brier_significant:
         if delta > 0:
             reasons.append(
@@ -270,7 +283,7 @@ def recommendation(
             )
         else:
             reasons.append(f"opt_brier did not improve ({best_brier:.4f} vs {new_brier:.4f})")
-    if baseline_opt is not None:
+    if baseline_opt is not None and not cumulative_gate_exhausted:
         cum = baseline_opt["brier"] - new_brier
         if cum < MIN_CUMULATIVE_DELTA_FOR_KEEP:
             reasons.append(
@@ -282,6 +295,12 @@ def recommendation(
                 f"marginal Δ {delta:+.4f} below cumulative-gate minimum "
                 f"{MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP}"
             )
+    elif cumulative_gate_exhausted and not brier_significant and delta > 0:
+        reasons.append(
+            f"cumulative gate exhausted (running best already "
+            f"{baseline_opt['brier'] - best_brier:+.4f} ahead of baseline; "
+            f"primary floor applies)"
+        )
     if not roi_ok:
         reasons.append(
             f"opt_roi regressed beyond cap {roi_regression_cap}U "

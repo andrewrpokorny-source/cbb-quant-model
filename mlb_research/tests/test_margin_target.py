@@ -84,15 +84,36 @@ def test_margin_regressor_applies_min_sigma_floor():
     assert reg.sigma_ >= 0.5
 
 
-def test_margin_regressor_falls_back_to_in_sample_residuals_below_min():
-    X, y = _synthetic_margin(n=80, seed=4)
+def test_margin_regressor_falls_back_to_std_of_y_below_min():
+    # When the trailing holdout is too thin, sigma comes from std(y) instead of
+    # in-sample residuals. std(y) is the variance of an unconditional model and
+    # is strictly >= any honest out-of-sample residual std, so probabilities
+    # collapse toward 0.5 in thin folds rather than spike on overfit residuals.
+    X, y = _synthetic_margin(n=80, seed=4, true_sigma=3.0)
     reg = MarginCDFRegressor(
         base_factory=lambda: GradientBoostingRegressor(n_estimators=20, max_depth=2, random_state=0),
         min_residual_rows=200,
     )
     reg.fit(X, y)
     assert reg.residual_rows_ == 0
-    assert np.isfinite(reg.sigma_)
+    assert reg.sigma_source_ == "std_of_y_fallback"
+    # std(y) for this synthetic data is sqrt(signal_var + noise_var) > true_sigma.
+    assert reg.sigma_ > 3.0
+
+
+def test_margin_regressor_holdout_size_gate_blocks_thin_holdout():
+    # 250 total rows + 20% split = 50 holdout. With min_holdout_rows=100 the
+    # gate must fall back to std(y) -- the legacy gate (just total rows) would
+    # have taken the 50-row holdout despite it being too thin.
+    X, y = _synthetic_margin(n=250, seed=10)
+    reg = MarginCDFRegressor(
+        base_factory=lambda: GradientBoostingRegressor(n_estimators=20, max_depth=2, random_state=0),
+        min_residual_rows=200,
+        min_holdout_rows=100,
+    )
+    reg.fit(X, y)
+    assert reg.residual_rows_ == 0
+    assert reg.sigma_source_ == "std_of_y_fallback"
 
 
 def test_build_factory_routes_margin_target_to_regressor():

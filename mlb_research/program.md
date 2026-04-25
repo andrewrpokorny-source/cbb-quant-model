@@ -17,15 +17,20 @@ EITHER the primary or secondary gate:
   **0.010** vs. the running best. Smaller improvements are within the
   max-of-50-trials noise floor (SE(Brier) at n=1403 ≈ 0.007, expected
   max over 50 trials ≈ 0.015).
-- **Secondary gate (cumulative):** `opt_brier` cumulative drop vs. the
-  ORIGINAL baseline row must be at least **0.015** AND the marginal
-  step vs. running best must be at least **+0.001** (strictly positive,
-  sized to reject ties/regression-noise, not to reject sub-SE gains -- the
-  whole point of this gate is to pass sub-noise marginal wins). Unblocks
-  stacked wins where each individual change is within-noise but their
-  combination has moved meaningfully off baseline. Run 2's `prune-13 +
-  LGBM stumps = 0.2402` (marginal Δ=0.0018, cumulative Δ=0.0151 from
-  baseline 0.2553) is the canonical case the primary-only gate rejects.
+- **Secondary gate (cumulative):** SINGLE-USE. `opt_brier` cumulative
+  drop vs. the ORIGINAL baseline row must be at least **0.015** AND
+  the marginal step vs. running best must be at least **+0.001**. The
+  gate is available ONLY while the running best has not yet crossed
+  the 0.015-from-baseline threshold; once any kept row puts the
+  running best past that line, this gate is exhausted and only the
+  primary 0.010 marginal floor applies. This bounds the downside:
+  the gate can fire at most once between each baseline reset, so
+  sub-noise 0.001 nudges cannot stair-step the ledger forward
+  indefinitely. Unblocks stacked wins where each individual change
+  is within-noise but their combination has moved meaningfully off
+  baseline. Run 2's `prune-13 + LGBM stumps = 0.2402` (marginal
+  Δ=0.0018, cumulative Δ=0.0151 from baseline 0.2553) is the
+  canonical case this gate exists to KEEP.
 - **ROI:** `opt_roi` must not regress more than **3.0 units** vs. the
   running best. Applies to both gates.
 - **Resolution:** `opt_n_hc` must be at least **500**. A KEEP with
