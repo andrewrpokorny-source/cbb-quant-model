@@ -101,6 +101,43 @@ def test_margin_regressor_falls_back_to_std_of_y_below_min():
     assert reg.sigma_ > 3.0
 
 
+def test_margin_regressor_clamps_confidence_in_std_of_y_fallback():
+    # Adversarial review: std(y) is NOT a guaranteed upper bound on residual
+    # variance, so converting raw mu/std(y) through norm.cdf can produce
+    # inflated extreme probabilities exactly on the thin folds the fallback
+    # was meant to protect. The fallback path now clamps |z| so confidence
+    # stays well below any reasonable HIGH_CONF_THRESHOLD.
+    X, y = _synthetic_margin(n=80, seed=20, true_sigma=3.0)
+    reg = MarginCDFRegressor(
+        base_factory=lambda: GradientBoostingRegressor(n_estimators=200, max_depth=5, random_state=0),
+        min_residual_rows=200,
+    )
+    reg.fit(X, y)
+    assert reg.sigma_source_ == "std_of_y_fallback"
+    p = reg.predict_proba(X)[:, 1]
+    confidence = np.maximum(p, 1.0 - p)
+    # All confidence well below the harness's 0.53 high-conf threshold.
+    assert confidence.max() < 0.51
+    assert confidence.max() > 0.5  # ordinal info preserved (not exactly 0.5)
+
+
+def test_margin_regressor_normal_path_uncramped():
+    # When sigma comes from the holdout slice, predictions retain their
+    # full informational range -- no clamping. Sanity check that the fix
+    # only kicks in for the fallback path.
+    X, y = _synthetic_margin(n=600, seed=21, true_sigma=3.0)
+    reg = MarginCDFRegressor(
+        base_factory=lambda: GradientBoostingRegressor(n_estimators=80, max_depth=3, random_state=0),
+    )
+    reg.fit(X, y)
+    assert reg.sigma_source_ == "holdout"
+    p = reg.predict_proba(X)[:, 1]
+    confidence = np.maximum(p, 1.0 - p)
+    # On synthetic data with real signal, at least some predictions should
+    # have confidence above 0.55 -- proves no global clamp is in effect.
+    assert confidence.max() > 0.55
+
+
 def test_margin_regressor_holdout_size_gate_blocks_thin_holdout():
     # 250 total rows + 20% split = 50 holdout. With min_holdout_rows=100 the
     # gate must fall back to std(y) -- the legacy gate (just total rows) would

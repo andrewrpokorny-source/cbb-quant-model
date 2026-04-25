@@ -430,22 +430,36 @@ def cmd_run(args):
     # experiment can be recorded. The ONLY way to create that row is to
     # explicitly pass `--status baseline` as a one-time bootstrap. This
     # prevents silently "rebaselining" after a ledger wipe or manual edit.
-    has_baseline = any(r.get("status") == "baseline" for r in rows_before)
+    baseline_count = sum(1 for r in rows_before if r.get("status") == "baseline")
     if args.status == "baseline":
-        if has_baseline:
+        if baseline_count > 0:
             sys.exit(
                 "A baseline row already exists in results.tsv. Refusing to "
                 "create a second one. If you want to re-baseline the whole "
                 "run, reset the ledger deliberately (human action, not agent)."
             )
     else:
-        if not has_baseline:
+        if baseline_count == 0:
             sys.exit(
                 "No baseline row found in results.tsv. Before running any "
                 "experiments, bootstrap with:\n"
                 "  uv run python mlb_research/run_experiment.py run "
                 "--config mlb_research/configs/baseline.json --change-type "
                 "baseline --description '...' --status baseline"
+            )
+        if baseline_count > 1:
+            # Adversarial review: cumulative-keep gate is anchored on the
+            # first baseline row, while stop conditions are anchored on the
+            # most recent baseline/kept row. Multiple baseline rows (manual
+            # edit, accidental merge, ledger surgery) silently desync those
+            # two anchors. Refuse to compute keep recommendations until the
+            # invariant is restored by a human.
+            sys.exit(
+                f"Multiple baseline rows in results.tsv (found {baseline_count}). "
+                "The cumulative-delta keep gate compares against THE original "
+                "baseline; ambiguous baseline state would silently mis-route "
+                "keep/revert decisions. Reset the ledger or remove the "
+                "duplicate baseline (human action, not agent)."
             )
 
     best = running_best_optimizer(rows_before)

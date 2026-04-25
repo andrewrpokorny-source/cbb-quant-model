@@ -335,7 +335,23 @@ class MarginCDFRegressor:
     def predict_proba(self, X):
         X_df = pd.DataFrame(X).copy()
         mu = np.asarray(self.base_estimator_.predict(X_df), dtype=float)
-        p_home = norm.cdf(mu / self.sigma_)
+        z = mu / self.sigma_
+        if self.sigma_source_ == "std_of_y_fallback":
+            # std(y) is NOT a guaranteed upper bound on out-of-sample residual
+            # variance: a misspecified or overfit regressor can have residuals
+            # exceeding the unconditional target std. Adversarial review
+            # caught norm.cdf(mu/std(y)) producing inflated extreme probs on
+            # exactly the thin folds the fallback was meant to protect.
+            #
+            # Treatment: clamp |z| to a tight band so confidence stays under
+            # any reasonable HIGH_CONF_THRESHOLD. Brier on these folds will
+            # be near 0.25 (Brier(0.5, y)) and n_high_conf contribution is 0,
+            # which honestly reflects "we have no honest sigma estimate here".
+            # Ordinal information from mu is preserved at the third decimal
+            # so Brier still has a tiny gradient if the underlying mu
+            # actually correlates with outcomes.
+            z = np.clip(z, -0.005, 0.005)
+        p_home = norm.cdf(z)
         p_home = np.clip(p_home, 1e-6, 1 - 1e-6)
         return np.column_stack([1 - p_home, p_home])
 
@@ -792,6 +808,41 @@ VALID_HYPERPARAM_KEYS = {
     "colsample_bytree",
 }
 
+# Hyperparameter activeness rules. Each key is "active" only when the chosen
+# (model_family, target, calibrated) combo actually plumbs it through to an
+# estimator or wrapper. An inert hyperparameter recorded in the ledger would
+# falsely advertise that the experiment tested that knob -- caught by
+# adversarial review pre-Run-3.
+_CORE_HYPERPARAM_KEYS = {"n_estimators", "max_depth", "learning_rate", "random_state"}
+_SAMPLING_HYPERPARAM_KEYS = {"subsample", "colsample_bytree"}
+_HOLDOUT_HYPERPARAM_KEYS = {"calibration_fraction", "min_calibration_rows"}
+
+
+def active_hyperparam_keys(config: dict) -> set:
+    """Return the subset of VALID_HYPERPARAM_KEYS that the chosen path actually uses.
+
+    - Core keys (n_estimators / max_depth / learning_rate / random_state) are
+      always active across all model families and targets.
+    - Sampling keys (subsample / colsample_bytree) are only plumbed through
+      to LightGBM / XGBoost; sklearn_gbm silently ignores them.
+    - Holdout keys (calibration_fraction / min_calibration_rows) drive the
+      trailing-window slice for either calibration (when calibrated=true on
+      home_win) or residual sigma estimation (when target=margin). Inert
+      otherwise.
+    """
+    family = config.get("model_family", "sklearn_gbm")
+    calibrated = bool(config.get("calibrated", True))
+    target = config.get("target", "home_win")
+
+    keys = set(_CORE_HYPERPARAM_KEYS)
+    if family in {"lightgbm", "xgboost"}:
+        keys |= _SAMPLING_HYPERPARAM_KEYS
+    calib_active = target == "home_win" and calibrated
+    margin_active = target == "margin"
+    if calib_active or margin_active:
+        keys |= _HOLDOUT_HYPERPARAM_KEYS
+    return keys
+
 
 def validate_config_keys(config: dict):
     """Reject unknown keys in config JSON to prevent silent-default footguns.
@@ -800,6 +851,10 @@ def validate_config_keys(config: dict):
     without validation the runner silently falls back to defaults and the
     experiment row lies about what was tested. Keys starting with `_` are
     treated as comments by convention.
+
+    Also rejects hyperparameter keys that ARE in the global whitelist but
+    inert for the chosen family/target/calibration combo (e.g. `subsample`
+    on sklearn_gbm, or `calibration_fraction` on uncalibrated home_win).
     """
     unknown_top = [
         k for k in config
@@ -820,6 +875,22 @@ def validate_config_keys(config: dict):
         sys.exit(
             f"Unknown hyperparams key(s): {unknown_hp}. "
             f"Valid keys: {sorted(VALID_HYPERPARAM_KEYS)}."
+        )
+    active = active_hyperparam_keys(config)
+    inert_hp = sorted(
+        k for k in hp
+        if not k.startswith("_") and k in VALID_HYPERPARAM_KEYS and k not in active
+    )
+    if inert_hp:
+        family = config.get("model_family", "sklearn_gbm")
+        calibrated = bool(config.get("calibrated", True))
+        target = config.get("target", "home_win")
+        sys.exit(
+            f"Inert hyperparams for (model_family={family}, target={target}, "
+            f"calibrated={calibrated}): {inert_hp}. These keys are not plumbed "
+            "through to the active estimator/wrapper, so recording them would "
+            "mis-label the experiment. Remove them, or change "
+            "model_family/target/calibrated to a combo where they are active."
         )
 
 
@@ -888,7 +959,14 @@ def main():
         "target": target,
         "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],
-        "hyperparams": {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})},
+        # Emit only hyperparameters that the active path actually uses.
+        # Recording inert defaults (e.g. subsample on sklearn_gbm) would
+        # falsely advertise that the experiment tested that knob.
+        "hyperparams": {
+            k: v
+            for k, v in {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})}.items()
+            if k in active_hyperparam_keys(config)
+        },
         "diagnostics": diagnostics_by_window,
     }
 

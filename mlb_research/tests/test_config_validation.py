@@ -98,3 +98,72 @@ def test_valid_key_whitelists_are_not_empty():
     assert "n_estimators" in VALID_HYPERPARAM_KEYS
     assert len(VALID_TOP_LEVEL_CONFIG_KEYS) >= 6
     assert len(VALID_HYPERPARAM_KEYS) >= 8
+
+
+def test_active_keys_for_baseline_path():
+    # Baseline config: sklearn_gbm + calibrated + home_win. Active keys are
+    # core + holdout (no sampling for sklearn_gbm).
+    from anchor_eval import active_hyperparam_keys
+    config = {"model_family": "sklearn_gbm", "calibrated": True, "target": "home_win"}
+    keys = active_hyperparam_keys(config)
+    assert "n_estimators" in keys and "calibration_fraction" in keys
+    assert "subsample" not in keys and "colsample_bytree" not in keys
+
+
+def test_active_keys_for_lgbm_calibrated():
+    from anchor_eval import active_hyperparam_keys
+    config = {"model_family": "lightgbm", "calibrated": True, "target": "home_win"}
+    keys = active_hyperparam_keys(config)
+    assert {"subsample", "colsample_bytree", "calibration_fraction", "min_calibration_rows"} <= keys
+
+
+def test_active_keys_for_uncalibrated_home_win():
+    from anchor_eval import active_hyperparam_keys
+    config = {"model_family": "sklearn_gbm", "calibrated": False, "target": "home_win"}
+    keys = active_hyperparam_keys(config)
+    assert "calibration_fraction" not in keys
+    assert "min_calibration_rows" not in keys
+
+
+def test_active_keys_for_margin_target():
+    # Margin uses holdout keys for residual sigma estimation regardless
+    # of calibrated (which must be false anyway for target=margin).
+    from anchor_eval import active_hyperparam_keys
+    config = {"model_family": "sklearn_gbm", "calibrated": False, "target": "margin"}
+    keys = active_hyperparam_keys(config)
+    assert {"calibration_fraction", "min_calibration_rows"} <= keys
+
+
+def test_validator_rejects_subsample_on_sklearn_gbm():
+    # Adversarial review: sklearn_gbm doesn't accept subsample/colsample.
+    # Recording them would mis-label the experiment.
+    config = {
+        "model_family": "sklearn_gbm",
+        "calibrated": True,
+        "target": "home_win",
+        "hyperparams": {"n_estimators": 100, "subsample": 0.5},
+    }
+    with pytest.raises(SystemExit, match="Inert hyperparams"):
+        validate_config_keys(config)
+
+
+def test_validator_rejects_calibration_fraction_when_uncalibrated_home_win():
+    # calibration_fraction has no effect when calibrated=false on home_win.
+    config = {
+        "model_family": "sklearn_gbm",
+        "calibrated": False,
+        "target": "home_win",
+        "hyperparams": {"n_estimators": 100, "calibration_fraction": 0.2},
+    }
+    with pytest.raises(SystemExit, match="Inert hyperparams"):
+        validate_config_keys(config)
+
+
+def test_validator_accepts_subsample_on_lgbm():
+    config = {
+        "model_family": "lightgbm",
+        "calibrated": False,
+        "target": "home_win",
+        "hyperparams": {"n_estimators": 100, "subsample": 0.5, "colsample_bytree": 0.8},
+    }
+    validate_config_keys(config)  # should not raise

@@ -193,6 +193,46 @@ def test_baseline_optimizer_rejects_corrupt_baseline_row():
         baseline_optimizer(rows)
 
 
+def test_cmd_run_rejects_multiple_baseline_rows():
+    # Adversarial review: cmd_run must enforce exactly-one-baseline before
+    # the cumulative gate even runs, otherwise multiple baseline rows would
+    # silently desync the cumulative anchor (first baseline) from the stop
+    # condition anchor (most recent baseline/kept).
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    import shutil
+
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    runner = REPO_ROOT / "mlb_research" / "run_experiment.py"
+    real_tsv = REPO_ROOT / "mlb_research" / "results.tsv"
+
+    # Read the real ledger header so we generate a same-shape fake.
+    header = real_tsv.read_text().splitlines()[0]
+
+    fake_row1 = "20260101T000000Z\taaaaaaa\t0.255300\t0.720000\t50.00\t0.5500\t800\t1400\t0.240000\t80.00\t480\t0.190000\t40.00\t78\tbaseline\tbaseline\tbaseline 1\tx\ty"
+    fake_row2 = "20260102T000000Z\tbbbbbbb\t0.250000\t0.700000\t60.00\t0.5600\t820\t1400\t0.240000\t80.00\t480\t0.190000\t40.00\t78\tbaseline\tbaseline\tbaseline 2\tx\ty"
+
+    # Use a backup-and-restore dance against the real results.tsv -- the
+    # runner reads from a hardcoded path, so we have to swap the file.
+    backup = real_tsv.read_bytes()
+    try:
+        real_tsv.write_text("\n".join([header, fake_row1, fake_row2]) + "\n")
+        result = subprocess.run(
+            ["python3", str(runner), "run",
+             "--config", str(REPO_ROOT / "mlb_research" / "configs" / "baseline.json"),
+             "--change-type", "features",
+             "--description", "should be rejected -- two baselines"],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+    finally:
+        real_tsv.write_bytes(backup)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Multiple baseline rows" in combined
+
+
 def test_running_best_unchanged_by_new_code():
     # Sanity: running_best_optimizer still picks the lowest-Brier
     # baseline/kept row regardless of ordering.

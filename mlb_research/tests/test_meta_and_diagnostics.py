@@ -28,17 +28,21 @@ def _run_eval(config_path: Path, out_path: Path):
 
 def test_meta_calibration_method_is_null_when_calibrated_false(tmp_path):
     cfg = tmp_path / "c.json"
+    # No holdout keys -- calibrated=false makes them inert per the new
+    # family-aware hyperparam validator.
     cfg.write_text(json.dumps({
         "model_family": "sklearn_gbm",
         "calibrated": False,
         "target": "home_win",
         "hyperparams": {"n_estimators": 30, "max_depth": 2, "learning_rate": 0.05,
-                         "random_state": 42, "calibration_fraction": 0.2,
-                         "min_calibration_rows": 200},
+                         "random_state": 42},
     }))
     r = _run_eval(cfg, tmp_path / "r.json")
     assert r["_meta"]["calibration_method"] is None
     assert r["_meta"]["calibrated"] is False
+    # Holdout keys must NOT appear in _meta.hyperparams either.
+    assert "calibration_fraction" not in r["_meta"]["hyperparams"]
+    assert "min_calibration_rows" not in r["_meta"]["hyperparams"]
 
 
 def test_meta_calibration_method_is_null_when_target_margin(tmp_path):

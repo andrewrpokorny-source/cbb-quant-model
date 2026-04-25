@@ -1,11 +1,9 @@
 {
-  "_description": "calibrated=false (raw GBM)",
+  "_description": "calibrated=false (raw GBM). NOTE: Originally this config also listed calibration_fraction and min_calibration_rows; with calibrated=false those keys were inert and silently ignored, but mis-labeled the experiment as if they had been tested. Cleaned up after adversarial-review caught the labeling bug; the historical ledger row's archive copy still records the original config for reference.",
   "hyperparams": {
     "n_estimators": 150,
     "max_depth": 4,
     "learning_rate": 0.05,
-    "calibration_fraction": 0.2,
-    "min_calibration_rows": 200,
     "random_state": 42
   },
   "calibrated": false,
