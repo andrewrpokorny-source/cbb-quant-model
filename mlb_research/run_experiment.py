@@ -37,7 +37,13 @@ from datetime import datetime, timezone
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RESEARCH_DIR = os.path.dirname(os.path.abspath(__file__))
 ANCHOR_EVAL = os.path.join(RESEARCH_DIR, "anchor", "anchor_eval.py")
-RESULTS_TSV = os.path.join(RESEARCH_DIR, "results.tsv")
+# Tests can point at a temporary ledger via MLB_RESEARCH_RESULTS_TSV instead
+# of mutating the real checked-in results.tsv. Read once at import so the
+# subprocess sees a consistent path for all helpers (read_all_rows,
+# _write_tsv_atomic, append_row).
+RESULTS_TSV = os.environ.get("MLB_RESEARCH_RESULTS_TSV") or os.path.join(
+    RESEARCH_DIR, "results.tsv"
+)
 EXPERIMENTS_DIR = os.path.join(RESEARCH_DIR, "experiments")
 
 PER_EXPERIMENT_TIMEOUT_SECONDS = 600  # 10 min hard cap
@@ -50,24 +56,17 @@ MAX_CONSECUTIVE_NON_KEEPS = 15
 # optimizer window, Brier standard error is ~0.007, so a single run's max-of-50
 # Gaussian noise floor is ~ΔBrier ~= 0.015. We require a stricter 0.010 delta
 # to be confident an improvement is not within-noise.
-MIN_BRIER_DELTA_FOR_KEEP = 0.010
-# Secondary "cumulative" gate: allows a row to be KEPT whose marginal delta
-# vs the running best is sub-floor, provided the cumulative Brier drop vs the
-# original baseline is clearly real and the marginal step is positive. Single-
-# use by design: it fires ONLY when the running best has not yet crossed
-# MIN_CUMULATIVE_DELTA_FOR_KEEP from baseline. Once any row (primary or
-# secondary keep) puts the running best past that threshold, future
-# experiments must clear the primary 0.010 marginal floor -- otherwise the
-# ledger could stair-step forward on sub-noise 0.001 nudges indefinitely
-# (caught by adversarial review pre-Run-3).
 #
-# The marginal minimum on the secondary gate is set low on purpose: the
-# whole point of the gate is to pass sub-noise marginal wins (the canonical
-# Run 2 case was Δ=+0.0018). It stays strictly positive to reject ties and
-# pure-regression noise. The single-use semantics are what bounds the
-# downside; the marginal floor inside the gate is just a tie-breaker.
-MIN_CUMULATIVE_DELTA_FOR_KEEP = 0.015
-MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP = 0.001
+# A previous draft of this branch added a "cumulative" secondary gate that
+# accepted rows whose marginal Δ was sub-floor as long as cumulative Δ vs the
+# original baseline reached 0.015. Adversarial review correctly observed that
+# 0.015 IS the noise floor on the same window, so the secondary gate was at
+# search-noise rather than above it -- it converted the multiple-comparisons
+# trap into a documented rule. The cumulative gate has been removed. Multi-
+# change candidates (e.g. Run 2's prune-13 + LGBM stumps = 0.2402) will REVERT
+# in the autonomous loop and can be promoted by a deliberate human override
+# row (the existing pattern -- see PR #80's HUMAN OVERRIDE row).
+MIN_BRIER_DELTA_FOR_KEEP = 0.010
 # Baseline produces ~795 high-confidence picks over the optimizer window. A
 # genuine improvement should not gut the pick population by > ~35%. Otherwise
 # a win may be "shrink toward 0.5" (Brier floor is 0.25 for uniform 0.5 output)
@@ -202,21 +201,17 @@ def fmt(v, digits=4):
 def recommendation(
     opt: dict,
     best_opt: dict | None,
-    baseline_opt: dict | None,
     roi_regression_cap: float,
 ) -> str:
     """Recommend keep vs revert against the running-best optimizer row.
 
-    KEEP requires n_high_conf >= MIN_N_HC_FOR_KEEP, non-None brier/roi, roi
-    regression within cap, and ONE of:
-
-    1. **Primary gate:** marginal brier delta vs running best >=
-       MIN_BRIER_DELTA_FOR_KEEP (0.010).
-    2. **Cumulative gate:** cumulative brier drop vs original baseline >=
-       MIN_CUMULATIVE_DELTA_FOR_KEEP (0.015) AND marginal delta vs running
-       best >= MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP (0.005). Unblocks
-       stacked wins (e.g. prune + new family) where each single change is
-       within-noise but the combination has moved meaningfully off baseline.
+    KEEP requires ALL of:
+      - brier and roi_units both non-None
+      - brier improves by at least MIN_BRIER_DELTA_FOR_KEEP (0.010).
+        Smaller improvements are within the max-of-50-trials noise floor.
+      - roi_units does not regress by more than roi_regression_cap units.
+      - n_high_conf >= MIN_N_HC_FOR_KEEP (guards against "shrink toward 0.5"
+        wins that improve Brier by killing resolution).
     """
     new_brier = opt.get("brier")
     new_roi = opt.get("roi_units")
@@ -247,60 +242,19 @@ def recommendation(
 
     if brier_significant and roi_ok:
         return (
-            f"KEEP (primary gate: opt_brier {best_brier:.4f} -> {new_brier:.4f}, "
+            f"KEEP (opt_brier {best_brier:.4f} -> {new_brier:.4f}, "
             f"Δ={delta:+.4f}; opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U; "
             f"n_hc={new_n_hc})."
         )
-
-    if baseline_opt is not None and roi_ok:
-        cumulative_delta = baseline_opt["brier"] - new_brier
-        running_best_already_crossed = (
-            (baseline_opt["brier"] - best_brier) >= MIN_CUMULATIVE_DELTA_FOR_KEEP
-        )
-        cumulative_ok = cumulative_delta >= MIN_CUMULATIVE_DELTA_FOR_KEEP
-        marginal_ok = delta >= MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP
-        if cumulative_ok and marginal_ok and not running_best_already_crossed:
-            return (
-                f"KEEP (cumulative gate: Δ_baseline={cumulative_delta:+.4f} "
-                f"vs {baseline_opt['brier']:.4f} "
-                f"(>={MIN_CUMULATIVE_DELTA_FOR_KEEP}); "
-                f"marginal Δ={delta:+.4f} "
-                f"(>={MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP}); "
-                f"opt_roi {best_roi:+.2f}U -> {new_roi:+.2f}U; "
-                f"n_hc={new_n_hc})."
-            )
-
     reasons = []
-    cumulative_gate_exhausted = (
-        baseline_opt is not None
-        and (baseline_opt["brier"] - best_brier) >= MIN_CUMULATIVE_DELTA_FOR_KEEP
-    )
     if not brier_significant:
         if delta > 0:
             reasons.append(
-                f"opt_brier improved by only {delta:.4f} (< primary floor "
-                f"{MIN_BRIER_DELTA_FOR_KEEP})"
+                f"opt_brier improved by only {delta:.4f} (< floor "
+                f"{MIN_BRIER_DELTA_FOR_KEEP}, within-noise at 50 trials)"
             )
         else:
             reasons.append(f"opt_brier did not improve ({best_brier:.4f} vs {new_brier:.4f})")
-    if baseline_opt is not None and not cumulative_gate_exhausted:
-        cum = baseline_opt["brier"] - new_brier
-        if cum < MIN_CUMULATIVE_DELTA_FOR_KEEP:
-            reasons.append(
-                f"cumulative Δ vs baseline {cum:+.4f} (< secondary floor "
-                f"{MIN_CUMULATIVE_DELTA_FOR_KEEP})"
-            )
-        elif delta < MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP:
-            reasons.append(
-                f"marginal Δ {delta:+.4f} below cumulative-gate minimum "
-                f"{MIN_MARGINAL_DELTA_FOR_CUMULATIVE_KEEP}"
-            )
-    elif cumulative_gate_exhausted and not brier_significant and delta > 0:
-        reasons.append(
-            f"cumulative gate exhausted (running best already "
-            f"{baseline_opt['brier'] - best_brier:+.4f} ahead of baseline; "
-            f"primary floor applies)"
-        )
     if not roi_ok:
         reasons.append(
             f"opt_roi regressed beyond cap {roi_regression_cap}U "
@@ -334,33 +288,6 @@ def running_best_optimizer(rows: list[dict]) -> dict | None:
         if best is None or brier < best["brier"]:
             best = {"brier": brier, "roi_units": roi, "row_idx": idx}
     return best
-
-
-def baseline_optimizer(rows: list[dict]) -> dict | None:
-    """Return the single `status=baseline` row's optimizer metrics.
-
-    The cumulative-delta secondary gate measures improvement against the
-    ORIGINAL baseline, not the running best. Only the first baseline row is
-    considered (the run_experiment invariant permits exactly one).
-    """
-    for idx, r in enumerate(rows):
-        if r.get("status") != "baseline":
-            continue
-        raw_brier = r.get("opt_brier", "")
-        raw_roi = r.get("opt_roi", "")
-        try:
-            return {
-                "brier": float(raw_brier),
-                "roi_units": float(raw_roi),
-                "row_idx": idx,
-            }
-        except (TypeError, ValueError) as e:
-            sys.exit(
-                f"Corrupt baseline row #{idx + 1} "
-                f"(commit={r.get('commit')}): cannot parse "
-                f"opt_brier={raw_brier!r} / opt_roi={raw_roi!r} ({e})"
-            )
-    return None
 
 
 def _enforce_stop_conditions(rows: list[dict]):
@@ -448,22 +375,24 @@ def cmd_run(args):
                 "baseline --description '...' --status baseline"
             )
         if baseline_count > 1:
-            # Adversarial review: cumulative-keep gate is anchored on the
-            # first baseline row, while stop conditions are anchored on the
-            # most recent baseline/kept row. Multiple baseline rows (manual
-            # edit, accidental merge, ledger surgery) silently desync those
-            # two anchors. Refuse to compute keep recommendations until the
-            # invariant is restored by a human.
+            # The runner's stop conditions (MAX_EXPERIMENTS_SINCE_BASELINE,
+            # MAX_CONSECUTIVE_NON_KEEPS) are computed relative to the most
+            # recent baseline/kept row, and multiple baseline rows (manual
+            # edit, accidental merge, ledger surgery) would silently shift
+            # which "baseline" governs the stop conditions for any given
+            # experiment. Refuse to compute recommendations until the
+            # invariant is restored by a human. (The cumulative-delta gate
+            # this once also anchored on was removed after adversarial review;
+            # only the stop-condition coherence concern remains.)
             sys.exit(
                 f"Multiple baseline rows in results.tsv (found {baseline_count}). "
-                "The cumulative-delta keep gate compares against THE original "
-                "baseline; ambiguous baseline state would silently mis-route "
-                "keep/revert decisions. Reset the ledger or remove the "
-                "duplicate baseline (human action, not agent)."
+                "Stop conditions anchor on the most recent baseline/kept row, "
+                "and multiple baselines would silently shift which one "
+                "governs them. Reset the ledger or remove the duplicate "
+                "baseline (human action, not agent)."
             )
 
     best = running_best_optimizer(rows_before)
-    baseline = baseline_optimizer(rows_before)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = git_head_sha()
@@ -515,7 +444,7 @@ def cmd_run(args):
     }
     append_row(row)
 
-    rec = recommendation(opt, best, baseline, args.roi_regression_cap)
+    rec = recommendation(opt, best, args.roi_regression_cap)
 
     # Monitor columns are deliberately NOT printed. They exist in
     # results.tsv for human review but should not influence the agent's

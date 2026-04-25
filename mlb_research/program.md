@@ -9,34 +9,24 @@ you should continue.
 
 **Primary objective:** minimize `opt_brier` in `mlb_research/results.tsv`.
 
-**Keep-eligibility rules** (enforced by the runner, also stated here).
-A row is KEPT if n_hc and ROI gates pass AND the Brier change clears
-EITHER the primary or secondary gate:
+**Keep-eligibility rules** (enforced by the runner, also stated here):
+- `opt_brier` must improve by at least **0.010** vs. the running best.
+  Smaller improvements are within the max-of-50-trials noise floor
+  (SE(Brier) at n=1403 ≈ 0.007, expected max over 50 trials ≈ 0.015).
+- `opt_roi` must not regress more than **3.0 units** vs. the running
+  best.
+- `opt_n_hc` must be at least **500**. A KEEP with fewer than 500
+  high-conf picks is almost certainly a resolution-collapse artifact
+  (Brier floor is 0.25 for uniform 0.5 output) rather than real alpha.
 
-- **Primary gate (marginal):** `opt_brier` must improve by at least
-  **0.010** vs. the running best. Smaller improvements are within the
-  max-of-50-trials noise floor (SE(Brier) at n=1403 ≈ 0.007, expected
-  max over 50 trials ≈ 0.015).
-- **Secondary gate (cumulative):** SINGLE-USE. `opt_brier` cumulative
-  drop vs. the ORIGINAL baseline row must be at least **0.015** AND
-  the marginal step vs. running best must be at least **+0.001**. The
-  gate is available ONLY while the running best has not yet crossed
-  the 0.015-from-baseline threshold; once any kept row puts the
-  running best past that line, this gate is exhausted and only the
-  primary 0.010 marginal floor applies. This bounds the downside:
-  the gate can fire at most once between each baseline reset, so
-  sub-noise 0.001 nudges cannot stair-step the ledger forward
-  indefinitely. Unblocks stacked wins where each individual change
-  is within-noise but their combination has moved meaningfully off
-  baseline. Run 2's `prune-13 + LGBM stumps = 0.2402` (marginal
-  Δ=0.0018, cumulative Δ=0.0151 from baseline 0.2553) is the
-  canonical case this gate exists to KEEP.
-- **ROI:** `opt_roi` must not regress more than **3.0 units** vs. the
-  running best. Applies to both gates.
-- **Resolution:** `opt_n_hc` must be at least **500**. A KEEP with
-  fewer than 500 high-conf picks is almost certainly a
-  resolution-collapse artifact (Brier floor is 0.25 for uniform 0.5
-  output) rather than real alpha.
+A "cumulative-delta" secondary gate was prototyped for Run 3 prep and
+removed after adversarial review correctly observed that its 0.015
+threshold was at the search-noise floor on the same window. Multi-
+change candidates that the 0.010 primary floor rejects (e.g. Run 2's
+`prune-13 + LGBM stumps = 0.2402` with marginal Δ=0.0018) will REVERT
+in the autonomous loop. A human can still promote them via a
+deliberate human-override row in the ledger -- see PR #80's
+"HUMAN OVERRIDE" pattern.
 
 **Hidden overfit guards:** `mon25_*` and `mon26_*` columns in
 `results.tsv` exist for human review only. They detect whether your
@@ -308,12 +298,14 @@ Three patterns showed directional signal but could not cross the
 **Promising direction for Run 3** (newly reachable in Run 3 prep,
 committed before this run started):
 
-1. **Stack the pruning+stumps win.** LGBM stumps + prune-13 was
-   `0.2402` in Run 2 (cumulative -0.0151 from baseline, marginal
-   -0.0018 from running best). The new secondary "cumulative
-   gate" (cumulative drop vs baseline >= 0.015 AND marginal > 0)
-   accepts exactly this case. Re-run as a multi-change
-   experiment and the KEEP should fire on the secondary gate.
+1. **Multi-change candidates as research signal.** LGBM stumps +
+   prune-13 was `0.2402` in Run 2 (cumulative -0.0151 from
+   baseline, marginal -0.0018 from running best). With the
+   primary-only gate the autonomous loop will REVERT this; the
+   reverted row is still useful evidence and a human can promote
+   it via an explicit override row after the run if pooled
+   evidence (three independent prunings landed at 0.2401-0.2407)
+   holds up against the silent monitors.
 2. **Calibrated LGBM/XGBoost stumps** via the new
    `calibration_method` knob (`"sigmoid"` or `"isotonic"`).
    Run 2 could only test sklearn calibration, which resolution-
@@ -332,6 +324,29 @@ committed before this run started):
 
 Read `mlb_research/RUN_SUMMARY.md` for the full Run 2 trajectory
 and the recommendation that motivated Run 3's prep.
+
+## Calibration-policy confound (RUN 3 PREP, KNOWN LIMITATION)
+
+The frozen `TimeAwareCalibratedGBM` (used by the baseline path:
+`sklearn_gbm + calibrated + sigmoid`) calibrates whenever total
+training rows clear `min_calibration_rows`, with no minimum on the
+holdout slice itself. The new generalized `TimeAwareCalibrated`
+wrapper (used by everything else: LightGBM/XGBoost calibrated, or
+sklearn isotonic) ALSO requires `min_holdout_rows >= 50`. In early
+walk-forward folds (e.g. when training history is in the 200-249
+row window), the frozen path may calibrate on a 40-49 row holdout
+while the new wrapper skips calibration entirely.
+
+This means cross-family Brier comparisons against the frozen
+baseline are PARTLY confounded by wrapper policy, especially in
+early-season folds. The same is true for `target=margin` vs the
+frozen path. The right resolution is a deliberate re-baseline (a
+ledger-invalidating action) once the policy difference matters in
+practice -- see "Anchor refresh" in the Run 3 prep notes. Pending
+that, treat near-noise Brier deltas vs the baseline (~0.255) on
+new-wrapper paths with extra suspicion; multi-experiment patterns
+that hold across families are stronger evidence than any single
+row.
 
 ## Known caveats (document in RUN_SUMMARY.md)
 
