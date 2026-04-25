@@ -145,6 +145,32 @@ def test_build_factory_rejects_unknown_method():
         build_estimator_factory(config)
 
 
+def test_build_factory_rejects_inert_method_when_calibrated_false():
+    # If calibrated=false, the method key has no effect. Recording it would
+    # mis-label the experiment in the ledger. Adversarial review caught this.
+    config = {"calibrated": False, "calibration_method": "isotonic"}
+    with pytest.raises(SystemExit, match="calibrated=false"):
+        build_estimator_factory(config)
+
+
+def test_build_factory_rejects_inert_method_when_target_margin():
+    # target=margin always implies calibrated=false (calibrated=true is rejected
+    # earlier), so the calibrated=false branch fires first when both are set --
+    # but the rejection still happens, which is the guarantee the test exists
+    # to enforce. The inert check rejects regardless of which branch trips.
+    config = {"target": "margin", "calibrated": False, "calibration_method": "sigmoid"}
+    with pytest.raises(SystemExit, match="calibration_method"):
+        build_estimator_factory(config)
+
+
+def test_build_factory_allows_omitted_calibration_method_with_calibrated_false():
+    # Default calibration_method ("sigmoid") is implicit, not an active claim,
+    # so it must NOT trigger the inert-method rejection when omitted.
+    config = {"calibrated": False}
+    factory = build_estimator_factory(config)
+    factory()  # should not raise
+
+
 def test_lgbm_isotonic_end_to_end():
     pytest.importorskip("lightgbm")
     config = {

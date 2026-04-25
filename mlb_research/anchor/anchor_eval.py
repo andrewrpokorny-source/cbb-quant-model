@@ -449,10 +449,25 @@ SUPPORTED_CALIBRATION_METHODS = {"sigmoid", "isotonic"}
 SUPPORTED_TARGETS = {"home_win", "margin"}
 
 
+def calibration_method_is_active(config: dict) -> bool:
+    """Return True iff `calibration_method` actually affects the execution path.
+
+    A `calibration_method` value only does something when the classifier path
+    is taken WITH calibration on top. If `calibrated=false` or `target='margin'`,
+    no calibrator is ever fit, so any `calibration_method` setting is inert and
+    must not be silently recorded as if it had been applied.
+    """
+    return (
+        config.get("target", "home_win") == "home_win"
+        and bool(config.get("calibrated", True))
+    )
+
+
 def build_estimator_factory(config: dict) -> Callable:
     hp = {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})}
     calibrated = config.get("calibrated", True)
     family = config.get("model_family", "sklearn_gbm")
+    method_explicitly_set = "calibration_method" in config
     method = config.get("calibration_method", "sigmoid")
     target = config.get("target", "home_win")
     if family not in SUPPORTED_MODEL_FAMILIES:
@@ -475,6 +490,22 @@ def build_estimator_factory(config: dict) -> Callable:
             "path already produces a Φ(μ/σ) probability; post-hoc calibration "
             "on top is a separate hypothesis. Set calibrated=false."
         )
+    # Reject inert `calibration_method` so the archived ledger label cannot lie
+    # about which mechanism was exercised. Caught by adversarial review pre-Run-3.
+    if method_explicitly_set and not calibration_method_is_active(config):
+        if not calibrated:
+            sys.exit(
+                "calibration_method is set but calibrated=false. The method "
+                "key has no effect when calibration is disabled, so recording "
+                "it would mis-label the experiment. Remove calibration_method "
+                "or set calibrated=true."
+            )
+        if target == "margin":
+            sys.exit(
+                "calibration_method is set but target='margin'. The margin "
+                "path does not apply post-hoc calibration, so recording the "
+                "method would mis-label the experiment. Remove calibration_method."
+            )
 
     def _build_base_classifier(hp_dict, fam):
         if fam == "lightgbm":
@@ -608,6 +639,8 @@ def walk_forward_window(
     train_sizes = []
     skipped_thin_train = 0
     skipped_empty_week = 0
+    calibrator_source_counts: dict[str, int] = {}
+    sigma_source_counts: dict[str, int] = {}
 
     current = window_start
     while current < window_end:
@@ -637,6 +670,17 @@ def walk_forward_window(
             est.fit(train[features].astype(float), train[target].astype(int))
         probs = est.predict_proba(week[features].astype(float))[:, 1]
 
+        # Surface per-fold fallback usage so the metrics JSON makes silent
+        # path-fallback observable. Wrappers expose calibrator_source_ /
+        # sigma_source_ on themselves; raw classifiers/frozen GBM don't, in
+        # which case getattr returns None and the fold is not counted.
+        cal_src = getattr(est, "calibrator_source_", None)
+        if cal_src is not None:
+            calibrator_source_counts[cal_src] = calibrator_source_counts.get(cal_src, 0) + 1
+        sig_src = getattr(est, "sigma_source_", None)
+        if sig_src is not None:
+            sigma_source_counts[sig_src] = sigma_source_counts.get(sig_src, 0) + 1
+
         train_sizes.append(int(len(train)))
         fold_logs.append(
             pd.DataFrame(
@@ -657,6 +701,8 @@ def walk_forward_window(
         "train_rows_min": min(train_sizes) if train_sizes else None,
         "train_rows_max": max(train_sizes) if train_sizes else None,
         "train_rows_mean": (sum(train_sizes) / len(train_sizes)) if train_sizes else None,
+        "calibrator_source_counts": calibrator_source_counts,
+        "sigma_source_counts": sigma_source_counts,
     }
     if not fold_logs:
         return None, diagnostics
@@ -831,7 +877,14 @@ def main():
         "n_features": len(features),
         "model_family": config.get("model_family", "sklearn_gbm"),
         "calibrated": config.get("calibrated", True),
-        "calibration_method": config.get("calibration_method", "sigmoid"),
+        # Emit calibration_method ONLY when it can actually affect execution.
+        # Recording "isotonic" on a calibrated=false or target=margin run
+        # mis-labels the experiment (the path didn't exercise it).
+        "calibration_method": (
+            config.get("calibration_method", "sigmoid")
+            if calibration_method_is_active(config)
+            else None
+        ),
         "target": target,
         "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],

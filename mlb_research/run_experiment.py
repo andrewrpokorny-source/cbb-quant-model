@@ -527,6 +527,27 @@ def cmd_run(args):
             f"{int(diag['train_rows_mean']) if diag.get('train_rows_mean') else None}/"
             f"{diag.get('train_rows_max')})"
         )
+        n_folds = diag.get("n_folds_trained") or 0
+        cal_counts = diag.get("calibrator_source_counts") or {}
+        sig_counts = diag.get("sigma_source_counts") or {}
+        if cal_counts:
+            print(f"  calibrator_source: {cal_counts}")
+            fallback = cal_counts.get("skipped_thin_holdout", 0)
+            if n_folds and fallback / n_folds >= 0.20:
+                print(
+                    f"  ⚠ calibration fell back on {fallback}/{n_folds} folds "
+                    f"({fallback / n_folds:.0%}). Result may not reflect the "
+                    f"requested calibration mechanism."
+                )
+        if sig_counts:
+            print(f"  sigma_source:      {sig_counts}")
+            fallback = sig_counts.get("std_of_y_fallback", 0)
+            if n_folds and fallback / n_folds >= 0.20:
+                print(
+                    f"  ⚠ margin sigma fell back on {fallback}/{n_folds} folds "
+                    f"({fallback / n_folds:.0%}). Conservative-sigma path "
+                    f"dominated the optimizer window."
+                )
     print()
     print(f"  Recommendation: {rec}")
     print("=" * 72)
