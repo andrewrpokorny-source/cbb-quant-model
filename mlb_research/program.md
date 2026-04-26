@@ -325,29 +325,6 @@ committed before this run started):
 Read `mlb_research/RUN_SUMMARY.md` for the full Run 2 trajectory
 and the recommendation that motivated Run 3's prep.
 
-## Calibration-policy confound (RUN 3 PREP, KNOWN LIMITATION)
-
-The frozen `TimeAwareCalibratedGBM` (used by the baseline path:
-`sklearn_gbm + calibrated + sigmoid`) calibrates whenever total
-training rows clear `min_calibration_rows`, with no minimum on the
-holdout slice itself. The new generalized `TimeAwareCalibrated`
-wrapper (used by everything else: LightGBM/XGBoost calibrated, or
-sklearn isotonic) ALSO requires `min_holdout_rows >= 50`. In early
-walk-forward folds (e.g. when training history is in the 200-249
-row window), the frozen path may calibrate on a 40-49 row holdout
-while the new wrapper skips calibration entirely.
-
-This means cross-family Brier comparisons against the frozen
-baseline are PARTLY confounded by wrapper policy, especially in
-early-season folds. The same is true for `target=margin` vs the
-frozen path. The right resolution is a deliberate re-baseline (a
-ledger-invalidating action) once the policy difference matters in
-practice -- see "Anchor refresh" in the Run 3 prep notes. Pending
-that, treat near-noise Brier deltas vs the baseline (~0.255) on
-new-wrapper paths with extra suspicion; multi-experiment patterns
-that hold across families are stronger evidence than any single
-row.
-
 ## Known caveats (document in RUN_SUMMARY.md)
 
 These are limitations of the benchmark itself that no amount of

@@ -167,3 +167,71 @@ def test_validator_accepts_subsample_on_lgbm():
         "hyperparams": {"n_estimators": 100, "subsample": 0.5, "colsample_bytree": 0.8},
     }
     validate_config_keys(config)  # should not raise
+
+
+def test_validator_rejects_string_calibrated_false():
+    # The infamous string-bool case: JSON {"calibrated": "false"} is truthy
+    # in Python and would silently route the calibrated path while the
+    # archived config and _meta still claimed calibrated=false. Adversarial
+    # review caught this exact ledger-truthfulness failure mode.
+    with pytest.raises(SystemExit, match="must be a JSON boolean"):
+        validate_config_keys({"calibrated": "false"})
+
+
+def test_validator_rejects_string_calibrated_true():
+    with pytest.raises(SystemExit, match="must be a JSON boolean"):
+        validate_config_keys({"calibrated": "true"})
+
+
+def test_validator_rejects_int_calibrated():
+    with pytest.raises(SystemExit, match="must be a JSON boolean"):
+        validate_config_keys({"calibrated": 1})
+
+
+def test_validator_rejects_string_n_estimators():
+    config = {"hyperparams": {"n_estimators": "100"}}
+    with pytest.raises(SystemExit, match="must be an integer"):
+        validate_config_keys(config)
+
+
+def test_validator_rejects_float_for_int_field():
+    # n_estimators must be int (a float silently truncates in some libs,
+    # making the archived config non-reproducible).
+    config = {"hyperparams": {"n_estimators": 100.5}}
+    with pytest.raises(SystemExit, match="must be an integer"):
+        validate_config_keys(config)
+
+
+def test_validator_rejects_string_learning_rate():
+    config = {"hyperparams": {"learning_rate": "0.05"}}
+    with pytest.raises(SystemExit, match="must be a number"):
+        validate_config_keys(config)
+
+
+def test_validator_rejects_bool_for_numeric_hyperparam():
+    # bool is a subclass of int in Python -- explicit rejection prevents
+    # `n_estimators: true` silently meaning n_estimators=1.
+    config = {"hyperparams": {"n_estimators": True}}
+    with pytest.raises(SystemExit, match="bool"):
+        validate_config_keys(config)
+
+
+def test_validator_rejects_non_dict_hyperparams():
+    with pytest.raises(SystemExit, match="must be a JSON object"):
+        validate_config_keys({"hyperparams": ["n_estimators=100"]})
+
+
+def test_validator_rejects_non_list_features():
+    with pytest.raises(SystemExit, match="must be a JSON array"):
+        validate_config_keys({"features": "is_home,rest_days"})
+
+
+def test_validator_accepts_int_for_float_field():
+    # learning_rate=0 is sometimes meaningful; an int there should be fine.
+    config = {
+        "model_family": "sklearn_gbm",
+        "calibrated": False,
+        "target": "home_win",
+        "hyperparams": {"n_estimators": 100, "learning_rate": 1},
+    }
+    validate_config_keys(config)  # should not raise

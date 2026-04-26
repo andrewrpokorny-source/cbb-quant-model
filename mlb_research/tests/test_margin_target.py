@@ -138,19 +138,20 @@ def test_margin_regressor_normal_path_uncramped():
     assert confidence.max() > 0.55
 
 
-def test_margin_regressor_holdout_size_gate_blocks_thin_holdout():
-    # 250 total rows + 20% split = 50 holdout. With min_holdout_rows=100 the
-    # gate must fall back to std(y) -- the legacy gate (just total rows) would
-    # have taken the 50-row holdout despite it being too thin.
+def test_margin_regressor_uses_holdout_when_total_clears_min():
+    # Gate now mirrors the calibration wrapper / frozen baseline policy:
+    # use the trailing holdout iff total rows >= min_residual_rows. The
+    # earlier min_holdout_rows floor was removed for cross-path comparison
+    # fairness; the std_of_y_fallback path with confidence clamp still
+    # protects when total < min_residual_rows.
     X, y = _synthetic_margin(n=250, seed=10)
     reg = MarginCDFRegressor(
         base_factory=lambda: GradientBoostingRegressor(n_estimators=20, max_depth=2, random_state=0),
         min_residual_rows=200,
-        min_holdout_rows=100,
     )
     reg.fit(X, y)
-    assert reg.residual_rows_ == 0
-    assert reg.sigma_source_ == "std_of_y_fallback"
+    assert reg.residual_rows_ > 0
+    assert reg.sigma_source_ == "holdout"
 
 
 def test_build_factory_routes_margin_target_to_regressor():

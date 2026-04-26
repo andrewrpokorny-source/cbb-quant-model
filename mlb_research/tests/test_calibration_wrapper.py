@@ -87,11 +87,11 @@ def test_wrapper_skips_calibration_below_min_rows():
     assert p.shape == (len(X),)
 
 
-def test_wrapper_holdout_size_gate_blocks_thin_holdout():
-    # 250 total rows + 20% split = 50 holdout. min_calibration_rows=200 is
-    # satisfied but min_holdout_rows=100 is not, so calibration must skip.
-    # The legacy gate (total only) would have fit a calibrator on 50 noisy
-    # predictions -- adversarial review caught this.
+def test_wrapper_calibrates_when_total_clears_min_calibration_rows():
+    # The new wrapper's gate now mirrors the frozen TimeAwareCalibratedGBM:
+    # calibrate iff len >= min_calibration_rows + class-balance OK. The
+    # earlier min_holdout_rows floor was removed for cross-path comparison
+    # fairness against the frozen baseline.
     X, y = _synthetic(n=250, seed=11)
     wrap = TimeAwareCalibrated(
         base_factory=lambda: GradientBoostingClassifier(
@@ -99,11 +99,10 @@ def test_wrapper_holdout_size_gate_blocks_thin_holdout():
         ),
         method="sigmoid",
         min_calibration_rows=200,
-        min_holdout_rows=100,
     )
     wrap.fit(X, y)
-    assert wrap.calibrator_ is None
-    assert wrap.calibrator_source_ == "skipped_thin_holdout"
+    assert wrap.calibrator_ is not None
+    assert wrap.calibrator_source_ == "holdout"
 
 
 def test_rejects_unknown_method():

@@ -173,7 +173,6 @@ class TimeAwareCalibrated:
         method: str = "sigmoid",
         calibration_fraction: float = 0.2,
         min_calibration_rows: int = 200,
-        min_holdout_rows: int = 50,
     ):
         if method not in ("sigmoid", "isotonic"):
             raise ValueError(f"method must be 'sigmoid' or 'isotonic', got {method!r}")
@@ -181,7 +180,6 @@ class TimeAwareCalibrated:
         self.method = method
         self.calibration_fraction = calibration_fraction
         self.min_calibration_rows = min_calibration_rows
-        self.min_holdout_rows = min_holdout_rows
 
     def fit(self, X, y):
         X_df = pd.DataFrame(X).copy()
@@ -192,16 +190,18 @@ class TimeAwareCalibrated:
 
         split_idx = max(1, int(len(X_df) * (1 - self.calibration_fraction)))
         split_idx = min(split_idx, len(X_df) - 1)
-        holdout_size = len(X_df) - split_idx
 
-        # Gate on BOTH total rows and actual holdout slice size. The legacy
-        # gate (`len >= min_calibration_rows` only) admitted folds where the
-        # holdout slice was just `min_calibration_rows * calibration_fraction`
-        # rows -- e.g. 40 rows of an isotonic calibrator -- which produces
-        # noisy, overconfident calibrators in early walk-forward folds.
+        # Gate intentionally MATCHES the frozen TimeAwareCalibratedGBM: total
+        # rows >= min_calibration_rows + class-balance on both halves. An
+        # earlier draft added a min_holdout_rows floor here, but adversarial
+        # review pointed out that diverging from the frozen class's gate
+        # made cross-family comparisons against the baseline confounded by
+        # wrapper policy. Until a deliberate re-baseline is done, both paths
+        # use the same legacy policy. The thin-holdout calibrator concern is
+        # real but inherited from the baseline -- it affects every row
+        # equally, so optimizer deltas are still apples-to-apples.
         use_calibration = (
             len(X_df) >= self.min_calibration_rows
-            and holdout_size >= self.min_holdout_rows
             and split_idx < len(X_df)
             and y_ser.iloc[:split_idx].nunique() > 1
             and y_ser.iloc[split_idx:].nunique() > 1
@@ -272,13 +272,11 @@ class MarginCDFRegressor:
         base_factory: Callable,
         residual_fraction: float = 0.2,
         min_residual_rows: int = 200,
-        min_holdout_rows: int = 50,
         min_sigma: float = 0.5,
     ):
         self.base_factory = base_factory
         self.residual_fraction = residual_fraction
         self.min_residual_rows = min_residual_rows
-        self.min_holdout_rows = min_holdout_rows
         self.min_sigma = min_sigma
 
     def fit(self, X, y):
@@ -291,15 +289,16 @@ class MarginCDFRegressor:
 
         split_idx = max(1, int(len(X_df) * (1 - self.residual_fraction)))
         split_idx = min(split_idx, len(X_df) - 1)
-        holdout_size = len(X_df) - split_idx
 
-        # Gate on BOTH total rows and holdout slice size. Without the
-        # holdout-size gate, the legacy code happily fit a regressor on
-        # 200-row folds and used a 40-row "holdout" for sigma -- noisy
-        # enough to produce overconfident probabilities in early folds.
+        # Gate INTENTIONALLY mirrors the calibration wrapper's policy (which
+        # in turn mirrors the frozen TimeAwareCalibratedGBM). When the gate
+        # rejects a fold, sigma falls back to std-of-y with a confidence
+        # clamp in predict_proba so no high-conf picks come out of those
+        # folds. The earlier min_holdout_rows floor was removed for cross-
+        # path comparison fairness; right resolution is a deliberate
+        # re-baseline.
         use_holdout = (
             len(X_df) >= self.min_residual_rows
-            and holdout_size >= self.min_holdout_rows
             and split_idx < len(X_df)
         )
 
@@ -844,18 +843,79 @@ def active_hyperparam_keys(config: dict) -> set:
     return keys
 
 
-def validate_config_keys(config: dict):
-    """Reject unknown keys in config JSON to prevent silent-default footguns.
+_INT_HYPERPARAMS = {"n_estimators", "max_depth", "random_state", "min_calibration_rows"}
+_FLOAT_HYPERPARAMS = {
+    "learning_rate",
+    "calibration_fraction",
+    "subsample",
+    "colsample_bytree",
+}
 
-    An autonomous agent can easily typo `model_familyy` or `n_estimator` --
-    without validation the runner silently falls back to defaults and the
-    experiment row lies about what was tested. Keys starting with `_` are
-    treated as comments by convention.
 
-    Also rejects hyperparameter keys that ARE in the global whitelist but
-    inert for the chosen family/target/calibration combo (e.g. `subsample`
-    on sklearn_gbm, or `calibration_fraction` on uncalibrated home_win).
+def _validate_config_types(config: dict):
+    """Reject malformed types before activeness/routing.
+
+    Adversarial review caught: `{"calibrated": "false"}` previously passed
+    validation, was treated as truthy by Python, and ran the calibrated path
+    while `_meta` claimed otherwise. JSON makes string-bool typos easy in
+    autonomous loops, so type checks happen before any path decision.
     """
+    if "calibrated" in config and not isinstance(config["calibrated"], bool):
+        sys.exit(
+            "Config field `calibrated` must be a JSON boolean (true/false), "
+            f"got {type(config['calibrated']).__name__}: {config['calibrated']!r}. "
+            "A string like \"false\" is truthy in Python and would silently "
+            "route the calibrated path."
+        )
+
+    if "features" in config and not isinstance(config["features"], list):
+        sys.exit(
+            f"Config field `features` must be a JSON array, got "
+            f"{type(config['features']).__name__}."
+        )
+
+    hp = config.get("hyperparams")
+    if hp is not None and not isinstance(hp, dict):
+        sys.exit(
+            f"Config field `hyperparams` must be a JSON object, got "
+            f"{type(hp).__name__}."
+        )
+    if isinstance(hp, dict):
+        for k, v in hp.items():
+            if k.startswith("_"):
+                continue
+            # bool is a subclass of int in Python, so reject explicitly.
+            if isinstance(v, bool):
+                sys.exit(
+                    f"hyperparams.{k} must be numeric, got bool {v!r}. "
+                    "JSON booleans are not valid hyperparameter values."
+                )
+            if k in _INT_HYPERPARAMS and not isinstance(v, int):
+                sys.exit(
+                    f"hyperparams.{k} must be an integer, got "
+                    f"{type(v).__name__}: {v!r}."
+                )
+            if k in _FLOAT_HYPERPARAMS and not isinstance(v, (int, float)):
+                sys.exit(
+                    f"hyperparams.{k} must be a number, got "
+                    f"{type(v).__name__}: {v!r}."
+                )
+
+
+def validate_config_keys(config: dict):
+    """Reject malformed configs before they reach build_estimator_factory.
+
+    Validation layers:
+      1. Field types (calibrated must be bool, hyperparams must be dict, etc.)
+      2. Unknown top-level keys (typos like `model_familyy`).
+      3. Unknown hyperparams keys (typos like `n_estimator`).
+      4. Inert hyperparams for the chosen path (e.g. `subsample` on
+         sklearn_gbm, or `calibration_fraction` on uncalibrated home_win).
+
+    Keys starting with `_` are treated as comments by convention.
+    """
+    _validate_config_types(config)
+
     unknown_top = [
         k for k in config
         if not k.startswith("_") and k not in VALID_TOP_LEVEL_CONFIG_KEYS
