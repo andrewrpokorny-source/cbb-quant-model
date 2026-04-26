@@ -410,6 +410,33 @@ DEFAULT_HYPERPARAMS = {
     "min_calibration_rows": 200,
     "random_state": 42,
 }
+# Family-specific defaults that the estimator builders silently apply when
+# the config omits these keys. They ARE active hyperparameters of the fitted
+# model, so they must appear in _meta.hyperparams to keep the archive
+# truthful (caught by adversarial review). sklearn_gbm has no extra defaults.
+FAMILY_DEFAULT_HYPERPARAMS = {
+    "lightgbm": {"subsample": 0.8, "colsample_bytree": 0.8},
+    "xgboost": {"subsample": 0.8, "colsample_bytree": 0.8},
+    "sklearn_gbm": {},
+}
+
+
+def effective_hyperparams(config: dict) -> dict:
+    """Return the hyperparam map actually applied to the fitted model.
+
+    Layer order: framework defaults < family-specific defaults < config
+    overrides. Then filtered to only keys that are active under the
+    chosen path, so archived rows don't claim keys that the estimator
+    silently ignored (sklearn_gbm dropping `subsample`, etc.).
+    """
+    family = config.get("model_family", "sklearn_gbm")
+    merged = {
+        **DEFAULT_HYPERPARAMS,
+        **FAMILY_DEFAULT_HYPERPARAMS.get(family, {}),
+        **(config.get("hyperparams") or {}),
+    }
+    active = active_hyperparam_keys(config)
+    return {k: v for k, v in merged.items() if k in active}
 
 
 def load_manifest() -> dict:
@@ -1019,14 +1046,12 @@ def main():
         "target": target,
         "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],
-        # Emit only hyperparameters that the active path actually uses.
-        # Recording inert defaults (e.g. subsample on sklearn_gbm) would
-        # falsely advertise that the experiment tested that knob.
-        "hyperparams": {
-            k: v
-            for k, v in {**DEFAULT_HYPERPARAMS, **(config.get("hyperparams") or {})}.items()
-            if k in active_hyperparam_keys(config)
-        },
+        # Emit family-aware effective hyperparameters: framework defaults
+        # plus family defaults (subsample/colsample_bytree for LGBM/XGB)
+        # plus config overrides, filtered to active keys. Recording the
+        # actually-applied 0.8 sampling defaults for LGBM was missed by
+        # an earlier draft -- caught by adversarial review.
+        "hyperparams": effective_hyperparams(config),
         "diagnostics": diagnostics_by_window,
     }
 

@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "mlb_research"))
 
 from run_experiment import (  # noqa: E402
+    MAX_FALLBACK_SHARE_FOR_KEEP,
     MIN_BRIER_DELTA_FOR_KEEP,
     MIN_N_HC_FOR_KEEP,
     recommendation,
@@ -125,6 +126,86 @@ def test_running_best_picks_lowest_brier_among_baseline_and_kept():
 def test_constants_have_sensible_relationship():
     assert MIN_BRIER_DELTA_FOR_KEEP > 0
     assert MIN_N_HC_FOR_KEEP > 0
+    assert 0 < MAX_FALLBACK_SHARE_FOR_KEEP <= 1
+
+
+def test_fallback_share_blocks_keep_when_calibration_mostly_skipped():
+    # Strong primary-gate-clearing Brier improvement (Δ=0.013), good ROI
+    # and n_hc, but the calibration mechanism was skipped on most folds.
+    # The label "isotonic" or "sigmoid" would mis-represent what was run.
+    diag = {
+        "n_folds_trained": 10,
+        "calibrator_source_counts": {"holdout": 4, "skipped_thin_holdout": 6},
+        "sigma_source_counts": {},
+    }
+    rec = recommendation(
+        _opt(0.2420, roi=120.0, n_hc=1100),
+        best_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+        diagnostics=diag,
+    )
+    assert rec.startswith("REVERT")
+    assert "calibration skipped" in rec
+    assert "fallback share" in rec
+
+
+def test_fallback_share_blocks_keep_when_margin_sigma_falls_back():
+    diag = {
+        "n_folds_trained": 10,
+        "calibrator_source_counts": {},
+        "sigma_source_counts": {"holdout": 4, "std_of_y_fallback": 6},
+    }
+    rec = recommendation(
+        _opt(0.2420, roi=120.0, n_hc=1100),
+        best_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+        diagnostics=diag,
+    )
+    assert rec.startswith("REVERT")
+    assert "margin sigma" in rec
+
+
+def test_fallback_share_below_threshold_does_not_block_keep():
+    # 1/10 = 10% fallback < 20% threshold; primary gate decision stands.
+    diag = {
+        "n_folds_trained": 10,
+        "calibrator_source_counts": {"holdout": 9, "skipped_thin_holdout": 1},
+        "sigma_source_counts": {},
+    }
+    rec = recommendation(
+        _opt(0.2420, roi=120.0, n_hc=1100),
+        best_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+        diagnostics=diag,
+    )
+    assert rec.startswith("KEEP")
+
+
+def test_fallback_share_with_no_diagnostics_is_no_op():
+    # When neither calibration nor margin path is active (e.g. the frozen
+    # baseline), source counts are empty and the gate is a no-op.
+    diag = {
+        "n_folds_trained": 10,
+        "calibrator_source_counts": {},
+        "sigma_source_counts": {},
+    }
+    rec = recommendation(
+        _opt(0.2420, roi=120.0, n_hc=1100),
+        best_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+        diagnostics=diag,
+    )
+    assert rec.startswith("KEEP")
+
+
+def test_fallback_share_with_none_diagnostics_is_no_op():
+    rec = recommendation(
+        _opt(0.2420, roi=120.0, n_hc=1100),
+        best_opt=BASELINE_0_2553,
+        roi_regression_cap=3.0,
+        diagnostics=None,
+    )
+    assert rec.startswith("KEEP")
 
 
 def test_cmd_run_rejects_multiple_baseline_rows(tmp_path):
@@ -146,10 +227,15 @@ def test_cmd_run_rejects_multiple_baseline_rows(tmp_path):
 
     fake_tsv = tmp_path / "results.tsv"
     fake_tsv.write_text("\n".join([header, fake_row1, fake_row2]) + "\n")
+    fake_experiments = tmp_path / "experiments"
 
-    env = {**os.environ, "MLB_RESEARCH_RESULTS_TSV": str(fake_tsv)}
+    env = {
+        **os.environ,
+        "MLB_RESEARCH_RESULTS_TSV": str(fake_tsv),
+        "MLB_RESEARCH_EXPERIMENTS_DIR": str(fake_experiments),
+    }
     result = subprocess.run(
-        ["python3", str(runner), "run",
+        [sys.executable, str(runner), "run",
          "--config", str(REPO_ROOT / "mlb_research" / "configs" / "baseline.json"),
          "--change-type", "features",
          "--description", "should be rejected -- two baselines"],

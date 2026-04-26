@@ -37,14 +37,17 @@ from datetime import datetime, timezone
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RESEARCH_DIR = os.path.dirname(os.path.abspath(__file__))
 ANCHOR_EVAL = os.path.join(RESEARCH_DIR, "anchor", "anchor_eval.py")
-# Tests can point at a temporary ledger via MLB_RESEARCH_RESULTS_TSV instead
-# of mutating the real checked-in results.tsv. Read once at import so the
-# subprocess sees a consistent path for all helpers (read_all_rows,
-# _write_tsv_atomic, append_row).
+# Tests / dry-runs can point at temporary paths via MLB_RESEARCH_RESULTS_TSV
+# and MLB_RESEARCH_EXPERIMENTS_DIR instead of mutating the real checked-in
+# ledger and experiments archive. Adversarial review caught earlier draft
+# where the TSV-only override still leaked archives into the real
+# experiments/ tree. Both paths are read once at import.
 RESULTS_TSV = os.environ.get("MLB_RESEARCH_RESULTS_TSV") or os.path.join(
     RESEARCH_DIR, "results.tsv"
 )
-EXPERIMENTS_DIR = os.path.join(RESEARCH_DIR, "experiments")
+EXPERIMENTS_DIR = os.environ.get("MLB_RESEARCH_EXPERIMENTS_DIR") or os.path.join(
+    RESEARCH_DIR, "experiments"
+)
 
 PER_EXPERIMENT_TIMEOUT_SECONDS = 600  # 10 min hard cap
 
@@ -72,6 +75,13 @@ MIN_BRIER_DELTA_FOR_KEEP = 0.010
 # a win may be "shrink toward 0.5" (Brier floor is 0.25 for uniform 0.5 output)
 # which is not real alpha.
 MIN_N_HC_FOR_KEEP = 500
+# Maximum share of optimizer folds where the requested calibration or margin
+# mechanism was bypassed by fallback (calibration skipped due to thin holdout,
+# or margin sigma falling back to std-of-y). Above this, the row's label
+# misrepresents what was actually exercised, so KEEP is blocked even when the
+# Brier/ROI/n_hc gates would otherwise pass. Adversarial review caught the
+# earlier behavior where this only printed a warning.
+MAX_FALLBACK_SHARE_FOR_KEEP = 0.20
 
 LEDGER_COLUMNS = [
     "timestamp_utc",
@@ -198,10 +208,41 @@ def fmt(v, digits=4):
         return str(v)
 
 
+def _fallback_share(diag: dict | None) -> tuple[float, str | None]:
+    """Return (fallback_fraction, label) describing how often the requested
+    calibration/margin mechanism was bypassed in the optimizer window.
+
+    Returns (0.0, None) when diagnostics show neither path was active (e.g.
+    the frozen baseline, or uncalibrated home_win without margin). For
+    calibrated paths the share is `skipped_thin_holdout / n_folds_trained`;
+    for margin paths it is `std_of_y_fallback / n_folds_trained`. If both
+    are present the larger is used.
+    """
+    if not diag:
+        return 0.0, None
+    n_folds = diag.get("n_folds_trained") or 0
+    if not n_folds:
+        return 0.0, None
+    cal_skipped = (diag.get("calibrator_source_counts") or {}).get(
+        "skipped_thin_holdout", 0
+    )
+    sig_fallback = (diag.get("sigma_source_counts") or {}).get(
+        "std_of_y_fallback", 0
+    )
+    cal_share = cal_skipped / n_folds
+    sig_share = sig_fallback / n_folds
+    if cal_share >= sig_share and cal_skipped:
+        return cal_share, f"calibration skipped on {cal_skipped}/{n_folds} folds"
+    if sig_fallback:
+        return sig_share, f"margin sigma fell back on {sig_fallback}/{n_folds} folds"
+    return 0.0, None
+
+
 def recommendation(
     opt: dict,
     best_opt: dict | None,
     roi_regression_cap: float,
+    diagnostics: dict | None = None,
 ) -> str:
     """Recommend keep vs revert against the running-best optimizer row.
 
@@ -212,6 +253,10 @@ def recommendation(
       - roi_units does not regress by more than roi_regression_cap units.
       - n_high_conf >= MIN_N_HC_FOR_KEEP (guards against "shrink toward 0.5"
         wins that improve Brier by killing resolution).
+      - fallback_share < MAX_FALLBACK_SHARE_FOR_KEEP. If the requested
+        calibration/margin mechanism was bypassed on >=20% of folds, the
+        row's label misrepresents what was actually exercised. KEEP would
+        archive a misleading "isotonic" / "margin" success.
     """
     new_brier = opt.get("brier")
     new_roi = opt.get("roi_units")
@@ -228,6 +273,15 @@ def recommendation(
             f"REVERT (n_high_conf={new_n_hc} below floor "
             f"{MIN_N_HC_FOR_KEEP}). A win with < {MIN_N_HC_FOR_KEEP} picks "
             "is likely resolution collapse, not alpha."
+        )
+
+    fallback_frac, fallback_label = _fallback_share(diagnostics)
+    if fallback_frac >= MAX_FALLBACK_SHARE_FOR_KEEP:
+        return (
+            f"REVERT ({fallback_label} -- {fallback_frac:.0%} >= "
+            f"{MAX_FALLBACK_SHARE_FOR_KEEP:.0%} fallback share. The requested "
+            "mechanism was mostly bypassed; the result does not characterize "
+            "the labeled path)."
         )
 
     if best_opt is None:
@@ -397,7 +451,11 @@ def cmd_run(args):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = git_head_sha()
     archive_dir = os.path.join(EXPERIMENTS_DIR, f"{timestamp}_{commit}")
-    os.makedirs(archive_dir, exist_ok=True)
+    # exist_ok=False on purpose: archive_dir is keyed by timestamp+commit
+    # and must be unique per experiment. Allowing overwrite would silently
+    # destroy the previous run's metrics.json / config.json (caught by
+    # adversarial review).
+    os.makedirs(archive_dir, exist_ok=False)
 
     metrics_path = os.path.join(archive_dir, "metrics.json")
     results = run_eval(config_path, metrics_path)
@@ -444,7 +502,12 @@ def cmd_run(args):
     }
     append_row(row)
 
-    rec = recommendation(opt, best, args.roi_regression_cap)
+    rec = recommendation(
+        opt,
+        best,
+        args.roi_regression_cap,
+        diagnostics=results.get("_meta", {}).get("diagnostics", {}).get("optimizer", {}),
+    )
 
     # Monitor columns are deliberately NOT printed. They exist in
     # results.tsv for human review but should not influence the agent's
