@@ -713,10 +713,16 @@ def walk_forward_window(
         probs = est.predict_proba(week[features].astype(float))[:, 1]
 
         # Surface per-fold fallback usage so the metrics JSON makes silent
-        # path-fallback observable. Wrappers expose calibrator_source_ /
-        # sigma_source_ on themselves; raw classifiers/frozen GBM don't, in
-        # which case getattr returns None and the fold is not counted.
+        # path-fallback observable. The new TimeAwareCalibrated wrapper
+        # sets calibrator_source_ explicitly. The frozen
+        # TimeAwareCalibratedGBM does not -- derive the source for it (and
+        # any other wrapper that exposes calibrator_) from whether
+        # calibrator_ was actually fit. Raw classifiers/regressors lack
+        # calibrator_ entirely so the fold is correctly not counted, which
+        # keeps uncalibrated runs out of the fallback-share gate.
         cal_src = getattr(est, "calibrator_source_", None)
+        if cal_src is None and hasattr(est, "calibrator_"):
+            cal_src = "holdout" if est.calibrator_ is not None else "skipped_thin_holdout"
         if cal_src is not None:
             calibrator_source_counts[cal_src] = calibrator_source_counts.get(cal_src, 0) + 1
         sig_src = getattr(est, "sigma_source_", None)

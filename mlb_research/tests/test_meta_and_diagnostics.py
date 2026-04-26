@@ -116,14 +116,59 @@ def test_diagnostics_record_sigma_source_counts(tmp_path):
     assert sum(counts.values()) == diag["n_folds_trained"]
 
 
-def test_diagnostics_source_counts_empty_for_baseline_path(tmp_path):
-    # Frozen TimeAwareCalibratedGBM does NOT expose source attributes, so the
-    # counts must be empty. Confirms the getattr-with-default plumbing.
+def test_diagnostics_source_counts_track_frozen_class(tmp_path):
+    # Frozen TimeAwareCalibratedGBM doesn't set calibrator_source_ explicitly,
+    # but walk_forward_window now derives it from the universal calibrator_
+    # attribute. Adversarial review caught the previous behavior where the
+    # frozen class was invisible to the fallback-share gate, allowing a
+    # 100%-skipped run to still archive as calibrated.
     cfg = REPO_ROOT / "mlb_research" / "configs" / "baseline.json"
+    r = _run_eval(cfg, tmp_path / "r.json")
+    diag = r["_meta"]["diagnostics"]["optimizer"]
+    # The frozen class IS calibration-wrapping, so counts must be populated.
+    assert diag["calibrator_source_counts"], "Expected frozen baseline to report calibrator source"
+    assert sum(diag["calibrator_source_counts"].values()) == diag["n_folds_trained"]
+    # The baseline calibrates on most folds (only the very first weekly
+    # cutoff is too thin), so "holdout" should dominate.
+    assert diag["calibrator_source_counts"].get("holdout", 0) > diag[
+        "calibrator_source_counts"
+    ].get("skipped_thin_holdout", 0)
+    # Margin sigma source still empty for home_win classifier path.
+    assert diag["sigma_source_counts"] == {}
+
+
+def test_diagnostics_source_counts_empty_for_uncalibrated_path(tmp_path):
+    # Raw (uncalibrated) classifier has no calibrator_ attribute at all,
+    # so the fold is correctly NOT counted. Keeps uncalibrated runs out of
+    # the fallback-share gate.
+    cfg = REPO_ROOT / "mlb_research" / "configs" / "run3_ref_lgbm_stumps_prune13.json"
     r = _run_eval(cfg, tmp_path / "r.json")
     diag = r["_meta"]["diagnostics"]["optimizer"]
     assert diag["calibrator_source_counts"] == {}
     assert diag["sigma_source_counts"] == {}
+
+
+def test_diagnostics_frozen_class_visible_to_fallback_gate(tmp_path):
+    # The exact bug from adversarial review: with absurdly high
+    # min_calibration_rows the frozen class skips on every fold. The new
+    # getattr-fallback derivation must report 100% skipped, which the
+    # KEEP gate then uses to REVERT.
+    cfg = tmp_path / "force_skip.json"
+    cfg.write_text(json.dumps({
+        "model_family": "sklearn_gbm",
+        "calibrated": True,
+        "target": "home_win",
+        "hyperparams": {"n_estimators": 30, "max_depth": 2, "learning_rate": 0.05,
+                         "random_state": 42, "calibration_fraction": 0.2,
+                         "min_calibration_rows": 999999},
+    }))
+    r = _run_eval(cfg, tmp_path / "r.json")
+    diag = r["_meta"]["diagnostics"]["optimizer"]
+    n_folds = diag["n_folds_trained"]
+    assert n_folds > 0
+    # 100% of folds must report skipped_thin_holdout.
+    assert diag["calibrator_source_counts"].get("skipped_thin_holdout") == n_folds
+    assert diag["calibrator_source_counts"].get("holdout", 0) == 0
 
 
 def test_meta_hyperparams_includes_lgbm_sampling_defaults(tmp_path):
