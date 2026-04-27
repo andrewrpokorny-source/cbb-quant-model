@@ -12,6 +12,11 @@ from league_config import get_league_artifact_paths, normalize_league
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEAGUE = "mlb"
 
+# Season-scope mode for rolling stats:
+#   "full"      = all stats (expanding + rolling windows) reset at season boundary
+#   "selective" = only cumulative stats reset; roll5/roll10 carry over (natural decay)
+SEASON_SCOPE_MODE = "full"
+
 # Columns expected in the raw data from mlb/data.py
 BASE_COLUMNS = [
     "date", "game_time", "season", "team", "team_abbr", "opponent", "opp_abbr",
@@ -95,15 +100,21 @@ def calculate_rolling_stats(df):
         df["hits_per_game"] = pd.to_numeric(df["team_hits"], errors="coerce")
 
     # --- Rolling windows: 5-game, 10-game, and season ---
+    # Season (expanding) stats always reset at season boundary.
+    # Rolling windows reset or carry over depending on SEASON_SCOPE_MODE.
     rolling_cols = ["runs_per_game", "runs_allowed", "margin"]
     if "hits_per_game" in df.columns:
         rolling_cols.append("hits_per_game")
 
+    season_grp_key = ["team", "season"]
+    roll_grp_key = ["team", "season"] if SEASON_SCOPE_MODE == "full" else ["team"]
+
     for col in rolling_cols:
-        grp = df.groupby("team")[col]
-        df[f"season_{col}"] = grp.expanding().mean().reset_index(level=0, drop=True)
-        df[f"roll5_{col}"] = grp.rolling(5, min_periods=1).mean().reset_index(level=0, drop=True)
-        df[f"roll10_{col}"] = grp.rolling(10, min_periods=3).mean().reset_index(level=0, drop=True)
+        season_grp = df.groupby(season_grp_key)[col]
+        roll_grp = df.groupby(roll_grp_key)[col]
+        df[f"season_{col}"] = season_grp.expanding().mean().reset_index(level=list(range(len(season_grp_key))), drop=True)
+        df[f"roll5_{col}"] = roll_grp.rolling(5, min_periods=1).mean().reset_index(level=list(range(len(roll_grp_key))), drop=True)
+        df[f"roll10_{col}"] = roll_grp.rolling(10, min_periods=3).mean().reset_index(level=list(range(len(roll_grp_key))), drop=True)
 
     # --- Pythagorean win% from run averages ---
     rs_season = df["season_runs_per_game"]
@@ -120,36 +131,87 @@ def calculate_rolling_stats(df):
     denom_r10 = rs_r10_pow + ra_r10_pow
     df["roll10_pyth_wpct"] = (rs_r10_pow / denom_r10).where(denom_r10 > 0, 0.5)
 
-    # Apply honest lag: shift all rolling/season stats by 1 within each team
-    lag_prefixes = ["season_", "roll5_", "roll10_"]
+    # Apply honest lag: shift all rolling/season stats by 1 within each team.
+    # Season (expanding) stats always use season-scoped group key.
+    # Rolling stats use roll_grp_key (mode-dependent).
     for col in list(df.columns):
-        if any(col.startswith(p) for p in lag_prefixes):
-            df[f"prev_{col}"] = df.groupby("team")[col].shift(1)
+        if col.startswith("season_") or col == "season_pyth_wpct":
+            df[f"prev_{col}"] = df.groupby(season_grp_key)[col].shift(1)
+        elif col.startswith("roll5_") or col.startswith("roll10_"):
+            df[f"prev_{col}"] = df.groupby(roll_grp_key)[col].shift(1)
 
-    # --- Games played (sample size) ---
-    df["games_played"] = df.groupby("team").cumcount()
-    df["prev_games_played"] = df.groupby("team")["games_played"].shift(1).fillna(0)
+    # --- Games played (sample size) -- always season-scoped ---
+    df["games_played"] = df.groupby(season_grp_key).cumcount()
+    df["prev_games_played"] = df.groupby(season_grp_key)["games_played"].shift(1).fillna(0)
 
-    # --- Win tracking ---
+    # --- Win tracking -- cumulative stats always season-scoped ---
     df["game_win"] = (df["team_score"] > df["opp_score"]).astype(int)
-    df["season_wins"] = df.groupby("team")["game_win"].cumsum()
+    df["season_wins"] = df.groupby(season_grp_key)["game_win"].cumsum()
     df["win_pct"] = df["season_wins"] / (df["games_played"] + 1).clip(lower=1)
-    df["prev_win_pct"] = df.groupby("team")["win_pct"].shift(1).fillna(0.5)
+    df["prev_win_pct"] = df.groupby(season_grp_key)["win_pct"].shift(1).fillna(0.5)
 
     df["roll10_win_pct"] = (
-        df.groupby("team")["game_win"]
+        df.groupby(roll_grp_key)["game_win"]
         .rolling(10, min_periods=3).mean()
-        .reset_index(level=0, drop=True)
+        .reset_index(level=list(range(len(roll_grp_key))), drop=True)
     )
-    df["prev_roll10_win_pct"] = df.groupby("team")["roll10_win_pct"].shift(1).fillna(0.5)
+    df["prev_roll10_win_pct"] = df.groupby(roll_grp_key)["roll10_win_pct"].shift(1).fillna(0.5)
 
     # --- Score volatility ---
     df["roll10_score_std"] = (
-        df.groupby("team")["team_score"]
+        df.groupby(roll_grp_key)["team_score"]
         .rolling(10, min_periods=3).std()
-        .reset_index(level=0, drop=True)
+        .reset_index(level=list(range(len(roll_grp_key))), drop=True)
     )
-    df["prev_volatility"] = df.groupby("team")["roll10_score_std"].shift(1).fillna(2.0)
+    df["prev_volatility"] = df.groupby(roll_grp_key)["roll10_score_std"].shift(1).fillna(2.0)
+
+    return df
+
+
+def add_prior_season_stats(df):
+    """Add prior-season final team stats as stable early-season features.
+
+    For each (team, season), the prior season's end-of-year stats are mapped
+    as constant columns. These give the model an anchor for team quality that
+    is available from opening day, independent of noisy current-season rolling
+    stats.
+    """
+    print("   -> Adding prior-season team stats...")
+
+    # League-average defaults for the first season in the data (no prior)
+    DEFAULTS = {
+        "prior_season_win_pct": 0.5,
+        "prior_season_rpg": 4.5,
+        "prior_season_ra": 4.5,
+        "prior_season_pyth_wpct": 0.5,
+    }
+
+    # Get the last row of each team-season (end-of-season summary)
+    last_rows = (
+        df.sort_values(["team", "date"])
+        .groupby(["team", "season"])
+        .last()
+        .reset_index()
+    )
+
+    # Build lookup: for season S, prior stats come from season S-1
+    prior_lookup = {}
+    for _, row in last_rows.iterrows():
+        team = row["team"]
+        next_season = row["season"] + 1
+        prior_lookup[(team, next_season)] = {
+            "prior_season_win_pct": row.get("win_pct", 0.5),
+            "prior_season_rpg": row.get("season_runs_per_game", 4.5),
+            "prior_season_ra": row.get("season_runs_allowed", 4.5),
+            "prior_season_pyth_wpct": row.get("season_pyth_wpct", 0.5),
+        }
+
+    keys = list(zip(df["team"], df["season"]))
+    for col, default in DEFAULTS.items():
+        df[col] = [prior_lookup.get(k, DEFAULTS).get(col, default) for k in keys]
+
+    filled = df["prior_season_win_pct"].ne(0.5).sum()
+    print(f"      Prior-season stats mapped for {filled}/{len(df)} rows")
 
     return df
 
@@ -429,6 +491,7 @@ def run_features(league=LEAGUE):
 
     df = clean_stale_data(df)
     df = calculate_rolling_stats(df)
+    df = add_prior_season_stats(df)
     df = calculate_pitcher_rolling_stats(df)
     df = add_park_factor(df)
     df = merge_opponent_stats(df)

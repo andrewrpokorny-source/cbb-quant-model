@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+import mlb.features as mlb_features
 from mlb.features import (
     calculate_rolling_stats,
     calculate_pitcher_rolling_stats,
@@ -10,6 +11,8 @@ from mlb.features import (
     compute_differentials,
     compute_target,
     clean_stale_data,
+    add_prior_season_stats,
+    SEASON_SCOPE_MODE,
 )
 
 
@@ -258,7 +261,7 @@ class TestDoubleheaderRollingOrder:
         rows = []
         # Day 1: single game
         rows.append({
-            "date": "2025-04-14", "game_time": "19:00",
+            "date": "2025-04-14", "game_time": "19:00", "season": 2025,
             "team": "TeamA", "team_abbr": "TA", "opponent": "TeamC",
             "opp_abbr": "TC", "location": "Home", "is_home": 1,
             "team_score": 10, "opp_score": 0,
@@ -275,7 +278,7 @@ class TestDoubleheaderRollingOrder:
         # Day 2: doubleheader -- game 1 at 13:05, game 2 at 19:05
         for time, score in [("13:05", 2), ("19:05", 8)]:
             rows.append({
-                "date": "2025-04-15", "game_time": time,
+                "date": "2025-04-15", "game_time": time, "season": 2025,
                 "team": "TeamA", "team_abbr": "TA", "opponent": "TeamB",
                 "opp_abbr": "TB", "location": "Home", "is_home": 1,
                 "team_score": score, "opp_score": 3,
@@ -427,3 +430,115 @@ class TestBuildFeatureRowNewFeatures:
         from mlb.predict import build_feature_row
         row = build_feature_row({}, {}, 3.5, 4.0, venue_name="Chase Field", venue_indoor=1)
         assert row["wind_speed"] == 0.0
+
+
+# === Multi-season helpers and tests ===
+
+
+def _make_multi_season_games(n_days_s1=10, n_days_s2=5, teams=("TeamA", "TeamB")):
+    """Build a multi-season MLB game DataFrame for testing."""
+    rows = []
+    for season, n_days, month_start in [(2025, n_days_s1, 4), (2026, n_days_s2, 4)]:
+        for i in range(n_days):
+            date = f"{season}-{month_start:02d}-{i + 1:02d}"
+            score_a = 4 + (i % 3)
+            score_b = 3 + ((i + 1) % 3)
+            for team_idx in range(2):
+                t = teams[team_idx]
+                opp = teams[1 - team_idx]
+                is_home = 1 if team_idx == 0 else 0
+                ts = score_a if team_idx == 0 else score_b
+                os_ = score_b if team_idx == 0 else score_a
+                rows.append({
+                    "date": date, "season": season,
+                    "team": t, "team_abbr": t[:2].upper(),
+                    "opponent": opp, "opp_abbr": opp[:2].upper(),
+                    "location": "Home" if is_home else "Away",
+                    "is_home": is_home,
+                    "team_score": ts, "opp_score": os_,
+                    "starting_pitcher": f"Pitcher{t}{i % 3}",
+                    "sp_era": 3.5, "opp_sp_era": 4.0,
+                    "opp_starting_pitcher": f"Pitcher{opp}{i % 3}",
+                    "sp_espn_id": "", "opp_sp_espn_id": "",
+                    "venue_name": "", "venue_city": "", "venue_state": "",
+                    "venue_indoor": 0, "moneyline": float("nan"),
+                    "run_line": float("nan"), "total_line": float("nan"),
+                    "team_hits": 8, "team_errors": 0,
+                    "opp_hits": 6, "opp_errors": 1,
+                    "opp_runs": float("nan"), "team_runs": float("nan"),
+                })
+    return pd.DataFrame(rows)
+
+
+class TestSeasonBoundary:
+    """Verify rolling stats reset at season boundary."""
+
+    def test_games_played_resets_at_season_boundary(self):
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # First game of 2026 should have prev_games_played = 0
+        first_2026 = team_a[team_a["date"].str.startswith("2026")].iloc[0]
+        assert first_2026["prev_games_played"] == 0
+
+    def test_season_expanding_stats_reset(self):
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # First game of 2026 should have NaN prev_season_runs_per_game (no prior data this season)
+        first_2026 = team_a[team_a["date"].str.startswith("2026")].iloc[0]
+        assert pd.isna(first_2026["prev_season_runs_per_game"])
+
+    def test_rolling_stats_behavior_full_mode(self, monkeypatch):
+        monkeypatch.setattr(mlb_features, "SEASON_SCOPE_MODE", "full")
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # In full mode, roll10 also resets -- first 2026 game has NaN prev_roll10
+        first_2026 = team_a[team_a["date"].str.startswith("2026")].iloc[0]
+        assert pd.isna(first_2026["prev_roll10_runs_per_game"])
+
+    def test_rolling_stats_behavior_selective_mode(self, monkeypatch):
+        monkeypatch.setattr(mlb_features, "SEASON_SCOPE_MODE", "selective")
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        team_a = df[df["team"] == "TeamA"].sort_values("date")
+        # In selective mode, roll10 carries over -- first 2026 game has a value
+        first_2026 = team_a[team_a["date"].str.startswith("2026")].iloc[0]
+        assert pd.notna(first_2026["prev_roll10_runs_per_game"])
+
+
+class TestPriorSeasonStats:
+    """Verify prior-season columns are populated correctly."""
+
+    def test_prior_season_columns_populated_for_second_season(self):
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        df = add_prior_season_stats(df)
+        s2 = df[df["season"] == 2026]
+        for col in ["prior_season_win_pct", "prior_season_rpg",
+                     "prior_season_ra", "prior_season_pyth_wpct"]:
+            assert col in s2.columns
+            assert s2[col].notna().all(), f"{col} has NaN in season 2"
+
+    def test_first_season_gets_defaults(self):
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        df = add_prior_season_stats(df)
+        s1 = df[df["season"] == 2025]
+        assert (s1["prior_season_win_pct"] == 0.5).all()
+        assert (s1["prior_season_rpg"] == 4.5).all()
+        assert (s1["prior_season_ra"] == 4.5).all()
+        assert (s1["prior_season_pyth_wpct"] == 0.5).all()
+
+    def test_prior_stats_reflect_end_of_prior_season(self):
+        df = _make_multi_season_games(n_days_s1=10, n_days_s2=5)
+        df = calculate_rolling_stats(df)
+        df = add_prior_season_stats(df)
+        # TeamA's 2026 prior_season_win_pct should match their 2025 final win_pct
+        team_a_2025 = df[(df["team"] == "TeamA") & (df["season"] == 2025)].sort_values("date")
+        final_2025_wpct = team_a_2025.iloc[-1]["win_pct"]
+        team_a_2026 = df[(df["team"] == "TeamA") & (df["season"] == 2026)]
+        # All 2026 rows for TeamA should have the same prior_season_win_pct
+        for val in team_a_2026["prior_season_win_pct"]:
+            assert val == pytest.approx(final_2025_wpct)
