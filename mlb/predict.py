@@ -40,12 +40,18 @@ from model import load_model, get_feature_list, TARGET_BY_LEAGUE
 # Kalshi edge cap -- model edges above this are likely noise/overconfidence
 KALSHI_EDGE_CAP = 0.15
 
+# Blend model probability toward market to reduce overconfidence
+MLB_MARKET_BLEND = 0.30
+
+# Minimum current-season games played for both teams before betting
+MIN_SEASON_GAMES = 15
+
 # Kalshi GAME rating gates (mirrors CBB get_kalshi_game_live_rating)
 GAME_STRONG_MIN_PROB = 0.55
-GAME_STRONG_MIN_PRICE = 10
+GAME_STRONG_MIN_PRICE = 20
 GAME_STRONG_MAX_PRICE = 90
 GAME_GOOD_MIN_PROB = 0.52
-GAME_GOOD_MIN_PRICE = 15
+GAME_GOOD_MIN_PRICE = 20
 GAME_GOOD_MAX_PRICE = 85
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -78,7 +84,7 @@ def get_latest_stats(df):
             if any(x in col for x in ["season_", "roll", "prev_", "opp_win_pct", "bullpen_era", "pyth_wpct"]):
                 stats[col] = last_game[col]
         stats["last_game_date"] = last_game["date"]
-        stats["prev_games_played"] = last_game.get("prev_games_played", 10)
+        stats["prev_games_played"] = last_game.get("prev_games_played", 0)
         stats["prev_volatility"] = last_game.get("prev_volatility", 2.0)
         stats["prev_win_pct"] = last_game.get("prev_win_pct", 0.5)
         stats["prev_roll10_win_pct"] = last_game.get("prev_roll10_win_pct", 0.5)
@@ -371,6 +377,12 @@ def build_feature_row(home_stats, away_stats, home_sp_era, away_sp_era,
     away_sp_roll = away_sp_stats.get("sp_roll_era", 4.5)
     row["sp_roll_era_diff"] = float(away_sp_roll or 4.5) - float(home_sp_roll or 4.5)
 
+    # Prior-season baselines (stable team quality anchor for early season)
+    row["prior_season_win_pct"] = home_stats.get("prior_season_win_pct", 0.5)
+    row["prior_season_rpg"] = home_stats.get("prior_season_rpg", 4.5)
+    row["prior_season_ra"] = home_stats.get("prior_season_ra", 4.5)
+    row["prior_season_pyth_wpct"] = home_stats.get("prior_season_pyth_wpct", 0.5)
+
     # Fill any missing features with neutral defaults
     for f in features:
         if f not in row or pd.isna(row.get(f)):
@@ -482,14 +494,15 @@ def _get_kalshi_edge(client, mapper, home_team, away_team, game_date,
     if our_price is None or our_price <= 0:
         return result
 
-    # Edge calculation -- let bugs propagate here (no catch)
+    # Edge calculation -- blend model prob toward market to reduce overconfidence
     model_prob = prob_home_win if pick == home_team else (1.0 - prob_home_win)
     implied_prob = kalshi_implied_prob(our_price)
     fee = kalshi_fee_cents(our_price) / 100.0
 
-    raw_edge = calculate_edge(model_prob, implied_prob)
+    blended_prob = model_prob * (1 - MLB_MARKET_BLEND) + implied_prob * MLB_MARKET_BLEND
+    raw_edge = calculate_edge(blended_prob, implied_prob)
     edge = min(raw_edge, KALSHI_EDGE_CAP)
-    rating = _get_kalshi_game_rating(edge, model_prob, our_price)
+    rating = _get_kalshi_game_rating(edge, blended_prob, our_price)
     units = (
         recommended_units(edge, implied_prob)
         if rating in VALUE_RATINGS
@@ -580,9 +593,10 @@ def _get_polymarket_edge(client, mapper, home_team, away_team, game_date,
     implied_prob = polymarket_implied_prob(our_price)
     fee = polymarket_fee_cents(our_price) / 100.0
 
-    raw_edge = calculate_edge(model_prob, implied_prob)
+    blended_prob = model_prob * (1 - MLB_MARKET_BLEND) + implied_prob * MLB_MARKET_BLEND
+    raw_edge = calculate_edge(blended_prob, implied_prob)
     edge = min(raw_edge, KALSHI_EDGE_CAP)
-    rating = _get_kalshi_game_rating(edge, model_prob, our_price)
+    rating = _get_kalshi_game_rating(edge, blended_prob, our_price)
     units = (
         recommended_units(edge, implied_prob)
         if rating in VALUE_RATINGS
@@ -689,6 +703,16 @@ def generate_predictions(league=LEAGUE):
 
         home_stats = latest_stats.get(home_name, {})
         away_stats = latest_stats.get(away_name, {})
+
+        # Gate: skip games where either team has < MIN_SEASON_GAMES played
+        home_gp = home_stats.get("prev_games_played", 0)
+        away_gp = away_stats.get("prev_games_played", 0)
+        if home_gp < MIN_SEASON_GAMES or away_gp < MIN_SEASON_GAMES:
+            home_abbr = game.get("home_abbr", home_name)
+            away_abbr = game.get("away_abbr", away_name)
+            print(f"   SKIP {away_abbr} @ {home_abbr}: "
+                  f"insufficient GP (home={int(home_gp)}, away={int(away_gp)}, min={MIN_SEASON_GAMES})")
+            continue
 
         row = build_feature_row(
             home_stats, away_stats,

@@ -12,6 +12,9 @@ from mlb.predict import (
     get_latest_pitcher_stats,
     _get_kalshi_game_rating,
     KALSHI_EDGE_CAP,
+    MLB_MARKET_BLEND,
+    GAME_STRONG_MIN_PRICE,
+    GAME_GOOD_MIN_PRICE,
 )
 from model import MLB_FEATURES
 
@@ -29,6 +32,10 @@ class TestBuildFeatureRow:
             "prev_win_pct": 0.58,
             "prev_roll10_win_pct": 0.60,
             "prev_volatility": 2.1,
+            "prior_season_win_pct": 0.55,
+            "prior_season_rpg": 4.3,
+            "prior_season_ra": 3.9,
+            "prior_season_pyth_wpct": 0.56,
         }
 
     def _away_stats(self):
@@ -37,6 +44,10 @@ class TestBuildFeatureRow:
             "prev_roll10_runs_allowed": 4.2,
             "prev_win_pct": 0.45,
             "prev_roll10_win_pct": 0.40,
+            "prior_season_win_pct": 0.48,
+            "prior_season_rpg": 3.9,
+            "prior_season_ra": 4.1,
+            "prior_season_pyth_wpct": 0.47,
         }
 
     def test_returns_all_mlb_features(self):
@@ -236,3 +247,41 @@ class TestKalshiEdgeCap:
         raw_edge = 0.10
         capped = min(raw_edge, KALSHI_EDGE_CAP)
         assert capped == 0.10
+
+
+class TestMarketBlend:
+
+    def test_blended_prob_shrinks_toward_market(self):
+        model_prob = 0.70
+        implied_prob = 0.50
+        blended = model_prob * (1 - MLB_MARKET_BLEND) + implied_prob * MLB_MARKET_BLEND
+        assert blended == pytest.approx(0.64)
+        assert blended < model_prob
+
+    def test_blend_with_equal_probs_is_identity(self):
+        model_prob = 0.55
+        implied_prob = 0.55
+        blended = model_prob * (1 - MLB_MARKET_BLEND) + implied_prob * MLB_MARKET_BLEND
+        assert blended == pytest.approx(0.55)
+
+    def test_blend_weight_is_thirty_percent(self):
+        assert MLB_MARKET_BLEND == 0.30
+
+
+class TestMinPriceFilter:
+
+    def test_price_floors_tightened(self):
+        assert GAME_STRONG_MIN_PRICE == 20
+        assert GAME_GOOD_MIN_PRICE == 20
+
+    def test_low_price_gets_pass(self):
+        """Price below 20c should return PASS regardless of edge."""
+        assert _get_kalshi_game_rating(0.20, 0.70, 15) == "PASS"
+        assert _get_kalshi_game_rating(0.20, 0.70, 5) == "PASS"
+        assert _get_kalshi_game_rating(0.20, 0.70, 3) == "PASS"
+
+    def test_price_at_threshold_can_pass_strong(self):
+        assert _get_kalshi_game_rating(0.08, 0.55, 20) == "STRONG"
+
+    def test_price_at_threshold_can_pass_good(self):
+        assert _get_kalshi_game_rating(0.04, 0.52, 20) == "GOOD"

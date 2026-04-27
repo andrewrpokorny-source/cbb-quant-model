@@ -93,6 +93,11 @@ MLB_FEATURES = [
     'wind_speed',
     'bullpen_era_diff',
     'roll5_rpg_diff',
+    # Prior-season baselines (early-season anchor)
+    'prior_season_win_pct',
+    'prior_season_rpg',
+    'prior_season_ra',
+    'prior_season_pyth_wpct',
 ]
 FEATURES = MENS_FEATURES
 FEATURES_BY_LEAGUE = {
