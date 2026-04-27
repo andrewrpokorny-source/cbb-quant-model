@@ -1,0 +1,16 @@
+{
+  "_description": "Run 3: LightGBM depth-2 margin-CDF with lower residual-row floor.",
+  "model_family": "lightgbm",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 2,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "calibration_fraction": 0.2,
+    "min_calibration_rows": 100
+  },
+  "calibrated": false,
+  "target": "margin"
+}
