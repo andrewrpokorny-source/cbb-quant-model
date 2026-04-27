@@ -1,0 +1,17 @@
+{
+  "model_family": "xgboost",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 1,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "calibration_fraction": 0.2,
+    "min_calibration_rows": 200
+  },
+  "calibrated": true,
+  "target": "home_win",
+  "_description": "Run 3 temp config: XGBoost stumps + sigmoid calibration",
+  "calibration_method": "sigmoid"
+}

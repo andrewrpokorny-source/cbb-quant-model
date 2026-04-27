@@ -1,0 +1,102 @@
+{
+  "optimizer": {
+    "brier": 0.24030470737517734,
+    "log_loss": 0.6731798896339871,
+    "accuracy": 0.5830363506771205,
+    "high_conf_accuracy": 0.605586592178771,
+    "roi_units": 139.7272727272727,
+    "n_games": 1403,
+    "n_high_conf": 895
+  },
+  "monitor_2025_tail": {
+    "brier": 0.23715290154113772,
+    "log_loss": 0.6669152256369516,
+    "accuracy": 0.6181318681318682,
+    "high_conf_accuracy": 0.6493775933609959,
+    "roi_units": 115.54545454545456,
+    "n_games": 728,
+    "n_high_conf": 482
+  },
+  "monitor_2026": {
+    "brier": 0.18171363625829645,
+    "log_loss": 0.5499232224932648,
+    "accuracy": 0.7857142857142857,
+    "high_conf_accuracy": 0.7948717948717948,
+    "roi_units": 40.36363636363636,
+    "n_games": 84,
+    "n_high_conf": 78
+  },
+  "_meta": {
+    "features_used": [
+      "bullpen_era_diff",
+      "sp_era_diff",
+      "is_home",
+      "opp_sp_roll_era",
+      "sp_roll_era",
+      "sp_roll_era_diff",
+      "sp_era",
+      "sp_roll_ip",
+      "prev_roll10_runs_allowed",
+      "prev_season_runs_per_game",
+      "opp_sp_era",
+      "roll5_rpg_diff",
+      "roll10_ra_diff"
+    ],
+    "n_features": 13,
+    "model_family": "lightgbm",
+    "calibrated": false,
+    "calibration_method": null,
+    "target": "margin",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "e2339aec975eba69af1cc2b77e7ec855586a04dada599c5fb1405c11c0de1edf",
+    "hyperparams": {
+      "n_estimators": 150,
+      "max_depth": 1,
+      "learning_rate": 0.05,
+      "calibration_fraction": 0.2,
+      "min_calibration_rows": 200,
+      "random_state": 42,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    },
+    "diagnostics": {
+      "optimizer": {
+        "n_folds_trained": 17,
+        "n_folds_skipped_thin_train": 1,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 134,
+        "train_rows_max": 2774,
+        "train_rows_mean": 1468.1176470588234,
+        "calibrator_source_counts": {},
+        "sigma_source_counts": {
+          "std_of_y_fallback": 1,
+          "holdout": 16
+        }
+      },
+      "monitor_2025_tail": {
+        "n_folds_trained": 9,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 5,
+        "train_rows_min": 2840,
+        "train_rows_max": 4200,
+        "train_rows_mean": 3517.777777777778,
+        "calibrator_source_counts": {},
+        "sigma_source_counts": {
+          "holdout": 9
+        }
+      },
+      "monitor_2026": {
+        "n_folds_trained": 2,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 0,
+        "train_rows_min": 4296,
+        "train_rows_max": 4426,
+        "train_rows_mean": 4361.0,
+        "calibrator_source_counts": {},
+        "sigma_source_counts": {
+          "holdout": 2
+        }
+      }
+    }
+  }
+}

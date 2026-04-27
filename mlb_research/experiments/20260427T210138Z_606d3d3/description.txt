@@ -1,0 +1,1 @@
+Run 3: LGBM depth-2 margin CDF residual floor 100
