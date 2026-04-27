@@ -19,6 +19,15 @@ you should continue.
   high-conf picks is almost certainly a resolution-collapse artifact
   (Brier floor is 0.25 for uniform 0.5 output) rather than real alpha.
 
+A "cumulative-delta" secondary gate was prototyped for Run 3 prep and
+removed after adversarial review correctly observed that its 0.015
+threshold was at the search-noise floor on the same window. Multi-
+change candidates that the 0.010 primary floor rejects (e.g. Run 2's
+`prune-13 + LGBM stumps = 0.2402` with marginal Δ=0.0018) will REVERT
+in the autonomous loop. A human can still promote them via a
+deliberate human-override row in the ledger -- see PR #80's
+"HUMAN OVERRIDE" pattern.
+
 **Hidden overfit guards:** `mon25_*` and `mon26_*` columns in
 `results.tsv` exist for human review only. They detect whether your
 improvements are real or are overfitting the 2025 Apr-Jul window. You
@@ -181,10 +190,17 @@ This is a starting menu, not exhaustive. Add your own.
   `sklearn_gbm` (default), `lightgbm`, `xgboost`.
 - LightGBM and XGBoost also accept `subsample` and
   `colsample_bytree` in hyperparams (default 0.8 each).
-- `calibrated: true` only applies to `sklearn_gbm` (uses the
-  vendored `TimeAwareCalibratedGBM`). For LightGBM/XGBoost the
-  raw classifier is used directly -- explore Platt scaling or
-  isotonic as a follow-up.
+- `calibrated: true` applies to all three families. The
+  `sklearn_gbm` + default `calibration_method: "sigmoid"` path
+  routes through the frozen `TimeAwareCalibratedGBM` so the
+  baseline row stays bit-reproducible. Every other
+  `(family, method)` pair routes through the generalized
+  `TimeAwareCalibrated` wrapper, which does the same
+  trailing-window split but accepts any base estimator and
+  either sigmoid (Platt) or isotonic calibration. Set
+  `"calibration_method": "isotonic"` to try isotonic. LightGBM
+  and XGBoost calibrated + stumps is a concrete Run 3 starting
+  hypothesis (uncalibrated LGBM stumps was Run 2's best KEEP).
 - Simple two-model averaging ensemble (write a wrapper estimator
   under `mlb_research/` that exposes `fit`/`predict_proba`).
 - Stacked: GBM + logistic regression meta-learner.
@@ -202,9 +218,17 @@ This is a starting menu, not exhaustive. Add your own.
   feature).
 
 ### Target reformulation
-- Predict run-line cover instead of moneyline win.
-- Predict score margin (regression) and derive P(home wins) from
-  Normal CDF at 0 -- mirror CBB's CDF projection trick.
+- Predict run-line cover instead of moneyline win (not reachable --
+  run_line is 100% NaN in the frozen CSV).
+- **Margin regression + Normal CDF (NOW REACHABLE).** Set
+  `"target": "margin"` in config. The harness trains the chosen
+  `model_family` as a regressor on run margin, estimates residual
+  σ on a trailing holdout slice (same split discipline as the
+  calibration wrappers), and returns `P(home wins) = Φ(μ/σ)`. All
+  three families are supported. `calibrated: true` is rejected in
+  combination with `target: "margin"` -- post-hoc calibration on
+  top of CDF output is a separate hypothesis; add it later inside
+  `mlb_research/` if needed. Mirrors the CBB CDF projection trick.
 
 ### Data hygiene
 - Season-scoped rolling stats (reset at season boundary). Current CSV
@@ -247,6 +271,59 @@ XGBoost (now reachable via the `model_family` config key). Feature
 pruning is also untried.
 
 Read `mlb_research/RUN_SUMMARY.md` for the full Run 1 trajectory.
+
+### Context from Run 2
+
+Run 2 produced one KEEP (exp 15): LightGBM `max_depth=1` stumps,
+uncalibrated. Running best advanced from baseline `opt_brier=0.2553`
+to `opt_brier=0.2420` with ROI more than doubling (+54.55U ->
++124.64U). 18 subsequent experiments all reverted or hit the
+consecutive-non-keep cap; the run ended at 0.2420 with a clear
+"structural ceiling" around 0.2400 given the harness surface area
+available to Run 2.
+
+Three patterns showed directional signal but could not cross the
+0.010 primary floor alone:
+- **Feature pruning.** Top-5 / top-8 / top-13 nonzero-importance
+  prunings each beat LGBM-stumps-baseline by ~0.0018 Brier with
+  ROI gains to +156U. Three independent prunings converging is
+  pooled evidence for real signal, not noise.
+- **Slower LR on stumps.** `learning_rate=0.03` was Brier-flat
+  (0.2420) but ROI rose to +130U. Suggests pick composition
+  shifted toward higher-EV picks without improving resolution.
+- **Calibrated stumps (sklearn).** Sub-floor Brier drop but pick
+  population dropped sharply (resolution collapse), masking a
+  real effect. Was not reachable on LGBM/XGBoost in Run 2.
+
+**Promising direction for Run 3** (newly reachable in Run 3 prep,
+committed before this run started):
+
+1. **Multi-change candidates as research signal.** LGBM stumps +
+   prune-13 was `0.2402` in Run 2 (cumulative -0.0151 from
+   baseline, marginal -0.0018 from running best). With the
+   primary-only gate the autonomous loop will REVERT this; the
+   reverted row is still useful evidence and a human can promote
+   it via an explicit override row after the run if pooled
+   evidence (three independent prunings landed at 0.2401-0.2407)
+   holds up against the silent monitors.
+2. **Calibrated LGBM/XGBoost stumps** via the new
+   `calibration_method` knob (`"sigmoid"` or `"isotonic"`).
+   Run 2 could only test sklearn calibration, which resolution-
+   collapsed; LGBM/XGBoost raw output may respond better. Smoke
+   runs during Run 3 prep showed both hurt Brier on the obvious
+   naive application, so combine with feature pruning or
+   different `calibration_fraction` to avoid re-discovering
+   that failure mode.
+3. **Margin regression + Normal CDF** (`target: "margin"`).
+   Fundamentally different estimator surface -- the CBB model's
+   approach applied to MLB. Test all three families. Prep-time
+   smoke run (sklearn GBM depth=4 on margin) landed at 0.2554
+   Brier but with +115.73U ROI on 1171 picks -- ROI path looks
+   meaningfully different from the classifier path, so don't be
+   surprised if Brier parity hides real pick-quality alpha.
+
+Read `mlb_research/RUN_SUMMARY.md` for the full Run 2 trajectory
+and the recommendation that motivated Run 3's prep.
 
 ## Known caveats (document in RUN_SUMMARY.md)
 

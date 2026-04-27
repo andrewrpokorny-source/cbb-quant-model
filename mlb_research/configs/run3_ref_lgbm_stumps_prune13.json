@@ -1,0 +1,29 @@
+{
+  "_description": "Run 3 reference config: LightGBM stumps + prune-13 features. Reproduces Run 2 exp 21 at opt_brier=0.2402 (marginal -0.0018 from running best 0.2420). The autonomous loop will REVERT this row under the primary 0.010 floor -- a Run-3-prep cumulative gate that would have accepted it was prototyped and removed after adversarial review showed its 0.015 threshold sat at the same-window noise floor. Useful as a research candidate: a HUMAN can promote this kind of multi-change result via an explicit override row in the ledger if pooled evidence (three independent prunings landed at 0.2401-0.2407) holds up.",
+  "model_family": "lightgbm",
+  "features": [
+    "bullpen_era_diff",
+    "sp_era_diff",
+    "is_home",
+    "opp_sp_roll_era",
+    "sp_roll_era",
+    "sp_roll_era_diff",
+    "sp_era",
+    "sp_roll_ip",
+    "prev_roll10_runs_allowed",
+    "prev_season_runs_per_game",
+    "opp_sp_era",
+    "roll5_rpg_diff",
+    "roll10_ra_diff"
+  ],
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 1,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
+  },
+  "calibrated": false,
+  "target": "home_win"
+}

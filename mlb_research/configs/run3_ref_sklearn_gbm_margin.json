@@ -1,0 +1,14 @@
+{
+  "_description": "Run 3 reference config: sklearn GBM margin regression + Normal CDF projection (Run 3 prep unlocked target='margin'). Same hyperparams as the 28-feature baseline classifier; swaps target/regressor to test the CDF path.",
+  "model_family": "sklearn_gbm",
+  "hyperparams": {
+    "n_estimators": 150,
+    "max_depth": 4,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "calibration_fraction": 0.2,
+    "min_calibration_rows": 200
+  },
+  "calibrated": false,
+  "target": "margin"
+}
