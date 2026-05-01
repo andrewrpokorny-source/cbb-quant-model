@@ -61,14 +61,21 @@ def _window_count(dates: pd.Series, start: str, end: str | None = None) -> int:
     return int(mask.sum())
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def build_manifest(source: Path, output: Path, df: pd.DataFrame, coverage: dict) -> dict:
     dates = pd.to_datetime(df["date"], errors="coerce").dropna()
     date_min = dates.min().strftime("%Y-%m-%d") if not dates.empty else ""
     date_max = dates.max().strftime("%Y-%m-%d") if not dates.empty else ""
     return {
         "snapshot_timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "source_csv": str(source.relative_to(REPO_ROOT)),
-        "frozen_csv": str(output.relative_to(REPO_ROOT)),
+        "source_csv": _display_path(source),
+        "frozen_csv": _display_path(output),
         "row_count": int(len(df)),
         "column_count": int(len(df.columns)),
         "sha256": sha256_of_file(output) if output.exists() else None,

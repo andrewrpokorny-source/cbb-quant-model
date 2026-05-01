@@ -17,6 +17,14 @@ from mlb_research.market_odds import (
 )
 
 
+def test_external_display_path_is_preserved():
+    sys.path.insert(0, str(REPO_ROOT / "mlb_research" / "anchor_v2"))
+    from build_market_anchor import _display_path
+
+    external = Path("/tmp/mlb_training_data_with_espn_odds.csv")
+    assert _display_path(external) == str(external)
+
+
 def test_american_odds_to_implied_prob():
     assert american_odds_to_implied_prob("-150") == pytest.approx(0.6)
     assert american_odds_to_implied_prob("+130") == pytest.approx(100 / 230)
