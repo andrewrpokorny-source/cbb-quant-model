@@ -43,3 +43,33 @@ snapshot time is acceptable if it is consistent and documented.
 The builder is intentionally vendor-neutral. It expects those odds to land in
 `data/mlb_training_data_processed.csv` as paired `moneyline` values before
 freezing a market anchor.
+
+## ESPN Core Odds Backfill
+
+The regular ESPN scoreboard endpoint is not sufficient for completed games:
+historical scoreboard responses often omit the `odds` block. ESPN's core
+competition odds endpoint does retain historical provider odds by event ID.
+
+Use the backfill helper to discover event IDs from the scoreboard and fetch the
+core odds endpoint:
+
+```bash
+uv run python mlb_research/anchor_v2/backfill_espn_odds.py \
+  --start-date 2025-04-01 \
+  --end-date 2026-04-02 \
+  --basis-order close \
+  --odds-output data/mlb_espn_odds_backfill.csv \
+  --enriched-output /tmp/mlb_training_data_with_espn_odds.csv
+```
+
+Observed sample behavior on May 1, 2026:
+
+- `2025-04-15`: 15/15 games had ESPN BET closing moneylines.
+- `2025-07-01`: 14/15 games had closing moneylines.
+- `2026-04-01`: 15/15 games had DraftKings closing moneylines.
+- `2026-05-01`: 15/15 games had current DraftKings moneylines, but no closing
+  moneylines yet because games had not completed.
+
+For final research, prefer a completed historical window and `close` prices.
+For same-day/live production, use `current` prices from the prediction-time
+snapshot rather than closing prices.
