@@ -120,13 +120,15 @@ def _float_from_value(value: Any) -> float:
 
 def _extract_moneyline(team_odds: dict, basis_order: list[str]) -> tuple[float | None, str | None]:
     for basis in basis_order:
+        if basis == "top_level":
+            american = _american_from_value(team_odds.get("moneyLine"))
+            if american is not None:
+                return american, "top_level"
+            continue
         moneyline = (team_odds.get(basis) or {}).get("moneyLine")
         american = _american_from_value(moneyline)
         if american is not None:
             return american, basis
-    american = _american_from_value(team_odds.get("moneyLine"))
-    if american is not None:
-        return american, "top_level"
     return None, None
 
 

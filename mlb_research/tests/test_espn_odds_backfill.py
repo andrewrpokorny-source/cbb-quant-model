@@ -32,6 +32,12 @@ def test_extract_moneyline_falls_back_to_current():
     assert _extract_moneyline(team_odds, ["close", "current", "open"]) == (125.0, "current")
 
 
+def test_extract_moneyline_uses_top_level_only_when_requested():
+    team_odds = {"moneyLine": -118}
+    assert _extract_moneyline(team_odds, ["close"]) == (None, None)
+    assert _extract_moneyline(team_odds, ["close", "top_level"]) == (-118.0, "top_level")
+
+
 def test_select_odds_item_filters_provider_and_requires_both_sides():
     items = [
         {
