@@ -32,6 +32,7 @@ def test_known_keys_accepted():
         "calibrated": False,
         "calibration_method": "sigmoid",
         "target": "margin",
+        "roi_mode": "moneyline",
     }
     validate_config_keys(config)  # should not raise
 
@@ -95,8 +96,9 @@ def test_validator_runs_via_cli(tmp_path):
 def test_valid_key_whitelists_are_not_empty():
     # Sanity: guarding against accidental wipe of either whitelist.
     assert "target" in VALID_TOP_LEVEL_CONFIG_KEYS
+    assert "roi_mode" in VALID_TOP_LEVEL_CONFIG_KEYS
     assert "n_estimators" in VALID_HYPERPARAM_KEYS
-    assert len(VALID_TOP_LEVEL_CONFIG_KEYS) >= 6
+    assert len(VALID_TOP_LEVEL_CONFIG_KEYS) >= 7
     assert len(VALID_HYPERPARAM_KEYS) >= 8
 
 

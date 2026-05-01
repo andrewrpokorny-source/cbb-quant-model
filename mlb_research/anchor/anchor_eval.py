@@ -65,8 +65,15 @@ from sklearn.metrics import brier_score_loss, log_loss
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ANCHOR_DIR = os.path.dirname(os.path.abspath(__file__))
-FROZEN_CSV = os.path.join(ANCHOR_DIR, "mlb_frozen.csv")
-MANIFEST_PATH = os.path.join(ANCHOR_DIR, "anchor_manifest.json")
+FROZEN_CSV = os.environ.get("MLB_RESEARCH_FROZEN_CSV") or os.path.join(
+    ANCHOR_DIR, "mlb_frozen.csv"
+)
+MANIFEST_PATH = os.environ.get("MLB_RESEARCH_ANCHOR_MANIFEST") or os.path.join(
+    ANCHOR_DIR, "anchor_manifest.json"
+)
+
+sys.path.insert(0, REPO_ROOT)
+from mlb_research.market_odds import american_odds_profit  # noqa: E402
 
 
 # Frozen copy of production TimeAwareCalibratedGBM as of commit b89f491
@@ -489,6 +496,7 @@ def load_frozen_df() -> pd.DataFrame:
 SUPPORTED_MODEL_FAMILIES = {"sklearn_gbm", "lightgbm", "xgboost"}
 SUPPORTED_CALIBRATION_METHODS = {"sigmoid", "isotonic"}
 SUPPORTED_TARGETS = {"home_win", "margin"}
+SUPPORTED_ROI_MODES = {"flat_110", "moneyline"}
 
 
 def calibration_method_is_active(config: dict) -> bool:
@@ -711,6 +719,18 @@ def walk_forward_window(
         else:
             est.fit(train[features].astype(float), train[target].astype(int))
         probs = est.predict_proba(week[features].astype(float))[:, 1]
+        home_moneyline = (
+            week["team_moneyline"]
+            if "team_moneyline" in week.columns
+            else week["moneyline"]
+            if "moneyline" in week.columns
+            else pd.Series(np.nan, index=week.index)
+        )
+        away_moneyline = (
+            week["opp_moneyline"]
+            if "opp_moneyline" in week.columns
+            else pd.Series(np.nan, index=week.index)
+        )
 
         # Surface per-fold fallback usage so the metrics JSON makes silent
         # path-fallback observable. The new TimeAwareCalibrated wrapper
@@ -737,6 +757,8 @@ def walk_forward_window(
                     "prob_home": probs,
                     "target": week[EVAL_TARGET].astype(int).values,
                     "conf": np.maximum(probs, 1 - probs),
+                    "home_moneyline": home_moneyline.values,
+                    "away_moneyline": away_moneyline.values,
                 }
             )
         )
@@ -757,7 +779,38 @@ def walk_forward_window(
     return pd.concat(fold_logs, ignore_index=True), diagnostics
 
 
-def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> dict:
+def _moneyline_roi_units(
+    predictions: pd.DataFrame,
+    hc_mask: pd.Series,
+    pred_class: np.ndarray,
+    y: np.ndarray,
+) -> tuple[float | None, int, int]:
+    """Score high-confidence picks at the selected side's actual moneyline."""
+    roi = 0.0
+    priced = 0
+    missing = 0
+    for pos, is_hc in enumerate(hc_mask.to_numpy()):
+        if not is_hc:
+            continue
+        selected_odds = (
+            predictions.iloc[pos]["home_moneyline"]
+            if pred_class[pos] == 1
+            else predictions.iloc[pos]["away_moneyline"]
+        )
+        profit = american_odds_profit(selected_odds)
+        if not np.isfinite(profit):
+            missing += 1
+            continue
+        priced += 1
+        roi += profit if pred_class[pos] == y[pos] else -1.0
+    return (float(roi) if priced else None), priced, missing
+
+
+def summarize(
+    predictions: pd.DataFrame | None,
+    high_conf_threshold: float,
+    roi_mode: str = "flat_110",
+) -> dict:
     if predictions is None or predictions.empty:
         return {
             "brier": None,
@@ -765,6 +818,9 @@ def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> d
             "accuracy": None,
             "high_conf_accuracy": None,
             "roi_units": None,
+            "roi_mode": roi_mode,
+            "n_roi_priced": 0,
+            "n_roi_missing_price": 0,
             "n_games": 0,
             "n_high_conf": 0,
         }
@@ -783,14 +839,23 @@ def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> d
     if n_hc:
         hc_correct = int((pred_class[hc_mask.values] == y[hc_mask.values]).sum())
         hc_acc = hc_correct / n_hc
-        payout = 100.0 / 110.0  # -110 break-even payout
-        roi = float((hc_correct * payout) - (n_hc - hc_correct))
+        if roi_mode == "moneyline":
+            roi, n_roi_priced, n_roi_missing = _moneyline_roi_units(
+                predictions, hc_mask, pred_class, y
+            )
+        else:
+            payout = 100.0 / 110.0  # -110 break-even payout
+            roi = float((hc_correct * payout) - (n_hc - hc_correct))
+            n_roi_priced = n_hc
+            n_roi_missing = 0
     else:
         # Zero high-conf picks: ROI is undefined, not zero. A `0.0` here would
         # be indistinguishable from a break-even 54-pick slate and would fool
         # the keep/revert rule.
         hc_acc = None
         roi = None
+        n_roi_priced = 0
+        n_roi_missing = 0
 
     return {
         "brier": brier,
@@ -798,6 +863,9 @@ def summarize(predictions: pd.DataFrame | None, high_conf_threshold: float) -> d
         "accuracy": acc,
         "high_conf_accuracy": hc_acc,
         "roi_units": roi,
+        "roi_mode": roi_mode,
+        "n_roi_priced": n_roi_priced,
+        "n_roi_missing_price": n_roi_missing,
         "n_games": int(len(predictions)),
         "n_high_conf": n_hc,
     }
@@ -827,6 +895,7 @@ VALID_TOP_LEVEL_CONFIG_KEYS = {
     "calibrated",
     "calibration_method",
     "target",
+    "roi_mode",
 }
 
 VALID_HYPERPARAM_KEYS = {
@@ -1023,6 +1092,12 @@ def main():
 
     features = config.get("features") or DEFAULT_MLB_FEATURES
     target = config.get("target", "home_win")
+    roi_mode = config.get("roi_mode", "flat_110")
+    if roi_mode not in SUPPORTED_ROI_MODES:
+        sys.exit(
+            f"Unsupported roi_mode={roi_mode!r}. Must be one of "
+            f"{sorted(SUPPORTED_ROI_MODES)}."
+        )
 
     manifest = load_manifest()
     df = load_frozen_df()
@@ -1033,7 +1108,7 @@ def main():
     for key in ("optimizer", "monitor_2025_tail", "monitor_2026"):
         start, end_exclusive = parse_window_bounds(manifest, key)
         preds, diag = walk_forward_window(df, features, target, start, end_exclusive, factory)
-        results[key] = summarize(preds, HIGH_CONF_THRESHOLD)
+        results[key] = summarize(preds, HIGH_CONF_THRESHOLD, roi_mode=roi_mode)
         diagnostics_by_window[key] = diag
 
     results["_meta"] = {
@@ -1050,6 +1125,7 @@ def main():
             else None
         ),
         "target": target,
+        "roi_mode": roi_mode,
         "high_conf_threshold": HIGH_CONF_THRESHOLD,
         "anchor_sha256": manifest["sha256"],
         # Emit family-aware effective hyperparameters: framework defaults
