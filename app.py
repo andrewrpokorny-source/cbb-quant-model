@@ -1871,8 +1871,39 @@ with col_perf:
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown('<div class="section-title" id="full-slates">Full Slates</div>', unsafe_allow_html=True)
 
+
+def _render_shadow_grader_panel():
+    """Show cumulative MLB shadow vs production summary if the ledger exists."""
+    from mlb.shadow_grader import (
+        DEFAULT_LEDGER,
+        aggregate_report,
+        format_report,
+    )
+
+    if not os.path.exists(DEFAULT_LEDGER):
+        return
+
+    try:
+        ledger = pd.read_csv(DEFAULT_LEDGER)
+    except (pd.errors.EmptyDataError, FileNotFoundError):
+        return
+
+    report = aggregate_report(ledger)
+    if report.get("n_total", 0) == 0:
+        return
+
+    with st.expander(
+        f"Shadow vs Production -- {report.get('n_graded', 0)} graded "
+        f"of {report['n_total']} ledger rows",
+        expanded=False,
+    ):
+        st.code(format_report(report), language="text")
+
+
 def _render_mlb_slate(game_df, lg):
     """Render the MLB full slate with moneyline picks and Kalshi links."""
+    _render_shadow_grader_panel()
+
     show_filter = st.selectbox(
         "Show",
         ["All Games", "Value Bets Only"],

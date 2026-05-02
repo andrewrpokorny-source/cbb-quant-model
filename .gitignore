@@ -21,6 +21,7 @@ data/odds_history.csv
 data/kalshi_game_history.csv
 data/betting_history.csv
 data/draft_results.csv
+data/mlb_shadow_grader_ledger.csv
 
 # Legacy root-level locations (keep until all local installs migrate)
 predictions_*.csv
