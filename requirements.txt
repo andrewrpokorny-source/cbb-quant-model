@@ -9,3 +9,4 @@ python-dotenv
 pytz
 cryptography
 xgboost
+lightgbm>=4.6.0

@@ -35,6 +35,11 @@ from league_config import (
     get_scoreboard_base_url,
     normalize_league,
 )
+from mlb.market_v2 import (
+    build_shadow_columns,
+    load_market_v2_model,
+    market_v2_shadow_enabled,
+)
 from model import load_model, get_feature_list, TARGET_BY_LEAGUE
 
 # Kalshi edge cap -- model edges above this are likely noise/overconfidence
@@ -219,8 +224,10 @@ def fetch_schedule(league=LEAGUE):
         odds_block = comp.get("odds", [{}])[0] if comp.get("odds") else {}
         ml_block = odds_block.get("moneyline", {})
         home_ml_odds = (ml_block.get("home", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("home", {}).get("current", {}).get("odds", "")
                         or ml_block.get("home", {}).get("open", {}).get("odds", ""))
         away_ml_odds = (ml_block.get("away", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("away", {}).get("current", {}).get("odds", "")
                         or ml_block.get("away", {}).get("open", {}).get("odds", ""))
 
         games.append({
@@ -620,6 +627,23 @@ def generate_predictions(league=LEAGUE):
     features = get_feature_list(league)
     print(f"   Model loaded ({len(features)} features, sigma={sigma:.2f})")
 
+    market_v2_bundle = None
+    market_v2_unavailable_status = "disabled"
+    if market_v2_shadow_enabled():
+        try:
+            market_v2_bundle = load_market_v2_model()
+            if market_v2_bundle:
+                print(
+                    "   Market v2 shadow model loaded "
+                    f"({len(market_v2_bundle['features'])} features)"
+                )
+            else:
+                market_v2_unavailable_status = "model_missing"
+                print("   Market v2 shadow model not found; emitting model_missing status")
+        except Exception as e:
+            market_v2_unavailable_status = "load_error"
+            print(f"   WARNING: Market v2 shadow model load failed: {e}")
+
     # Load training data for team stats
     if not os.path.exists(data_file):
         print(f"Training data not found: {data_file}")
@@ -739,6 +763,17 @@ def generate_predictions(league=LEAGUE):
             std_rating = EdgeRating.PASS.value
             std_units = 0.0
 
+        market_v2_data = build_shadow_columns(
+            market_v2_bundle,
+            row,
+            game["home_team"],
+            game["away_team"],
+            game.get("home_ml_odds"),
+            game.get("away_ml_odds"),
+            production_pick=pick,
+            unavailable_status=market_v2_unavailable_status,
+        )
+
         pred = {
             "Bet_Type": "game",
             "Date/Time": game["game_date"].strftime("%Y-%m-%d %H:%M"),
@@ -757,6 +792,7 @@ def generate_predictions(league=LEAGUE):
             "Std_Odds": ml_odds_str or "",
             **kalshi_data,
             **poly_data,
+            **market_v2_data,
         }
         predictions.append(pred)
 
@@ -779,6 +815,15 @@ def generate_predictions(league=LEAGUE):
         if std_rating in VALUE_RATINGS:
             print(f"      DK: Edge {pred['Std_Edge_Pct']}"
                   f" | {std_units:.1f}U")
+
+        if market_v2_data.get("MarketV2_Status") == "ok":
+            agrees = "same pick" if market_v2_data.get("MarketV2_Agrees_With_Production") else "DIFF PICK"
+            print(
+                f"      MarketV2 shadow: {market_v2_data['MarketV2_Pick']} "
+                f"{market_v2_data['MarketV2_Conf']:.1%} "
+                f"edge vs no-vig {market_v2_data['MarketV2_Edge_vs_Market']:+.1%} "
+                f"({agrees})"
+            )
 
     if predictions:
         pred_df = pd.DataFrame(predictions)

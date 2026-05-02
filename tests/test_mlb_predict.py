@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
+import mlb.predict as mlb_predict
 from mlb.predict import (
     build_feature_row,
     find_best_match,
@@ -14,6 +15,66 @@ from mlb.predict import (
     KALSHI_EDGE_CAP,
 )
 from model import MLB_FEATURES
+
+
+class TestFetchScheduleOdds:
+
+    def test_moneyline_falls_back_to_current_before_open(self, monkeypatch):
+        event = {
+            "id": "game-1",
+            "date": "2026-05-02T23:05Z",
+            "status": {"type": {"state": "pre"}},
+            "competitions": [
+                {
+                    "competitors": [
+                        {
+                            "homeAway": "home",
+                            "team": {
+                                "displayName": "New York Yankees",
+                                "abbreviation": "NYY",
+                            },
+                        },
+                        {
+                            "homeAway": "away",
+                            "team": {
+                                "displayName": "Boston Red Sox",
+                                "abbreviation": "BOS",
+                            },
+                        },
+                    ],
+                    "venue": {"fullName": "Yankee Stadium", "indoor": False},
+                    "odds": [
+                        {
+                            "moneyline": {
+                                "home": {
+                                    "current": {"odds": "-145"},
+                                    "open": {"odds": "-130"},
+                                },
+                                "away": {
+                                    "current": {"odds": "+125"},
+                                    "open": {"odds": "+110"},
+                                },
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        def fake_fetch_mlb_espn_date(base_url, date_str):
+            return date_str, [event], None
+
+        monkeypatch.setattr(
+            mlb_predict,
+            "_fetch_mlb_espn_date",
+            fake_fetch_mlb_espn_date,
+        )
+
+        games = mlb_predict.fetch_schedule()
+
+        assert len(games) == 1
+        assert games[0]["home_ml_odds"] == "-145"
+        assert games[0]["away_ml_odds"] == "+125"
 
 
 class TestBuildFeatureRow:
