@@ -1895,6 +1895,20 @@ def _render_mlb_slate(game_df, lg):
 
     if "Conf" in display_df.columns:
         display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+    if "MarketV2_Conf" in display_df.columns:
+        display_df["MktV2 Conf"] = display_df["MarketV2_Conf"].apply(
+            lambda x: f"{x:.1%}" if pd.notna(x) else ""
+        )
+    if "MarketV2_Edge_vs_Market" in display_df.columns:
+        display_df["MktV2 Edge"] = display_df["MarketV2_Edge_vs_Market"].apply(
+            lambda x: f"{x:+.1%}" if pd.notna(x) else ""
+        )
+    if "MarketV2_Agrees_With_Production" in display_df.columns:
+        display_df["MktV2 Same"] = display_df["MarketV2_Agrees_With_Production"].apply(
+            lambda x: "" if x == "" or pd.isna(x) else ("yes" if bool(x) else "no")
+        )
+    if "MarketV2_Status" in display_df.columns:
+        display_df["MktV2 Status"] = display_df["MarketV2_Status"]
 
     # Rename for clarity in the table
     rename_map = {}
@@ -1922,6 +1936,8 @@ def _render_mlb_slate(game_df, lg):
 
     show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
                  "Confidence", "Std_Odds",
+                 "MarketV2_Pick", "MktV2 Conf", "MktV2 Edge",
+                 "MktV2 Same", "MktV2 Status",
                  "DK Edge", "DK Rating", "DK Units",
                  "Kalshi Edge", "Kalshi Rating", "Kalshi Units",
                  "Kalshi_Side", "Kalshi_Price", "Position"]
