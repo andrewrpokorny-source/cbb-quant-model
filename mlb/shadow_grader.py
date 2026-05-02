@@ -156,6 +156,41 @@ def _normalize_team(name: str, known_teams: set[str]) -> Optional[str]:
     return find_best_match(name, known_teams)
 
 
+def _time_to_minutes(value) -> Optional[int]:
+    """Best-effort 'HH:MM' -> minutes since midnight; None if unparseable."""
+    if value is None or pd.isna(value):
+        return None
+    s = str(value).strip()
+    if not s or ":" not in s:
+        return None
+    try:
+        h, m = s.split(":")[:2]
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _select_outcome(match: pd.DataFrame, pred_game_time: str) -> Optional[int]:
+    """Pick the doubleheader row closest to the prediction's game_time.
+
+    Both the prediction archive and the training data store game_time, but the
+    archive uses UTC HH:MM (from ESPN) while the training CSV may use a
+    different convention. Absolute clock values may not align, but ordering
+    within a doubleheader does, so closest-by-minutes works as a disambiguator.
+    """
+    if match.empty:
+        return None
+    if len(match) == 1:
+        return int(match.iloc[0]["home_win"])
+    pred_minutes = _time_to_minutes(pred_game_time)
+    if pred_minutes is None:
+        return int(match.iloc[0]["home_win"])
+    deltas = match["game_time"].map(
+        lambda t: abs((_time_to_minutes(t) or 0) - pred_minutes)
+    )
+    return int(match.iloc[deltas.values.argmin()]["home_win"])
+
+
 def grade_archive(
     archive_path: str,
     archive_date: str,
@@ -163,7 +198,10 @@ def grade_archive(
     known_teams: set[str],
 ) -> pd.DataFrame:
     """Grade a single dated prediction archive into ledger rows."""
-    df = pd.read_csv(archive_path, low_memory=False)
+    try:
+        df = pd.read_csv(archive_path, low_memory=False)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError):
+        return pd.DataFrame(columns=LEDGER_COLUMNS)
     if not has_shadow_columns(df) or df.empty:
         return pd.DataFrame(columns=LEDGER_COLUMNS)
 
@@ -181,17 +219,15 @@ def grade_archive(
         if home_team is None or away_team is None:
             continue
 
+        dt = str(r.get("Date/Time", ""))
+        gt = dt.split(" ", 1)[1] if " " in dt else ""
+
         match = outcomes[
             (outcomes["date"] == archive_date)
             & (outcomes["home_team"] == home_team)
             & (outcomes["away_team"] == away_team)
         ]
-        home_won: Optional[int] = (
-            int(match.iloc[0]["home_win"]) if not match.empty else None
-        )
-
-        dt = str(r.get("Date/Time", ""))
-        gt = dt.split(" ", 1)[1] if " " in dt else ""
+        home_won: Optional[int] = _select_outcome(match, gt)
 
         prob_home = float(r["Prob_Home"])
         shadow_prob_home = float(r["MarketV2_Prob_Home"])

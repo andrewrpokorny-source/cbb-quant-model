@@ -225,7 +225,7 @@ def test_grades_agree_case_with_brier_targets(tmp_path):
     assert not row["roi_data_missing"]
 
 
-def test_idempotent(tmp_path):
+def test_idempotent_through_csv_roundtrip(tmp_path):
     rows = [_prediction_row()]
     archive = _write_archive(tmp_path, "2026-04-15", rows)
     outcomes = _write_outcomes(
@@ -234,13 +234,116 @@ def test_idempotent(tmp_path):
           "away": "Boston Red Sox", "home_won": True}],
     )
 
-    first = shadow_grader.grade(os.path.dirname(archive), outcomes)
     ledger_path = os.path.join(tmp_path, "ledger.csv")
+    first = shadow_grader.grade(os.path.dirname(archive), outcomes)
     shadow_grader.write_ledger(first, ledger_path)
+    persisted = pd.read_csv(ledger_path)
+
     second = shadow_grader.grade(os.path.dirname(archive), outcomes)
     shadow_grader.write_ledger(second, ledger_path)
+    persisted_again = pd.read_csv(ledger_path)
 
     pd.testing.assert_frame_equal(first, second)
+    pd.testing.assert_frame_equal(persisted, persisted_again)
+
+
+def test_doubleheader_disambiguates_by_game_time(tmp_path):
+    """Two games same date / same teams should each pick up their own outcome."""
+    rows = [
+        _prediction_row(
+            matchup="Boston Red Sox @ New York Yankees",
+            pick="New York Yankees",
+            shadow_pick="New York Yankees",
+            shadow_prob_home=0.62,
+            shadow_market_home=0.55,
+            agrees=True,
+            std_odds="-130",
+            date="2026-04-15 17:05",
+        ),
+        _prediction_row(
+            matchup="Boston Red Sox @ New York Yankees",
+            pick="New York Yankees",
+            shadow_pick="New York Yankees",
+            shadow_prob_home=0.55,
+            shadow_market_home=0.50,
+            agrees=True,
+            std_odds="-115",
+            date="2026-04-15 20:35",
+        ),
+    ]
+    archive = _write_archive(tmp_path, "2026-04-15", rows)
+    outcomes = _write_outcomes(
+        tmp_path,
+        [
+            {"date": "2026-04-15", "home": "New York Yankees",
+             "away": "Boston Red Sox", "home_won": True,
+             "game_time": "17:05"},
+            {"date": "2026-04-15", "home": "New York Yankees",
+             "away": "Boston Red Sox", "home_won": False,
+             "game_time": "20:35"},
+        ],
+    )
+
+    ledger = shadow_grader.grade(os.path.dirname(archive), outcomes)
+    assert len(ledger) == 2
+
+    by_time = ledger.set_index("game_time")
+    assert by_time.loc["17:05"]["home_won"] == 1
+    assert by_time.loc["17:05"]["production_correct"]
+    assert by_time.loc["20:35"]["home_won"] == 0
+    assert not by_time.loc["20:35"]["production_correct"]
+
+
+def test_corrupted_archive_does_not_abort_run(tmp_path):
+    """A zero-byte archive (e.g. interrupted predict run) should be skipped."""
+    rows = [_prediction_row()]
+    good = _write_archive(tmp_path, "2026-04-15", rows)
+    bad = os.path.join(tmp_path, "predictions_mlb_20260416.csv")
+    open(bad, "w").close()  # zero bytes
+
+    outcomes = _write_outcomes(
+        tmp_path,
+        [{"date": "2026-04-15", "home": "New York Yankees",
+          "away": "Boston Red Sox", "home_won": True}],
+    )
+
+    ledger = shadow_grader.grade(os.path.dirname(good), outcomes)
+    assert len(ledger) == 1
+    assert ledger.iloc[0]["outcome_status"] == "graded"
+
+
+def test_shadow_disagrees_and_loses(tmp_path):
+    """Counterpart to the disagrees-and-wins case: penalize wrong shadow flip."""
+    rows = [
+        _prediction_row(
+            matchup="New York Mets @ Los Angeles Angels",
+            pick="New York Mets",
+            prob_home=0.45,
+            shadow_pick="Los Angeles Angels",
+            shadow_prob_home=0.55,
+            shadow_market_home=0.51,
+            agrees=False,
+            std_odds="+120",
+        ),
+    ]
+    archive = _write_archive(tmp_path, "2026-04-15", rows)
+    outcomes = _write_outcomes(
+        tmp_path,
+        # Production was right this time -- away (Mets) won.
+        [{"date": "2026-04-15", "home": "Los Angeles Angels",
+          "away": "New York Mets", "home_won": False}],
+    )
+
+    ledger = shadow_grader.grade(os.path.dirname(archive), outcomes)
+    row = ledger.iloc[0]
+    assert row["production_correct"]
+    assert not row["shadow_correct"]
+    assert not row["market_correct"]
+    # Production won at +120 -> +1.2U.
+    assert row["production_roi_units"] == pytest.approx(120 / 100)
+    # Shadow disagrees with production: ROI is intentionally None.
+    assert pd.isna(row["shadow_roi_units"])
+    assert row["roi_data_missing"]
 
 
 def test_outcome_pending_when_game_not_in_training_data(tmp_path):
