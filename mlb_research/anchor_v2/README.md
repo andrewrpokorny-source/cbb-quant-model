@@ -40,9 +40,10 @@ sides of each game, keyed closely enough to join on date, teams, and preferably
 game time for doubleheaders. Closing lines are preferred; a fixed pre-game
 snapshot time is acceptable if it is consistent and documented.
 
-The builder is intentionally vendor-neutral. It expects those odds to land in
-`data/mlb_training_data_processed.csv` as paired `moneyline` values before
-freezing a market anchor.
+The builder is intentionally vendor-neutral. It expects a processed MLB source
+CSV with paired `moneyline` values. The original source remains
+`data/mlb_training_data_processed.csv`; the frozen market-v2 run uses the
+backfilled/enriched source `data/mlb_training_data_with_espn_odds.csv`.
 
 ## ESPN Core Odds Backfill
 
@@ -62,7 +63,7 @@ uv run python mlb_research/anchor_v2/backfill_espn_odds.py \
   --enriched-output data/mlb_training_data_with_espn_odds.csv
 ```
 
-Observed sample behavior on May 1, 2026:
+Observed sample behavior from the May 1, 2026 source check:
 
 - `2025-04-15`: 15/15 games had ESPN BET closing moneylines.
 - `2025-07-01`: 14/15 games had closing moneylines.

@@ -19,6 +19,10 @@ Strict closing-odds coverage:
 - Enriched rows with moneyline: 5,068
 - Row coverage: 98.79%
 
+The 2,566 / 2,535 counts are game-level odds-backfill counts. The manifest's
+`home_rows=2565` and `home_complete_no_vig_rows=2534` are home-side rows present
+in the enriched training anchor, so their denominator is one game lower.
+
 Window sizes:
 
 - Optimizer: 3,200 rows from 2025-04-01 through 2025-07-31
