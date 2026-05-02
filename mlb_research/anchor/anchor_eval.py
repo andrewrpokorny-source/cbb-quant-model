@@ -447,8 +447,25 @@ def effective_hyperparams(config: dict) -> dict:
 
 
 def load_manifest() -> dict:
-    with open(MANIFEST_PATH) as f:
-        return json.load(f)
+    try:
+        with open(MANIFEST_PATH) as f:
+            manifest = json.load(f)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Anchor manifest not found at {MANIFEST_PATH!r}. "
+            "Check MLB_RESEARCH_ANCHOR_MANIFEST."
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Anchor manifest at {MANIFEST_PATH!r} is not valid JSON."
+        ) from exc
+
+    missing = [key for key in ("sha256", "row_count", "windows") if key not in manifest]
+    if missing:
+        raise RuntimeError(
+            f"Anchor manifest at {MANIFEST_PATH!r} missing required key(s): {missing}."
+        )
+    return manifest
 
 
 def _sha256_of_file(path: str) -> str:
@@ -872,11 +889,21 @@ def summarize(
 
 
 def parse_window_bounds(manifest: dict, key: str) -> tuple[datetime, datetime]:
-    w = manifest["windows"][key]
+    try:
+        w = manifest["windows"][key]
+        start_raw = w["start"]
+        end_raw = w["end"]
+    except KeyError as exc:
+        windows = manifest.get("windows") if isinstance(manifest, dict) else None
+        available = sorted(windows) if isinstance(windows, dict) else []
+        raise RuntimeError(
+            f"Anchor manifest at {MANIFEST_PATH!r} missing window bounds for "
+            f"{key!r}; available windows: {available}."
+        ) from exc
     # end is inclusive in the manifest; walk_forward_window treats end as
     # exclusive-upper so add a day.
-    start = datetime.fromisoformat(w["start"])
-    end_inclusive = datetime.fromisoformat(w["end"])
+    start = datetime.fromisoformat(start_raw)
+    end_inclusive = datetime.fromisoformat(end_raw)
     return start, end_inclusive + timedelta(days=1)
 
 
