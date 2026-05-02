@@ -95,3 +95,18 @@ For model evals against the market anchor, set:
 MLB_RESEARCH_FROZEN_CSV=mlb_research/anchor_v2/mlb_market_frozen.csv
 MLB_RESEARCH_ANCHOR_MANIFEST=mlb_research/anchor_v2/market_anchor_manifest.json
 ```
+
+## Production-Readiness Diagnostics
+
+Before wiring a market-aware candidate into production, compare it against the
+direct no-vig market baseline on identical rows:
+
+```bash
+uv run python mlb_research/anchor_v2/market_candidate_diagnostics.py \
+  --model-config mlb_research/anchor_v2/configs/lgbm_top13_market.json
+```
+
+The default output is:
+
+- `mlb_research/anchor_v2/experiments/lgbm_top13_market_diagnostics.json`
+- `mlb_research/anchor_v2/experiments/lgbm_top13_market_diagnostics.md`

@@ -4,10 +4,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+os.environ.setdefault(
+    "MLB_RESEARCH_FROZEN_CSV",
+    "mlb_research/anchor_v2/mlb_market_frozen.csv",
+)
+os.environ.setdefault(
+    "MLB_RESEARCH_ANCHOR_MANIFEST",
+    "mlb_research/anchor_v2/market_anchor_manifest.json",
+)
 
 from mlb_research.anchor.anchor_eval import (
     DEFAULT_MLB_FEATURES,
