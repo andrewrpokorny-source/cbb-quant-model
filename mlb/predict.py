@@ -224,8 +224,10 @@ def fetch_schedule(league=LEAGUE):
         odds_block = comp.get("odds", [{}])[0] if comp.get("odds") else {}
         ml_block = odds_block.get("moneyline", {})
         home_ml_odds = (ml_block.get("home", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("home", {}).get("current", {}).get("odds", "")
                         or ml_block.get("home", {}).get("open", {}).get("odds", ""))
         away_ml_odds = (ml_block.get("away", {}).get("close", {}).get("odds", "")
+                        or ml_block.get("away", {}).get("current", {}).get("odds", "")
                         or ml_block.get("away", {}).get("open", {}).get("odds", ""))
 
         games.append({
