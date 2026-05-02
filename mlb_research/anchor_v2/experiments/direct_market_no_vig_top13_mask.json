@@ -1,0 +1,73 @@
+{
+  "optimizer": {
+    "brier": 0.2423207940682384,
+    "log_loss": 0.6772899924015776,
+    "accuracy": 0.5529753265602322,
+    "high_conf_accuracy": 0.5794392523364486,
+    "roi_units": -74.90368852067292,
+    "roi_mode": "moneyline",
+    "n_roi_priced": 1070,
+    "n_roi_missing_price": 0,
+    "n_games": 1378,
+    "n_high_conf": 1070
+  },
+  "monitor_2025_tail": {
+    "brier": 0.24039449645056124,
+    "log_loss": 0.6733517435894298,
+    "accuracy": 0.5598349381017882,
+    "high_conf_accuracy": 0.5806451612903226,
+    "roi_units": -38.364407150821656,
+    "roi_mode": "moneyline",
+    "n_roi_priced": 589,
+    "n_roi_missing_price": 0,
+    "n_games": 727,
+    "n_high_conf": 589
+  },
+  "monitor_2026": {
+    "brier": 0.24320354144818404,
+    "log_loss": 0.6795372193333191,
+    "accuracy": 0.5783132530120482,
+    "high_conf_accuracy": 0.6056338028169014,
+    "roi_units": -1.7320882887733187,
+    "roi_mode": "moneyline",
+    "n_roi_priced": 71,
+    "n_roi_missing_price": 0,
+    "n_games": 83,
+    "n_high_conf": 71
+  },
+  "_meta": {
+    "baseline": "direct_market_no_vig",
+    "probability_column": "market_home_no_vig_prob",
+    "roi_mode": "moneyline",
+    "high_conf_threshold": 0.53,
+    "anchor_sha256": "c7613525d02009d3bc4807954a6aa502907ce17039b2c48869b2aa4993e34996",
+    "row_mask_config_path": "mlb_research/anchor_v2/configs/lgbm_top13_market.json",
+    "row_mask_n_features": 14,
+    "diagnostics": {
+      "optimizer": {
+        "n_folds_trained": 17,
+        "n_folds_skipped_thin_train": 1,
+        "n_folds_skipped_empty_week": 0,
+        "week_rows_min": 55,
+        "week_rows_max": 91,
+        "week_rows_mean": 81.05882352941177
+      },
+      "monitor_2025_tail": {
+        "n_folds_trained": 9,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 5,
+        "week_rows_min": 48,
+        "week_rows_max": 88,
+        "week_rows_mean": 80.77777777777777
+      },
+      "monitor_2026": {
+        "n_folds_trained": 2,
+        "n_folds_skipped_thin_train": 0,
+        "n_folds_skipped_empty_week": 0,
+        "week_rows_min": 18,
+        "week_rows_max": 65,
+        "week_rows_mean": 41.5
+      }
+    }
+  }
+}

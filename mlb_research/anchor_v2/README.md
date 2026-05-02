@@ -55,11 +55,11 @@ core odds endpoint:
 
 ```bash
 uv run python mlb_research/anchor_v2/backfill_espn_odds.py \
-  --start-date 2025-04-01 \
+  --start-date 2025-03-27 \
   --end-date 2026-04-02 \
   --basis-order close \
   --odds-output data/mlb_espn_odds_backfill.csv \
-  --enriched-output /tmp/mlb_training_data_with_espn_odds.csv
+  --enriched-output data/mlb_training_data_with_espn_odds.csv
 ```
 
 Observed sample behavior on May 1, 2026:
@@ -73,3 +73,24 @@ Observed sample behavior on May 1, 2026:
 For final research, prefer a completed historical window and `close` prices.
 For same-day/live production, use `current` prices from the prediction-time
 snapshot rather than closing prices.
+
+## Frozen Market Anchor
+
+The frozen market-v2 branch keeps generated artifacts under this directory and
+uses a separate `results.tsv` from the original no-market research ledger.
+
+```bash
+uv run python mlb_research/anchor_v2/build_market_anchor.py \
+  --source data/mlb_training_data_with_espn_odds.csv \
+  --output mlb_research/anchor_v2/mlb_market_frozen.csv \
+  --manifest mlb_research/anchor_v2/market_anchor_manifest.json \
+  --min-coverage 0.95 \
+  --force
+```
+
+For model evals against the market anchor, set:
+
+```bash
+MLB_RESEARCH_FROZEN_CSV=mlb_research/anchor_v2/mlb_market_frozen.csv
+MLB_RESEARCH_ANCHOR_MANIFEST=mlb_research/anchor_v2/market_anchor_manifest.json
+```
