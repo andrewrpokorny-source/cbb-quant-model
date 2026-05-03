@@ -1885,7 +1885,7 @@ def _render_shadow_grader_panel():
 
     try:
         ledger = pd.read_csv(DEFAULT_LEDGER)
-    except (pd.errors.EmptyDataError, FileNotFoundError):
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, FileNotFoundError):
         return
 
     report = aggregate_report(ledger)
@@ -1924,25 +1924,36 @@ def _render_mlb_slate(game_df, lg):
         st.caption("No matching picks.")
         return
 
+    # Production-model display columns
     if "Conf" in display_df.columns:
-        display_df["Confidence"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+        display_df["Prod Conf"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
+
+    # Shadow-model display columns (delineated with the "Shadow" prefix)
     if "MarketV2_Conf" in display_df.columns:
-        display_df["MktV2 Conf"] = display_df["MarketV2_Conf"].apply(
+        display_df["Shadow Conf"] = display_df["MarketV2_Conf"].apply(
+            lambda x: f"{x:.1%}" if pd.notna(x) else ""
+        )
+    if "MarketV2_Market_NoVig_Home" in display_df.columns:
+        display_df["Mkt NoVig Home"] = display_df["MarketV2_Market_NoVig_Home"].apply(
             lambda x: f"{x:.1%}" if pd.notna(x) else ""
         )
     if "MarketV2_Edge_vs_Market" in display_df.columns:
-        display_df["MktV2 Edge"] = display_df["MarketV2_Edge_vs_Market"].apply(
+        display_df["Shadow Edge"] = display_df["MarketV2_Edge_vs_Market"].apply(
             lambda x: f"{x:+.1%}" if pd.notna(x) else ""
         )
     if "MarketV2_Agrees_With_Production" in display_df.columns:
-        display_df["MktV2 Same"] = display_df["MarketV2_Agrees_With_Production"].apply(
+        display_df["Same?"] = display_df["MarketV2_Agrees_With_Production"].apply(
             lambda x: "" if x == "" or pd.isna(x) else ("yes" if bool(x) else "no")
         )
     if "MarketV2_Status" in display_df.columns:
-        display_df["MktV2 Status"] = display_df["MarketV2_Status"]
+        display_df["Shadow Status"] = display_df["MarketV2_Status"]
 
     # Rename for clarity in the table
-    rename_map = {}
+    rename_map = {
+        "Pick": "Prod Pick",
+        "Std_Odds": "Prod Odds",
+        "MarketV2_Pick": "Shadow Pick",
+    }
     if "Std_Edge_Pct" in display_df.columns:
         rename_map["Std_Edge_Pct"] = "DK Edge"
     if "Std_Rating" in display_df.columns:
@@ -1965,10 +1976,11 @@ def _render_mlb_slate(game_df, lg):
     else:
         display_df["Position"] = ""
 
-    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP", "Pick",
-                 "Confidence", "Std_Odds",
-                 "MarketV2_Pick", "MktV2 Conf", "MktV2 Edge",
-                 "MktV2 Same", "MktV2 Status",
+    # Layout: production block, then shadow block, then market book / Kalshi
+    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP",
+                 "Prod Pick", "Prod Conf", "Prod Odds",
+                 "Shadow Pick", "Shadow Conf", "Mkt NoVig Home",
+                 "Shadow Edge", "Same?", "Shadow Status",
                  "DK Edge", "DK Rating", "DK Units",
                  "Kalshi Edge", "Kalshi Rating", "Kalshi Units",
                  "Kalshi_Side", "Kalshi_Price", "Position"]
