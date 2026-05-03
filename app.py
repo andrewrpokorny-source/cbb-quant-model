@@ -25,7 +25,7 @@ from dashboard_helpers import filter_recent_kalshi, position_matches_game, utc_d
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BET_HIST_FILE = os.path.join(BASE_DIR, "data/betting_history.csv")
 
-LEAGUES = ["mens", "womens", "mlb"]
+LEAGUES = ["mlb", "mens", "womens"]
 
 st.set_page_config(page_title="Quant Edge", layout="wide")
 
@@ -1102,8 +1102,9 @@ for lg in LEAGUES:
         df = pd.DataFrame()
         predictions_status = "error"
 
-    if predictions_status == "empty" and has_artifacts:
-        st.info(f"No {settings['label']} predictions are available for the current slate.")
+    # Out-of-season / empty predictions are surfaced inside each league's own
+    # section (e.g. "No matching picks") rather than as a banner above the MLB
+    # content. Keeps the active in-season league at the top.
 
     if "Bet_Type" in df.columns:
         spread_df = df[df["Bet_Type"] != "game"].copy()
@@ -1167,9 +1168,9 @@ with st.sidebar:
 }
 </style>
 <div class="nav-section-label">Navigate</div>
+<a href="#mlb-moneyline" class="nav-link">MLB Moneyline</a>
 <a href="#cbb-spread-bets" class="nav-link">CBB Spread Bets</a>
 <a href="#cbb-game-bets" class="nav-link">CBB Game Bets</a>
-<a href="#mlb-moneyline" class="nav-link">MLB Moneyline</a>
 <a href="#full-slates" class="nav-link">Full Slates</a>
 <a href="#performance" class="nav-link">Performance</a>
 <a href="#betting-history" class="nav-link">Betting History</a>
@@ -1619,6 +1620,9 @@ if _recent_kalshi:
 
 _position_lookup = _build_position_lookup(_fetch_kalshi_positions())
 
+st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
+_render_game_bets(st.container(), "mlb", _position_lookup)
+
 st.markdown('<div class="section-title" id="cbb-spread-bets">CBB -- Spread Bets</div>', unsafe_allow_html=True)
 col_spread_m, col_spread_w = st.columns(2)
 _render_spread_bets(col_spread_m, "mens", _position_lookup)
@@ -1628,9 +1632,6 @@ st.markdown('<div class="section-title" id="cbb-game-bets">CBB -- Kalshi Game Be
 col_game_m, col_game_w = st.columns(2)
 _render_game_bets(col_game_m, "mens", _position_lookup)
 _render_game_bets(col_game_w, "womens", _position_lookup)
-
-st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
-_render_game_bets(st.container(), "mlb", _position_lookup)
 
 
 # ==========================================
