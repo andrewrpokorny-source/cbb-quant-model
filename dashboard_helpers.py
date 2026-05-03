@@ -3,6 +3,52 @@
 import re
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
+
+
+def token_bet_candidate_mask(df) -> pd.Series:
+    """Boolean mask of MLB slate rows passing the four mechanical token-bet
+    conditions:
+
+      - Std_Rating in {GOOD, STRONG}
+      - MarketV2_Status == "ok"
+      - MarketV2_Agrees_With_Production is True
+      - MarketV2_Edge_vs_Market > 0
+
+    The user is still expected to verify two manual conditions that cannot be
+    checked from the predictions CSV alone: live odds available near the
+    archived Std_Odds, and no obvious stale lineup or pitcher data.
+    """
+    if df.empty:
+        return pd.Series(dtype=bool)
+
+    def _required(col):
+        return df[col] if col in df.columns else pd.Series(False, index=df.index)
+
+    rating_ok = (
+        df["Std_Rating"].isin(["GOOD", "STRONG"])
+        if "Std_Rating" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    status_ok = (
+        df["MarketV2_Status"] == "ok"
+        if "MarketV2_Status" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    agrees = (
+        df["MarketV2_Agrees_With_Production"].apply(
+            lambda x: bool(x) is True if not (pd.isna(x) or x == "") else False
+        )
+        if "MarketV2_Agrees_With_Production" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    edge_pos = (
+        pd.to_numeric(df["MarketV2_Edge_vs_Market"], errors="coerce") > 0
+        if "MarketV2_Edge_vs_Market" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    return rating_ok & status_ok & agrees & edge_pos
+
 # MLB abbreviations for ticker parsing (sorted longest-first for greedy match)
 _MLB_ABBRS = sorted([
     "ARI", "ATL", "BAL", "BOS", "CHC", "CWS", "CIN", "CLE", "COL", "DET",

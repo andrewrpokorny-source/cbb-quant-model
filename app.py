@@ -19,7 +19,12 @@ import requests
 from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
-from dashboard_helpers import filter_recent_kalshi, position_matches_game, utc_date_to_eastern
+from dashboard_helpers import (
+    filter_recent_kalshi,
+    position_matches_game,
+    token_bet_candidate_mask,
+    utc_date_to_eastern,
+)
 
 # --- PATH CONFIG ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1925,6 +1930,28 @@ def _render_mlb_slate(game_df, lg):
         st.caption("No matching picks.")
         return
 
+    # Token-bet confluence flag computed from raw columns before any rename.
+    candidates = token_bet_candidate_mask(display_df)
+    n_candidates = int(candidates.sum())
+    if n_candidates > 0:
+        lines = [
+            f"- **{r.get('Matchup', '')}** -- pick **{r.get('Pick', '')}** "
+            f"@ `{r.get('Std_Odds', '?')}`, prod conf "
+            f"{float(r.get('Conf') or 0):.1%}, shadow edge "
+            f"{float(r.get('MarketV2_Edge_vs_Market') or 0):+.1%}, "
+            f"DK rating {r.get('Std_Rating', '?')}"
+            for _, r in display_df[candidates].iterrows()
+        ]
+        st.success(
+            f"**{n_candidates} token-bet candidate(s)** "
+            "(Std_Rating GOOD/STRONG, shadow ok, shadow agrees with "
+            "production, shadow edge > 0):\n\n"
+            + "\n".join(lines)
+            + "\n\n_Still verify manually before betting:_ live odds near "
+            "the archived Std_Odds, and no stale lineup/pitcher."
+        )
+    display_df["Bet?"] = candidates.map(lambda x: "yes" if x else "")
+
     # Production-model display columns
     if "Conf" in display_df.columns:
         display_df["Prod Conf"] = display_df["Conf"].apply(lambda x: f"{x:.1%}")
@@ -1977,8 +2004,9 @@ def _render_mlb_slate(game_df, lg):
     else:
         display_df["Position"] = ""
 
-    # Layout: production block, then shadow block, then market book / Kalshi
-    show_cols = ["Date/Time", "Matchup", "Home_SP", "Away_SP",
+    # Layout: confluence flag near the front, then production / shadow /
+    # market-book / Kalshi blocks.
+    show_cols = ["Bet?", "Date/Time", "Matchup", "Home_SP", "Away_SP",
                  "Prod Pick", "Prod Conf", "Prod Odds",
                  "Shadow Pick", "Shadow Conf", "Mkt NoVig Home",
                  "Shadow Edge", "Same?", "Shadow Status",
@@ -1987,11 +2015,15 @@ def _render_mlb_slate(game_df, lg):
                  "Kalshi_Side", "Kalshi_Price", "Position"]
     show_cols = [c for c in show_cols if c in display_df.columns]
 
-    # Sort by best edge across both sources
+    # Sort: token-bet candidates pinned to the top, then by best edge across
+    # DK / Kalshi sources.
     std_edge = _parse_edge(display_df["DK Edge"]) if "DK Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
     k_edge = _parse_edge(display_df["Kalshi Edge"]) if "Kalshi Edge" in display_df.columns else pd.Series(0.0, index=display_df.index)
     display_df["_edge_sort"] = pd.concat([std_edge, k_edge], axis=1).max(axis=1)
-    display_df = display_df.sort_values("_edge_sort", ascending=False).drop(columns=["_edge_sort"])
+    display_df["_cand_sort"] = (display_df.get("Bet?", "") == "yes").astype(int)
+    display_df = display_df.sort_values(
+        ["_cand_sort", "_edge_sort"], ascending=[False, False]
+    ).drop(columns=["_cand_sort", "_edge_sort"])
 
     st.dataframe(display_df[show_cols], use_container_width=True, hide_index=True)
 
