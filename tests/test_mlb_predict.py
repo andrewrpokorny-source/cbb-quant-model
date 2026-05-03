@@ -6,12 +6,14 @@ import pandas as pd
 import pytest
 
 import mlb.predict as mlb_predict
+import mlb.shadow_grader as shadow_grader
 from mlb.predict import (
     build_feature_row,
     find_best_match,
     get_latest_stats,
     get_latest_pitcher_stats,
     _get_kalshi_game_rating,
+    _refresh_shadow_grader_ledger,
     KALSHI_EDGE_CAP,
 )
 from model import MLB_FEATURES
@@ -297,3 +299,36 @@ class TestKalshiEdgeCap:
         raw_edge = 0.10
         capped = min(raw_edge, KALSHI_EDGE_CAP)
         assert capped == 0.10
+
+
+class TestRefreshShadowGraderLedger:
+    """The hook in generate_predictions must be best-effort: it writes the
+    ledger when the grader succeeds, and swallows exceptions so a grader bug
+    cannot break the predict pipeline."""
+
+    def test_writes_ledger_on_success(self, monkeypatch, capsys):
+        called = {}
+
+        def fake_grade():
+            called["grade"] = True
+            return pd.DataFrame({"archive_date": ["2026-04-15"]})
+
+        def fake_write(ledger, path=shadow_grader.DEFAULT_LEDGER):
+            called["write"] = (len(ledger), path)
+
+        monkeypatch.setattr(shadow_grader, "grade", fake_grade)
+        monkeypatch.setattr(shadow_grader, "write_ledger", fake_write)
+
+        _refresh_shadow_grader_ledger()
+        assert called.get("grade") is True
+        assert called.get("write") == (1, shadow_grader.DEFAULT_LEDGER)
+        assert "Shadow grader" in capsys.readouterr().out
+
+    def test_swallows_grader_exception(self, monkeypatch, capsys):
+        def boom():
+            raise RuntimeError("training csv missing")
+
+        monkeypatch.setattr(shadow_grader, "grade", boom)
+        # Must not raise.
+        _refresh_shadow_grader_ledger()
+        assert "WARNING: shadow grader refresh failed" in capsys.readouterr().out
