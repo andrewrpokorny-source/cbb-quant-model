@@ -790,6 +790,8 @@ def generate_predictions(league=LEAGUE):
             "Std_Rating": std_rating,
             "Std_Units": round(std_units, 1),
             "Std_Odds": ml_odds_str or "",
+            "Std_Odds_Home": game.get("home_ml_odds") or "",
+            "Std_Odds_Away": game.get("away_ml_odds") or "",
             **kalshi_data,
             **poly_data,
             **market_v2_data,

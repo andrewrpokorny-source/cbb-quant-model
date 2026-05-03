@@ -33,6 +33,8 @@ def _prediction_row(
     pick="New York Yankees",
     prob_home=0.62,
     std_odds="-150",
+    std_odds_home=None,
+    std_odds_away=None,
     shadow_status="ok",
     shadow_prob_home=0.62,
     shadow_pick="New York Yankees",
@@ -40,7 +42,7 @@ def _prediction_row(
     agrees=True,
     date="2026-04-15 19:05",
 ):
-    return {
+    row = {
         "Bet_Type": "game",
         "Date/Time": date,
         "Matchup": matchup,
@@ -58,6 +60,11 @@ def _prediction_row(
         "MarketV2_Edge_vs_Market": 0.05,
         "MarketV2_Agrees_With_Production": agrees,
     }
+    if std_odds_home is not None:
+        row["Std_Odds_Home"] = std_odds_home
+    if std_odds_away is not None:
+        row["Std_Odds_Away"] = std_odds_away
+    return row
 
 
 def _write_archive(tmp_path, date_str, rows):
@@ -151,9 +158,10 @@ def test_skips_rows_with_non_ok_status(tmp_path):
     assert ledger.empty
 
 
-def test_grades_shadow_disagrees_and_wins(tmp_path):
-    """The cell that matters for promotion: shadow disagrees with production
-    and shadow's pick wins."""
+def test_grades_shadow_disagrees_legacy_archive_flags_roi_missing(tmp_path):
+    """Legacy archive (Std_Odds only, no Std_Odds_Home/Away). Shadow disagrees
+    with production -> off-side moneyline unknown, ROI is intentionally None.
+    Kept as a regression check on the backwards-compat path."""
     rows = [
         _prediction_row(
             matchup="New York Mets @ Los Angeles Angels",
@@ -181,12 +189,49 @@ def test_grades_shadow_disagrees_and_wins(tmp_path):
     assert row["shadow_correct"]
     assert row["market_correct"]
     assert not row["agrees_with_production"]
-    # Std_Odds is for production side (away). Shadow disagrees, so its ROI
-    # is intentionally None and roi_data_missing is True.
+    # Legacy archive: Std_Odds is production side only. Shadow disagrees, so
+    # its ROI is intentionally None and roi_data_missing is True.
     assert pd.isna(row["shadow_roi_units"])
     assert row["roi_data_missing"]
     # Production lost at +120 -> -1U.
     assert row["production_roi_units"] == pytest.approx(-1.0)
+
+
+def test_grades_shadow_disagrees_with_full_odds_recovers_roi(tmp_path):
+    """When archive has Std_Odds_Home and Std_Odds_Away, shadow ROI is
+    computable even when shadow disagrees with production."""
+    rows = [
+        _prediction_row(
+            matchup="New York Mets @ Los Angeles Angels",
+            pick="New York Mets",
+            prob_home=0.45,
+            shadow_pick="Los Angeles Angels",
+            shadow_prob_home=0.55,
+            shadow_market_home=0.51,
+            agrees=False,
+            std_odds="+120",          # production-pick side (away/Mets)
+            std_odds_away="+120",
+            std_odds_home="-130",     # shadow's side (home/Angels)
+        ),
+    ]
+    archive = _write_archive(tmp_path, "2026-04-15", rows)
+    outcomes = _write_outcomes(
+        tmp_path,
+        [{"date": "2026-04-15", "home": "Los Angeles Angels",
+          "away": "New York Mets", "home_won": True}],
+    )
+
+    ledger = shadow_grader.grade(os.path.dirname(archive), outcomes)
+    row = ledger.iloc[0]
+    assert not row["production_correct"]
+    assert row["shadow_correct"]
+    # Production lost at +120 -> -1U.
+    assert row["production_roi_units"] == pytest.approx(-1.0)
+    # Shadow won at -130 -> +0.7692U.
+    assert row["shadow_roi_units"] == pytest.approx(100.0 / 130.0)
+    # Market-only also picked Angels (home, market_home > 0.5) -> same payout.
+    assert row["market_roi_units"] == pytest.approx(100.0 / 130.0)
+    assert not row["roi_data_missing"]
 
 
 def test_grades_agree_case_with_brier_targets(tmp_path):

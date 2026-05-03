@@ -37,20 +37,20 @@ ledger file exists.
   `MarketV2_Market_NoVig_Home`. Identical scoring lets the three deltas be
   compared directly.
 - **Accuracy** is computed on each model's own pick.
-- **ROI** is unit-stake at the production-pick moneyline (`Std_Odds`). Win
-  payout is computed from the American line; loss is -1U.
+- **ROI** is unit-stake at each pick's American moneyline. Production uses
+  the production-pick side; shadow and market-only use whichever side they
+  picked, looked up from `Std_Odds_Home` / `Std_Odds_Away` in the archive.
+  Win payout is computed from the American line; loss is -1U.
 
-## ROI gap
+## ROI coverage and legacy archives
 
-`Std_Odds` in the prediction archive only carries the moneyline for the
-production pick's side. When shadow disagrees with production (or the
-market-only pick disagrees), the off-side moneyline is unknown, so the ROI
-cells are `None` and the row is flagged `roi_data_missing = True`. Such rows
-are still graded for Brier/accuracy but are excluded from the ROI aggregate.
-
-To fix this and unlock full-coverage ROI, persist both home and away
-moneylines from `mlb/predict.py` (e.g. `Std_Odds_Home`, `Std_Odds_Away`) into
-the archive.
+Archives written before the home/away moneylines were persisted only have
+`Std_Odds` for the production-pick side. On those legacy rows the grader
+still scores production ROI, but shadow / market ROI are `None` whenever
+those picks disagree with production -- the row is flagged
+`roi_data_missing = True` and excluded from the ROI aggregate. New archives
+(after `mlb/predict.py` started writing `Std_Odds_Home` and `Std_Odds_Away`)
+get full ROI coverage on every graded row.
 
 ## Ledger columns
 

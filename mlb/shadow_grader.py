@@ -237,6 +237,19 @@ def grade_archive(
         shadow_pick = str(r["MarketV2_Pick"])
         market_pick = _market_only_pick(market_home, home_disp, away_disp)
         std_odds = parse_std_odds(r.get("Std_Odds"))
+        std_odds_home = parse_std_odds(r.get("Std_Odds_Home"))
+        std_odds_away = parse_std_odds(r.get("Std_Odds_Away"))
+
+        def _odds_for_pick(pick: str) -> Optional[int]:
+            """Best moneyline for the picked side, falling back to legacy
+            production-only Std_Odds when the new columns are absent."""
+            if pick == home_disp and std_odds_home is not None:
+                return std_odds_home
+            if pick == away_disp and std_odds_away is not None:
+                return std_odds_away
+            if pick == production_pick:
+                return std_odds
+            return None
 
         if home_won is None:
             outcome_status = "outcome_pending"
@@ -256,20 +269,11 @@ def grade_archive(
             shadow_brier = (shadow_prob_home - home_won) ** 2
             market_brier = (market_home - home_won) ** 2
 
-            production_roi = _bet_roi(production_correct, std_odds)
-
-            shadow_roi = (
-                _bet_roi(shadow_correct, std_odds)
-                if shadow_pick == production_pick
-                else None
-            )
-            market_roi = (
-                _bet_roi(market_correct, std_odds)
-                if market_pick == production_pick
-                else None
-            )
+            production_roi = _bet_roi(production_correct, _odds_for_pick(production_pick))
+            shadow_roi = _bet_roi(shadow_correct, _odds_for_pick(shadow_pick))
+            market_roi = _bet_roi(market_correct, _odds_for_pick(market_pick))
             roi_data_missing = (
-                std_odds is None or shadow_roi is None or market_roi is None
+                production_roi is None or shadow_roi is None or market_roi is None
             )
 
         rows.append(
