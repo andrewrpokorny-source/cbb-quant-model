@@ -840,7 +840,25 @@ def generate_predictions(league=LEAGUE):
 
         print(f"\n   Saved {len(predictions)} predictions to {output_file}")
 
+        if league == "mlb":
+            _refresh_shadow_grader_ledger()
+
     return predictions
+
+
+def _refresh_shadow_grader_ledger():
+    """Best-effort refresh of the shadow grader ledger after a predict run.
+
+    Failures are logged and swallowed: predict is user-facing; the grader is
+    downstream telemetry and must not break the prediction pipeline.
+    """
+    try:
+        from mlb.shadow_grader import grade, write_ledger
+        ledger = grade()
+        write_ledger(ledger)
+        print(f"   Shadow grader: {len(ledger)} ledger rows refreshed")
+    except Exception as e:
+        print(f"   WARNING: shadow grader refresh failed: {e}")
 
 
 def main():
