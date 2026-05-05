@@ -489,6 +489,74 @@ def test_fanduel_settled_dedup_skip_entries() -> None:
 
 
 # ---------------------------------------------------------------------------
+# FanDuel MONEYLINE format tests (no spread number; team and odds split lines)
+# ---------------------------------------------------------------------------
+
+
+def test_fanduel_moneyline_multi_card_parsing() -> None:
+    """ML cards: team appears 2 lines above MONEYLINE marker; odds on the line between."""
+    raw = _read_fixture("fanduel_settled_moneyline.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 2
+
+    win = actual[0]
+    assert win["bet_id"] == "0/0084650/0000230"
+    assert win["bet_type"] == "moneyline"
+    assert win["line"] == "Tampa Bay Rays ML"
+    assert win["odds"] == "-120"
+    assert win["wager"] == 0.5
+    assert win["result"] == "win"
+    assert win["payout"] == 0.92
+    assert win["profit"] == 0.42
+    assert win["game"] == "Toronto Blue Jays vs Tampa Bay Rays"
+    assert win["date"] == "2026-05-04"
+
+    loss = actual[1]
+    assert loss["bet_id"] == "0/0084650/0000232"
+    assert loss["bet_type"] == "moneyline"
+    assert loss["line"] == "Los Angeles Angels ML"
+    assert loss["odds"] == "-158"
+    assert loss["wager"] == 0.5
+    # FanDuel "RETURNED" with $0.00 payout reflects a losing bet, not a refund.
+    assert loss["result"] == "loss"
+    assert loss["profit"] == -0.5
+
+
+def test_fanduel_moneyline_underdog_plus_odds() -> None:
+    """Plus-odds ML team should parse and game come from matchup teams."""
+    card = (
+        "Atlanta Braves\n+126\nMONEYLINE\n"
+        "Atlanta Braves (J Ritc...\n1 0 0 0 0 3 0 0 0\n4\n"
+        "Seattle Mariners (L Gil...\n0 0 0 0 0 5 0 0 0\n5\n"
+        "$0.50\n$0.00\nTOTAL WAGER\nRETURNED\n"
+        "BET ID: ML-PLUS-001\nPLACED: 5/4/2026 2:34PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Atlanta Braves ML"
+    assert bet["odds"] == "+126"
+    assert bet["game"] == "Atlanta Braves vs Seattle Mariners"
+    assert bet["result"] == "loss"
+
+
+def test_fanduel_spread_still_parses_after_ml_changes() -> None:
+    """Existing spread fixtures must keep parsing as bet_type=spread."""
+    raw = _read_fixture("fanduel_settled_multi.txt")
+    bets = BOT._parse_fd_settled_cards(raw)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 3
+    for b in actual:
+        assert b["bet_type"] == "spread"
+
+
+# ---------------------------------------------------------------------------
 # _ocr_sort_key tests
 # ---------------------------------------------------------------------------
 

@@ -1415,6 +1415,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     league = ""
     wager = 0.0
     odds = "n/a"
+    bet_type = "spread"
 
     for cl in cleaned:
         cl = cl.strip()
@@ -1440,15 +1441,45 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 game = f"{g1} vs {g2}"
                 continue
 
+    # Moneyline parsing (when spread parsing failed). FanDuel ML cards
+    # have a different layout from spreads: the bet team appears two lines
+    # above the "MONEYLINE" marker, with the American odds line between them.
+    #
+    # Layout:
+    #     Tampa Bay Rays
+    #     -120
+    #     MONEYLINE
+    if not team:
+        raw_lines = card_text.split("\n")
+        for i in range(2, len(raw_lines)):
+            if raw_lines[i].strip().upper() != "MONEYLINE":
+                continue
+            odds_line = raw_lines[i - 1].strip()
+            team_line = raw_lines[i - 2].strip()
+            ml_odds = re.match(r"^([+-]\d{3,4})$", odds_line)
+            if not ml_odds:
+                continue
+            if not re.match(r"^[A-Z][A-Za-z .'\-()]+$", team_line):
+                continue
+            team = team_line
+            odds = ml_odds.group(1)
+            bet_type = "moneyline"
+            if re.search(r"\(W\)\s*$", team):
+                league = "womens"
+                team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
+            break
+
     # Fallback game detection: in the FanDuel "Finished" format, team names
-    # appear between "SPREAD BETTING" and the wager ($X.XX / TOTAL WAGER).
+    # appear between the bet-type marker (SPREAD BETTING or MONEYLINE) and
+    # the wager ($X.XX / TOTAL WAGER).
     if not game:
+        zone_marker = "MONEYLINE" if bet_type == "moneyline" else "SPREAD BETTING"
         raw_lines = card_text.split("\n")
         game_teams = []
         in_team_zone = False
         for raw_line in raw_lines:
             stripped = raw_line.strip()
-            if "SPREAD BETTING" in stripped.upper():
+            if zone_marker in stripped.upper():
                 in_team_zone = True
                 continue
             if in_team_zone:
@@ -1458,13 +1489,16 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                     or "BET ID" in stripped.upper()
                 ):
                     break
+                # Strip pitcher parenthetical from "Team Name (Pitcher Name...)"
+                base = re.sub(r"\s*\(.*$", "", stripped).strip()
                 if (
-                    stripped
-                    and re.match(r"^[A-Za-z]", stripped)
-                    and stripped.lower() not in JUNK_LINES
-                    and len(stripped) >= 3
+                    base
+                    and re.match(r"^[A-Za-z]", base)
+                    and base.lower() not in JUNK_LINES
+                    and len(base) >= 3
+                    and base not in game_teams
                 ):
-                    game_teams.append(stripped)
+                    game_teams.append(base)
         if len(game_teams) >= 2:
             # Detect women's league from "(W)" in team names
             if not league and any("(W)" in t for t in game_teams):
@@ -1531,7 +1565,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     else:
         profit = 0.0
 
-    line = f"{team} {spread}" if team and spread else ""
+    if bet_type == "moneyline":
+        line = f"{team} ML" if team else ""
+    else:
+        line = f"{team} {spread}" if team and spread else ""
 
     # 6b. Resolve game date: prediction files take precedence over PLACED date
     if not game_date and team:
@@ -1574,7 +1611,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     return {
         "platform": "FanDuel",
         "game": game,
-        "bet_type": "spread",
+        "bet_type": bet_type,
         "line": line,
         "odds": odds,
         "wager": wager,
