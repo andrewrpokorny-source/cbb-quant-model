@@ -556,6 +556,64 @@ def test_fanduel_spread_still_parses_after_ml_changes() -> None:
         assert b["bet_type"] == "spread"
 
 
+def test_fanduel_moneyline_team_with_ampersand() -> None:
+    """ML team containing '&' (e.g. Texas A&M) must be accepted."""
+    card = (
+        "Texas A&M\n-140\nMONEYLINE\n"
+        "Texas A&M (M Bay...\n2 0 0 0 0 1 0 0 0\n3\n"
+        "Mississippi St. (P Pe...\n0 0 0 0 0 0 0 0 0\n0\n"
+        "$0.50\n$0.86\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-AMP-001\nPLACED: 5/5/2026 7:00PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Texas A&M ML"
+    assert bet["game"] == "Texas A&M vs Mississippi St."
+
+
+def test_fanduel_moneyline_qualified_team_miami_oh() -> None:
+    """Closed-paren qualifier '(OH)' must survive fallback game detection."""
+    card = (
+        "Toledo\n-150\nMONEYLINE\n"
+        "Miami (OH) (B Smi...\n0 0 0 0 0 0 0 0 0\n0\n"
+        "Toledo (R Joh...\n2 0 0 1 0 0 0 0 0\n3\n"
+        "$0.50\n$0.83\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-OH-001\nPLACED: 5/5/2026 7:00PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Toledo ML"
+    assert bet["game"] == "Miami (OH) vs Toledo"
+
+
+def test_fanduel_moneyline_w_qualifier_sets_womens_league() -> None:
+    """'(W)' qualifier in fallback teams must trigger womens league detection."""
+    card = (
+        "South Carolina (W)\n-220\nMONEYLINE\n"
+        "South Carolina (W)\n0 0 0 0 0 0 0 0 0\n78\n"
+        "LSU (W)\n0 0 0 0 0 0 0 0 0\n65\n"
+        "$0.50\n$0.73\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-W-001\nPLACED: 5/5/2026 7:00PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["league"] == "womens"
+    assert bet["line"] == "South Carolina ML"
+    assert bet["game"] == "South Carolina vs LSU"
+
+
 # ---------------------------------------------------------------------------
 # _ocr_sort_key tests
 # ---------------------------------------------------------------------------

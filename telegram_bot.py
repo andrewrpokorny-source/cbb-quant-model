@@ -1459,7 +1459,9 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             ml_odds = re.match(r"^([+-]\d{3,4})$", odds_line)
             if not ml_odds:
                 continue
-            if not re.match(r"^[A-Z][A-Za-z .'\-()]+$", team_line):
+            # Match the spread parser's character class so teams like
+            # Texas A&M and William & Mary are accepted.
+            if not re.match(r"^[A-Z][A-Za-z &'.()\-]+$", team_line):
                 continue
             team = team_line
             odds = ml_odds.group(1)
@@ -1489,8 +1491,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                     or "BET ID" in stripped.upper()
                 ):
                     break
-                # Strip pitcher parenthetical from "Team Name (Pitcher Name...)"
-                base = re.sub(r"\s*\(.*$", "", stripped).strip()
+                # Strip only an UNCLOSED trailing parenthetical -- that's the
+                # pitcher tag in OCR ("Toronto Blue Jays (EL..."). Closed
+                # parens like "Miami (OH)" or "Team (W)" are real qualifiers
+                # and must be kept so league detection ("(W)") still fires.
+                base = stripped
+                last_open = base.rfind("(")
+                if last_open >= 0 and ")" not in base[last_open:]:
+                    base = base[:last_open].rstrip()
                 if (
                     base
                     and re.match(r"^[A-Za-z]", base)
