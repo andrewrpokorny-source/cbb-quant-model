@@ -68,14 +68,14 @@ def parse_bet_line(line_str):
     game_match = re.match(r"^(.+?)\s+(?:ML|MONEYLINE|GAME)$", line_str, re.IGNORECASE)
     if game_match:
         team = game_match.group(1).strip()
-        return {"team": team, "spread": None, "side": side, "bet_type": "game"}
+        return {"team": team, "spread": None, "side": side, "bet_type": "moneyline"}
 
     # Split off the spread (last token should be +/- number)
     match = re.match(r"^(.+?)\s+([+-]?\d+\.?\d*)$", line_str)
     if not match:
         # Support explicit YES/NO game lines without "ML" suffix.
         if side in {"YES", "NO"} and line_str:
-            return {"team": line_str, "spread": None, "side": side, "bet_type": "game"}
+            return {"team": line_str, "spread": None, "side": side, "bet_type": "moneyline"}
         return None
 
     team = match.group(1).strip()
@@ -176,7 +176,7 @@ def determine_bet_result(parsed_line, game_result, game_str):
     if not picked_home and not picked_away:
         return None
 
-    if bet_type == "game":
+    if bet_type == "moneyline":
         # Winner market:
         # - side YES or no side: team must win
         # - side NO: team must lose

@@ -127,7 +127,7 @@ def _parse_position(pos: dict) -> dict | None:
     elif "total" in title_lower or "over" in title_lower or "under" in title_lower or "o/u" in title_lower:
         bet_type = "total"
     else:
-        bet_type = "game"
+        bet_type = "moneyline"
 
     side = pos.get("side", "YES").upper()
 
