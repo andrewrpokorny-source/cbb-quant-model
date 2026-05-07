@@ -594,6 +594,66 @@ def test_fanduel_moneyline_qualified_team_miami_oh() -> None:
     assert bet["game"] == "Miami (OH) vs Toledo"
 
 
+def test_fanduel_moneyline_reversed_odds_team_layout() -> None:
+    """Some FanDuel ML cards render '<odds>\\n<team>\\nMONEYLINE' instead of the
+    standard '<team>\\n<odds>\\nMONEYLINE'. Both layouts must parse."""
+    card = (
+        "-112\nSan Diego Padres\nMONEYLINE\n"
+        "San Diego Padres (B...\n0 0 0 1 0 0 2 2 0\n5\n"
+        "San Francisco Giants (D...\n0 0 0 1 0 0 0 0 1\n2\n"
+        "$0.50\n$0.95\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-REV-001\nPLACED: 5/6/2026 2:22PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "San Diego Padres ML"
+    assert bet["odds"] == "-112"
+    assert bet["game"] == "San Diego Padres vs San Francisco Giants"
+    assert bet["result"] == "win"
+
+
+def test_fanduel_moneyline_mlb_team_sets_league_mlb() -> None:
+    """ML cards on a known MLB franchise should tag league=mlb."""
+    card = (
+        "Tampa Bay Rays\n-120\nMONEYLINE\n"
+        "Toronto Blue Jays (EL...\n0 0 1 0 0 0 0 0 0\n1\n"
+        "Tampa Bay Rays (N M...\n3 0 0 0 0 2 0 0 0\n5\n"
+        "$0.50\n$0.92\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-MLB-001\nPLACED: 5/4/2026 2:34PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    assert actual[0]["league"] == "mlb"
+    assert actual[0]["line"] == "Tampa Bay Rays ML"
+
+
+def test_fanduel_moneyline_cbb_team_no_league_tag() -> None:
+    """ML cards on a non-MLB, non-(W) team must NOT auto-tag league=mlb."""
+    card = (
+        "Houston\n-150\nMONEYLINE\n"
+        "Houston\n78\n"
+        "Memphis\n65\n"
+        "$0.50\n$0.83\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-CBB-001\nPLACED: 3/15/2026 7:00PM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Houston ML"
+    # "Houston" alone is not an MLB franchise name ("Houston Astros" is),
+    # so league should stay empty for the CBB-style bet.
+    assert bet["league"] == ""
+
+
 def test_fanduel_moneyline_w_qualifier_sets_womens_league() -> None:
     """'(W)' qualifier in fallback teams must trigger womens league detection."""
     card = (
