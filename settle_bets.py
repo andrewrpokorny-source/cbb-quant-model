@@ -35,8 +35,8 @@ def parse_bet_line(line_str):
         "Providence +15.5"      -> {team: "Providence", spread: 15.5, side: None, bet_type: "spread"}
         "UConn -15.5 NO"        -> {team: "UConn", spread: -15.5, side: "NO", bet_type: "spread"}
         "Furman -10.5 YES"      -> {team: "Furman", spread: -10.5, side: "YES", bet_type: "spread"}
-        "South Carolina ML YES" -> {team: "South Carolina", spread: None, side: "YES", bet_type: "game"}
-        "UConn ML"              -> {team: "UConn", spread: None, side: None, bet_type: "game"}
+        "South Carolina ML YES" -> {team: "South Carolina", spread: None, side: "YES", bet_type: "moneyline"}
+        "UConn ML"              -> {team: "UConn", spread: None, side: None, bet_type: "moneyline"}
     """
     line_str = str(line_str).strip()
 
