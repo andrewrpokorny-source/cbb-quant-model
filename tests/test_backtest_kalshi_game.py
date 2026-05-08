@@ -221,8 +221,8 @@ def test_load_actual_betting_history_results(tmp_path):
     csv_path = tmp_path / "betting_history.csv"
     csv_path.write_text(
         "date,platform,game,bet_type,line,odds,wager,result,payout,profit,bet_id,league\n"
-        "2026-03-02,Kalshi,Oklahoma at Missouri Winner?,game,Missouri ML,,0.11,loss,0.0,-0.11,KXNCAAWBGAME-26MAR01OKLAMIZZ-MIZZ,womens\n"
-        "2026-03-04,Kalshi,North Texas at Wichita St. Winner?,game,Wichita St. ML,,1.20,win,8.0,6.80,KXNCAAWBGAME-26MAR03UNTWICH-WICH,womens\n"
+        "2026-03-02,Kalshi,Oklahoma at Missouri Winner?,moneyline,Missouri ML,,0.11,loss,0.0,-0.11,KXNCAAWBGAME-26MAR01OKLAMIZZ-MIZZ,womens\n"
+        "2026-03-04,Kalshi,North Texas at Wichita St. Winner?,moneyline,Wichita St. ML,,1.20,win,8.0,6.80,KXNCAAWBGAME-26MAR03UNTWICH-WICH,womens\n"
     )
 
     results = load_actual_betting_history_results(str(csv_path), league="womens")
@@ -234,22 +234,24 @@ def test_load_actual_betting_history_results(tmp_path):
 
 
 def test_load_actual_betting_history_rows_filters_kalshi_game(tmp_path):
+    """Loader accepts both the new "moneyline" bet_type and legacy "game" rows."""
     csv_path = tmp_path / "betting_history.csv"
     csv_path.write_text(
         "date,platform,game,bet_type,line,odds,wager,result,payout,profit,bet_id,league\n"
-        "2026-03-02,Kalshi,Game A,game,Team A ML,,0.11,loss,0.0,-0.11,TICKER1,mens\n"
+        "2026-03-02,Kalshi,Game A,moneyline,Team A ML,,0.11,loss,0.0,-0.11,TICKER1,mens\n"
+        "2026-03-02,Kalshi,Game C,game,Team C ML,,0.11,loss,0.0,-0.11,TICKER3,mens\n"
         "2026-03-02,FanDuel,Game B,spread,Team B -3.5,-110,1.10,win,2.10,1.00,BET2,mens\n"
     )
     rows = load_actual_betting_history_rows(str(csv_path), league="mens")
-    assert len(rows) == 1
-    assert rows.iloc[0]["bet_id"] == "TICKER1"
+    assert len(rows) == 2
+    assert set(rows["bet_id"]) == {"TICKER1", "TICKER3"}
 
 
 def test_compare_actual_bets_to_archived_predictions_matches_on_ticker(tmp_path):
     csv_path = tmp_path / "betting_history.csv"
     csv_path.write_text(
         "date,platform,game,bet_type,line,odds,wager,result,payout,profit,bet_id,league\n"
-        "2026-03-10,Kalshi,Providence Friars @ UConn Huskies,game,UConn Huskies ML YES,,0.58,win,1.0,0.42,TICKER1,mens\n"
+        "2026-03-10,Kalshi,Providence Friars @ UConn Huskies,moneyline,UConn Huskies ML YES,,0.58,win,1.0,0.42,TICKER1,mens\n"
     )
     archived = pd.DataFrame(
         [

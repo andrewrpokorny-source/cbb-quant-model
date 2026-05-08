@@ -66,7 +66,7 @@ class TestParsePosition:
 
     def test_bet_type_game_from_title(self):
         row = _parse_position(self._pos(title="Yankees vs Red Sox"))
-        assert row["bet_type"] == "game"
+        assert row["bet_type"] == "moneyline"
 
     def test_bet_type_spread_from_title(self):
         row = _parse_position(self._pos(title="Spread: Red Sox (-1.5)"))
