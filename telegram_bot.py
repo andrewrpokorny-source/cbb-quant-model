@@ -139,6 +139,21 @@ JUNK_LINES = {
     "home", "account", "saved", "live now", "spread betting", "total wager",
 }
 
+# Full MLB team display names (lowercase) for league auto-detection on
+# moneyline cards. Sourced from mlb/data.py:MLB_TEAM_IDS keys.
+_MLB_TEAM_NAMES_LOWER = {
+    "arizona diamondbacks", "atlanta braves", "baltimore orioles",
+    "boston red sox", "chicago cubs", "chicago white sox",
+    "cincinnati reds", "cleveland guardians", "colorado rockies",
+    "detroit tigers", "houston astros", "kansas city royals",
+    "los angeles angels", "los angeles dodgers", "miami marlins",
+    "milwaukee brewers", "minnesota twins", "new york mets",
+    "new york yankees", "oakland athletics", "philadelphia phillies",
+    "pittsburgh pirates", "san diego padres", "san francisco giants",
+    "seattle mariners", "st. louis cardinals", "tampa bay rays",
+    "texas rangers", "toronto blue jays", "washington nationals",
+}
+
 # Regex patterns for junk OCR lines
 JUNK_PATTERNS = [
     re.compile(r"^\d{1,2}:\d{2}\s*(AM|PM)?$", re.IGNORECASE),  # timestamps
@@ -1442,29 +1457,28 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 continue
 
     # Moneyline parsing (when spread parsing failed). FanDuel ML cards
-    # have a different layout from spreads: the bet team appears two lines
-    # above the "MONEYLINE" marker, with the American odds line between them.
-    #
-    # Layout:
-    #     Tampa Bay Rays
-    #     -120
-    #     MONEYLINE
+    # place the team and American odds on the two lines preceding the
+    # "MONEYLINE" marker. The order of those two lines is not stable --
+    # most cards render team then odds, but some screenshots flip them.
+    # Identify each line by its content (odds regex vs team regex) rather
+    # than by position.
     if not team:
         raw_lines = card_text.split("\n")
+        odds_re = re.compile(r"^([+-]\d{3,4})$")
+        team_re = re.compile(r"^[A-Z][A-Za-z &'.()\-]+$")
         for i in range(2, len(raw_lines)):
             if raw_lines[i].strip().upper() != "MONEYLINE":
                 continue
-            odds_line = raw_lines[i - 1].strip()
-            team_line = raw_lines[i - 2].strip()
-            ml_odds = re.match(r"^([+-]\d{3,4})$", odds_line)
-            if not ml_odds:
-                continue
-            # Match the spread parser's character class so teams like
-            # Texas A&M and William & Mary are accepted.
-            if not re.match(r"^[A-Z][A-Za-z &'.()\-]+$", team_line):
+            l1 = raw_lines[i - 2].strip()
+            l2 = raw_lines[i - 1].strip()
+            if odds_re.match(l2) and team_re.match(l1):
+                team_line, odds_line = l1, l2
+            elif odds_re.match(l1) and team_re.match(l2):
+                team_line, odds_line = l2, l1
+            else:
                 continue
             team = team_line
-            odds = ml_odds.group(1)
+            odds = odds_re.match(odds_line).group(1)
             bet_type = "moneyline"
             if re.search(r"\(W\)\s*$", team):
                 league = "womens"
@@ -1514,6 +1528,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             gt0 = re.sub(r"\s*\(W\)\s*$", "", game_teams[0]).strip()
             gt1 = re.sub(r"\s*\(W\)\s*$", "", game_teams[1]).strip()
             game = f"{gt0} vs {gt1}"
+
+    # MLB league auto-detection: for moneyline cards without an existing
+    # league tag, mark league=mlb when the bet team matches a known MLB
+    # franchise name. CBB moneyline picks won't match (e.g. "Houston" alone
+    # is not "Houston Astros") and women's bets are already tagged above.
+    if bet_type == "moneyline" and not league and team:
+        if team.strip().lower() in _MLB_TEAM_NAMES_LOWER:
+            league = "mlb"
 
     # Wager: first dollar amount in range from cleaned text
     for cl in cleaned:
