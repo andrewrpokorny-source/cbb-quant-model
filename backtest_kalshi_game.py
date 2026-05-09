@@ -91,9 +91,11 @@ def load_actual_betting_history_rows(csv_path: str, league: str | None = None) -
     df = pd.read_csv(csv_path)
     df["platform"] = df["platform"].astype(str).str.lower()
     df["bet_type"] = df["bet_type"].astype(str).str.lower()
+    # Accept both "moneyline" (current canonical) and "game" (legacy, pre-rename)
+    # so unmigrated external ledgers still load.
     settled = df[
         (df["platform"] == "kalshi")
-        & (df["bet_type"] == "game")
+        & df["bet_type"].isin({"moneyline", "game"})
         & df["result"].astype(str).str.lower().isin({"win", "loss", "void"})
     ].copy()
     if league is not None:

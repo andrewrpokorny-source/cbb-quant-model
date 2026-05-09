@@ -44,7 +44,7 @@ def _bet_type_from_ticker(ticker: str) -> str:
     if "SPREAD" in upper:
         return "spread"
     if "GAME" in upper:
-        return "game"
+        return "moneyline"
     if "TOTAL" in upper:
         return "total"
     return "other"

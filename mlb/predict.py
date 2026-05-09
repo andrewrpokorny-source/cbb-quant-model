@@ -856,7 +856,10 @@ def _refresh_shadow_grader_ledger():
     """
     try:
         from mlb.shadow_grader import grade, write_ledger
-        ledger = grade()
+        # fetch_live=True so the nightly refresh fills in any archive dates
+        # the training CSV doesn't yet cover. The library default is False
+        # to keep tests/offline callers off the network; this caller opts in.
+        ledger = grade(fetch_live=True)
         write_ledger(ledger)
         print(f"   Shadow grader: {len(ledger)} ledger rows refreshed")
     except Exception as e:

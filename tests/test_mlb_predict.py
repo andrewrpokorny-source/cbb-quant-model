@@ -309,8 +309,9 @@ class TestRefreshShadowGraderLedger:
     def test_writes_ledger_on_success(self, monkeypatch, capsys):
         called = {}
 
-        def fake_grade():
+        def fake_grade(*args, **kwargs):
             called["grade"] = True
+            called["fetch_live"] = kwargs.get("fetch_live")
             return pd.DataFrame({"archive_date": ["2026-04-15"]})
 
         def fake_write(ledger, path=shadow_grader.DEFAULT_LEDGER):
@@ -321,11 +322,14 @@ class TestRefreshShadowGraderLedger:
 
         _refresh_shadow_grader_ledger()
         assert called.get("grade") is True
+        # The post-predict hook must opt into live-fetch so dashboards see
+        # actuals for archive dates the training CSV doesn't yet cover.
+        assert called.get("fetch_live") is True
         assert called.get("write") == (1, shadow_grader.DEFAULT_LEDGER)
         assert "Shadow grader" in capsys.readouterr().out
 
     def test_swallows_grader_exception(self, monkeypatch, capsys):
-        def boom():
+        def boom(*args, **kwargs):
             raise RuntimeError("training csv missing")
 
         monkeypatch.setattr(shadow_grader, "grade", boom)

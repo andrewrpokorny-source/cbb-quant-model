@@ -48,7 +48,7 @@ class TestBetTypeFromTicker:
         assert _bet_type_from_ticker("KXNCAAMBSPREAD-26JAN10TEXALA-ALA13") == "spread"
 
     def test_game(self):
-        assert _bet_type_from_ticker("KXNCAAWBGAME-26MAR01OKLAMIZZ-MIZZ") == "game"
+        assert _bet_type_from_ticker("KXNCAAWBGAME-26MAR01OKLAMIZZ-MIZZ") == "moneyline"
 
     def test_total(self):
         assert _bet_type_from_ticker("KXNCAAMBTOTAL-26JAN10-O150") == "total"

@@ -489,3 +489,113 @@ def test_aggregate_report_contains_paired_brier_deltas(tmp_path):
     formatted = shadow_grader.format_report(report)
     assert "Brier deltas" in formatted
     assert "Agreement" in formatted
+
+
+def test_fetch_outcomes_for_date_shapes_rows(monkeypatch):
+    """fetch_outcomes_for_date returns a DataFrame matching load_outcomes()."""
+    fake_games = [
+        {"date": "2026-05-08", "is_home": 1, "team": "Boston Red Sox",
+         "opponent": "Detroit Tigers", "team_score": 4, "opp_score": 2,
+         "game_time": "19:05"},
+        {"date": "2026-05-08", "is_home": 0, "team": "Detroit Tigers",
+         "opponent": "Boston Red Sox", "team_score": 2, "opp_score": 4,
+         "game_time": "19:05"},
+        # Tied (rain-shortened); should be skipped.
+        {"date": "2026-05-08", "is_home": 1, "team": "Texas Rangers",
+         "opponent": "Houston Astros", "team_score": 3, "opp_score": 3,
+         "game_time": "20:10"},
+    ]
+    monkeypatch.setattr(
+        "mlb.data.fetch_games_for_date", lambda _d: fake_games,
+    )
+    out = shadow_grader.fetch_outcomes_for_date("2026-05-08")
+    assert list(out.columns) == ["date", "home_team", "away_team", "game_time", "home_win"]
+    assert len(out) == 1
+    row = out.iloc[0]
+    assert row["home_team"] == "Boston Red Sox"
+    assert row["away_team"] == "Detroit Tigers"
+    assert row["home_win"] == 1
+
+
+def test_fetch_outcomes_for_date_invalid_date_returns_empty():
+    out = shadow_grader.fetch_outcomes_for_date("not-a-date")
+    assert out.empty
+
+
+def test_grade_fills_missing_dates_from_live_fetch(tmp_path, monkeypatch):
+    """Archive date absent from training CSV is filled in by fetch_live."""
+    rows = [_prediction_row(date="2026-05-02 19:05")]
+    archive = _write_archive(tmp_path, "2026-05-02", rows)
+    # Training CSV deliberately covers a different date so the join misses.
+    outcomes_csv = _write_outcomes(
+        tmp_path,
+        [{"date": "2026-04-15", "home": "New York Yankees",
+          "away": "Boston Red Sox", "home_won": True}],
+    )
+
+    fake_games = [
+        {"date": "2026-05-02", "is_home": 1, "team": "New York Yankees",
+         "opponent": "Boston Red Sox", "team_score": 6, "opp_score": 3,
+         "game_time": "19:05"},
+        {"date": "2026-05-02", "is_home": 0, "team": "Boston Red Sox",
+         "opponent": "New York Yankees", "team_score": 3, "opp_score": 6,
+         "game_time": "19:05"},
+    ]
+    monkeypatch.setattr(
+        "mlb.data.fetch_games_for_date", lambda _d: fake_games,
+    )
+
+    ledger = shadow_grader.grade(
+        os.path.dirname(archive), outcomes_csv, fetch_live=True,
+    )
+
+    assert len(ledger) == 1
+    row = ledger.iloc[0]
+    assert row["outcome_status"] == "graded"
+    assert row["home_won"] == 1
+    assert row["production_correct"]
+
+
+def test_grade_fetch_live_disabled_leaves_row_pending(tmp_path, monkeypatch):
+    """fetch_live=False (the library default) must not call the network."""
+    rows = [_prediction_row(date="2026-05-02 19:05")]
+    archive = _write_archive(tmp_path, "2026-05-02", rows)
+    outcomes_csv = _write_outcomes(
+        tmp_path,
+        [{"date": "2026-04-15", "home": "New York Yankees",
+          "away": "Boston Red Sox", "home_won": True}],
+    )
+
+    def _boom(_d):
+        raise AssertionError("fetch_games_for_date must not be called when fetch_live=False")
+
+    monkeypatch.setattr("mlb.data.fetch_games_for_date", _boom)
+
+    ledger = shadow_grader.grade(os.path.dirname(archive), outcomes_csv)
+    assert len(ledger) == 1
+    assert ledger.iloc[0]["outcome_status"] == "outcome_pending"
+
+
+def test_grade_live_fetch_failure_keeps_row_pending(tmp_path, monkeypatch, capsys):
+    """A live-fetch exception is logged but does not abort the run."""
+    rows = [_prediction_row(date="2026-05-02 19:05")]
+    archive = _write_archive(tmp_path, "2026-05-02", rows)
+    outcomes_csv = _write_outcomes(
+        tmp_path,
+        [{"date": "2026-04-15", "home": "New York Yankees",
+          "away": "Boston Red Sox", "home_won": True}],
+    )
+
+    def _raise(_d):
+        raise RuntimeError("network is down")
+
+    monkeypatch.setattr("mlb.data.fetch_games_for_date", _raise)
+
+    ledger = shadow_grader.grade(
+        os.path.dirname(archive), outcomes_csv, fetch_live=True,
+    )
+
+    assert len(ledger) == 1
+    assert ledger.iloc[0]["outcome_status"] == "outcome_pending"
+    err = capsys.readouterr().err
+    assert "live outcome fetch failed" in err

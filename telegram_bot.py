@@ -139,6 +139,21 @@ JUNK_LINES = {
     "home", "account", "saved", "live now", "spread betting", "total wager",
 }
 
+# Full MLB team display names (lowercase) for league auto-detection on
+# moneyline cards. Sourced from mlb/data.py:MLB_TEAM_IDS keys.
+_MLB_TEAM_NAMES_LOWER = {
+    "arizona diamondbacks", "atlanta braves", "baltimore orioles",
+    "boston red sox", "chicago cubs", "chicago white sox",
+    "cincinnati reds", "cleveland guardians", "colorado rockies",
+    "detroit tigers", "houston astros", "kansas city royals",
+    "los angeles angels", "los angeles dodgers", "miami marlins",
+    "milwaukee brewers", "minnesota twins", "new york mets",
+    "new york yankees", "oakland athletics", "philadelphia phillies",
+    "pittsburgh pirates", "san diego padres", "san francisco giants",
+    "seattle mariners", "st. louis cardinals", "tampa bay rays",
+    "texas rangers", "toronto blue jays", "washington nationals",
+}
+
 # Regex patterns for junk OCR lines
 JUNK_PATTERNS = [
     re.compile(r"^\d{1,2}:\d{2}\s*(AM|PM)?$", re.IGNORECASE),  # timestamps
@@ -1415,6 +1430,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     league = ""
     wager = 0.0
     odds = "n/a"
+    bet_type = "spread"
 
     for cl in cleaned:
         cl = cl.strip()
@@ -1440,15 +1456,64 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 game = f"{g1} vs {g2}"
                 continue
 
+    # Moneyline parsing (when spread parsing failed). FanDuel ML cards
+    # render team/odds on the few lines preceding the "MONEYLINE" marker.
+    # Two complications observed in the wild:
+    #   * Order of team and odds isn't stable (most cards: team then odds;
+    #     some screenshots flip them).
+    #   * A spurious single-character OCR line (e.g. "R") can sit between
+    #     the team/odds pair and "MONEYLINE", pushing the anchor block to
+    #     i-3/i-2 instead of i-2/i-1.
+    # Locate odds first by scanning lines i-1, i-2, i-3, then take the
+    # team line as the immediate neighbor that matches the team regex.
+    if not team:
+        raw_lines = card_text.split("\n")
+        odds_re = re.compile(r"^([+-]\d{3,4})$")
+        team_re = re.compile(r"^[A-Z][A-Za-z &'.()\-]+$")
+        for i in range(2, len(raw_lines)):
+            if raw_lines[i].strip().upper() != "MONEYLINE":
+                continue
+            odds_idx = None
+            for offset in (1, 2, 3):
+                if i - offset < 0:
+                    break
+                if odds_re.match(raw_lines[i - offset].strip()):
+                    odds_idx = i - offset
+                    break
+            if odds_idx is None:
+                continue
+            # Team line is one of the two odds-neighbors. When both match
+            # team_re (rare; happens when noise above odds happens to look
+            # like a team name), prefer the candidate closer to MONEYLINE:
+            # in the reversed layout that's the real team, and the standard
+            # layout never makes odds_idx+1 a match (it's MONEYLINE itself,
+            # which is excluded by `cand < i`).
+            matches = [
+                cand for cand in (odds_idx - 1, odds_idx + 1)
+                if 0 <= cand < i and team_re.match(raw_lines[cand].strip())
+            ]
+            if not matches:
+                continue
+            team_idx = max(matches)
+            team = raw_lines[team_idx].strip()
+            odds = odds_re.match(raw_lines[odds_idx].strip()).group(1)
+            bet_type = "moneyline"
+            if re.search(r"\(W\)\s*$", team):
+                league = "womens"
+                team = re.sub(r"\s*\(W\)\s*$", "", team).strip()
+            break
+
     # Fallback game detection: in the FanDuel "Finished" format, team names
-    # appear between "SPREAD BETTING" and the wager ($X.XX / TOTAL WAGER).
+    # appear between the bet-type marker (SPREAD BETTING or MONEYLINE) and
+    # the wager ($X.XX / TOTAL WAGER).
     if not game:
+        zone_marker = "MONEYLINE" if bet_type == "moneyline" else "SPREAD BETTING"
         raw_lines = card_text.split("\n")
         game_teams = []
         in_team_zone = False
         for raw_line in raw_lines:
             stripped = raw_line.strip()
-            if "SPREAD BETTING" in stripped.upper():
+            if zone_marker in stripped.upper():
                 in_team_zone = True
                 continue
             if in_team_zone:
@@ -1458,13 +1523,22 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                     or "BET ID" in stripped.upper()
                 ):
                     break
+                # Strip only an UNCLOSED trailing parenthetical -- that's the
+                # pitcher tag in OCR ("Toronto Blue Jays (EL..."). Closed
+                # parens like "Miami (OH)" or "Team (W)" are real qualifiers
+                # and must be kept so league detection ("(W)") still fires.
+                base = stripped
+                last_open = base.rfind("(")
+                if last_open >= 0 and ")" not in base[last_open:]:
+                    base = base[:last_open].rstrip()
                 if (
-                    stripped
-                    and re.match(r"^[A-Za-z]", stripped)
-                    and stripped.lower() not in JUNK_LINES
-                    and len(stripped) >= 3
+                    base
+                    and re.match(r"^[A-Za-z]", base)
+                    and base.lower() not in JUNK_LINES
+                    and len(base) >= 3
+                    and base not in game_teams
                 ):
-                    game_teams.append(stripped)
+                    game_teams.append(base)
         if len(game_teams) >= 2:
             # Detect women's league from "(W)" in team names
             if not league and any("(W)" in t for t in game_teams):
@@ -1472,6 +1546,14 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             gt0 = re.sub(r"\s*\(W\)\s*$", "", game_teams[0]).strip()
             gt1 = re.sub(r"\s*\(W\)\s*$", "", game_teams[1]).strip()
             game = f"{gt0} vs {gt1}"
+
+    # MLB league auto-detection: for moneyline cards without an existing
+    # league tag, mark league=mlb when the bet team matches a known MLB
+    # franchise name. CBB moneyline picks won't match (e.g. "Houston" alone
+    # is not "Houston Astros") and women's bets are already tagged above.
+    if bet_type == "moneyline" and not league and team:
+        if team.strip().lower() in _MLB_TEAM_NAMES_LOWER:
+            league = "mlb"
 
     # Wager: first dollar amount in range from cleaned text
     for cl in cleaned:
@@ -1531,7 +1613,10 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     else:
         profit = 0.0
 
-    line = f"{team} {spread}" if team and spread else ""
+    if bet_type == "moneyline":
+        line = f"{team} ML" if team else ""
+    else:
+        line = f"{team} {spread}" if team and spread else ""
 
     # 6b. Resolve game date: prediction files take precedence over PLACED date
     if not game_date and team:
@@ -1574,7 +1659,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     return {
         "platform": "FanDuel",
         "game": game,
-        "bet_type": "spread",
+        "bet_type": bet_type,
         "line": line,
         "odds": odds,
         "wager": wager,
