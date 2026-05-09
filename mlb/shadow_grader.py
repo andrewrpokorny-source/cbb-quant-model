@@ -370,6 +370,12 @@ def grade(
     outcomes = load_outcomes(processed_csv)
 
     if fetch_live and archives:
+        # Live rows are appended only for dates the CSV doesn't cover at all.
+        # That keeps doubleheader disambiguation in _select_outcome correct:
+        # if any CSV row exists for a date, all rows for that date come from
+        # the CSV (single time convention). A future partial CSV refresh that
+        # only writes one row of a doubleheader would mix conventions; this
+        # invariant prevents that.
         csv_dates = set(outcomes["date"].unique())
         missing = sorted({date_iso for date_iso, _ in archives if date_iso not in csv_dates})
         live_frames = []
