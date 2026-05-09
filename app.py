@@ -11,7 +11,7 @@ import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import csv
 import re
@@ -1235,7 +1235,11 @@ def _render_freshness_banner():
     pred_file = paths["predictions_file"]
     eastern = pytz.timezone("US/Eastern")
     if os.path.exists(pred_file):
-        ts = datetime.fromtimestamp(os.path.getmtime(pred_file), tz=eastern)
+        # mtime is a POSIX timestamp; load it as UTC then convert to ET so
+        # the displayed time is correct regardless of host timezone.
+        ts = datetime.fromtimestamp(
+            os.path.getmtime(pred_file), tz=timezone.utc
+        ).astimezone(eastern)
         ts_str = ts.strftime("%Y-%m-%d %H:%M ET")
     else:
         ts_str = "no predictions file yet"
