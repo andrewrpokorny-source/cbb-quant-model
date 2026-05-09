@@ -122,6 +122,46 @@ def load_outcomes(processed_csv: str) -> pd.DataFrame:
     return out
 
 
+_OUTCOMES_COLS = ["date", "home_team", "away_team", "game_time", "home_win"]
+
+
+def fetch_outcomes_for_date(date_str: str) -> pd.DataFrame:
+    """Fetch finalized game outcomes for a single date from the ESPN scoreboard.
+
+    Mirrors the schema returned by load_outcomes() so the two can be
+    concatenated. Tied or unfinished games are skipped (the underlying
+    fetch already filters to state="post"; tie scores would only arise
+    from rain-shortened games).
+    """
+    from datetime import datetime as _dt
+    from mlb.data import fetch_games_for_date
+
+    try:
+        target = _dt.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return pd.DataFrame(columns=_OUTCOMES_COLS)
+
+    games = fetch_games_for_date(target)
+    rows = []
+    for g in games:
+        if g.get("is_home") != 1:
+            continue
+        ts = g.get("team_score")
+        os_ = g.get("opp_score")
+        if ts is None or os_ is None or ts == os_:
+            continue
+        rows.append(
+            {
+                "date": date_str,
+                "home_team": g.get("team", ""),
+                "away_team": g.get("opponent", ""),
+                "game_time": g.get("game_time", ""),
+                "home_win": int(ts > os_),
+            }
+        )
+    return pd.DataFrame(rows, columns=_OUTCOMES_COLS)
+
+
 def parse_std_odds(value) -> Optional[int]:
     if value is None or pd.isna(value):
         return None
@@ -315,10 +355,41 @@ def grade(
     archive_dir: str = DEFAULT_ARCHIVE_DIR,
     processed_csv: str = DEFAULT_DATA_FILE,
     since: Optional[str] = None,
+    *,
+    fetch_live: bool = False,
 ) -> pd.DataFrame:
-    """Build the full shadow ledger by grading every eligible dated archive."""
+    """Build the full shadow ledger by grading every eligible dated archive.
+
+    Outcomes come from the training-data CSV. When fetch_live=True, any
+    archive date not covered by the CSV is filled in from the ESPN
+    scoreboard so the ledger stays up to date when the training-data
+    refresh has lagged. The library default is fetch_live=False so tests
+    and offline callers never hit the network; the CLI flips it on.
+    """
     archives = discover_archives(archive_dir, since)
     outcomes = load_outcomes(processed_csv)
+
+    if fetch_live and archives:
+        # Live rows are appended only for dates the CSV doesn't cover at all.
+        # That keeps doubleheader disambiguation in _select_outcome correct:
+        # if any CSV row exists for a date, all rows for that date come from
+        # the CSV (single time convention). A future partial CSV refresh that
+        # only writes one row of a doubleheader would mix conventions; this
+        # invariant prevents that.
+        csv_dates = set(outcomes["date"].unique())
+        missing = sorted({date_iso for date_iso, _ in archives if date_iso not in csv_dates})
+        live_frames = []
+        for d in missing:
+            try:
+                live = fetch_outcomes_for_date(d)
+            except Exception as e:  # network errors, JSON shape changes
+                print(f"   warn: live outcome fetch failed for {d}: {e}", file=sys.stderr)
+                continue
+            if not live.empty:
+                live_frames.append(live)
+        if live_frames:
+            outcomes = pd.concat([outcomes, *live_frames], ignore_index=True)
+
     known_teams = set(outcomes["home_team"].unique()) | set(
         outcomes["away_team"].unique()
     )
@@ -426,9 +497,20 @@ def main() -> int:
     p.add_argument(
         "--no-report", action="store_true", help="Suppress aggregate report at end."
     )
+    p.add_argument(
+        "--no-live",
+        action="store_true",
+        help="Skip the ESPN scoreboard fallback for dates missing from the training CSV.",
+    )
     args = p.parse_args()
 
-    ledger = grade(args.archive_dir, args.data_file, args.since)
+    fetch_live = not args.no_live
+    ledger = grade(
+        args.archive_dir,
+        args.data_file,
+        args.since,
+        fetch_live=fetch_live,
+    )
     if not args.no_write:
         write_ledger(ledger, args.ledger)
         print(f"Wrote {len(ledger)} ledger rows to {args.ledger}")
