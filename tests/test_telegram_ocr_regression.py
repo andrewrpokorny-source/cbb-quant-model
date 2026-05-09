@@ -616,6 +616,80 @@ def test_fanduel_moneyline_reversed_odds_team_layout() -> None:
     assert bet["result"] == "win"
 
 
+def test_fanduel_moneyline_noise_line_between_odds_and_marker() -> None:
+    """A spurious single-character OCR line between odds and MONEYLINE must
+    not break ML parsing. Reproduces the 5/9 Colorado Rockies failure where
+    'R' sat at i-1 above MONEYLINE, pushing the team/odds anchor to i-3/i-2.
+    """
+    card = (
+        "Colorado Rockies\n+184\nR\nMONEYLINE\n"
+        "Colorado Rockies (C...\n5 0 0 1 0 0 0 2\n9\n"
+        "Philadelphia Phillies (J...\n0 0 0 2 0 5 0 0 0\n7\n"
+        "$0.50\n$1.42\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-NOISE-001\nPLACED: 5/8/2026 9:14AM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Colorado Rockies ML"
+    assert bet["odds"] == "+184"
+    assert bet["league"] == "mlb"
+    assert bet["result"] == "win"
+
+
+def test_fanduel_moneyline_noise_line_with_garbled_header() -> None:
+    """Replays the literal 5/9 Colorado Rockies OCR -- garbled scroll-clipped
+    header text above the first card AND a 'R' noise line between odds and
+    MONEYLINE. The wider scan window must not be fooled by header lines that
+    happen to satisfy team_re into picking the wrong team.
+    """
+    card = (
+        "9:00\nMy Bets\nOpen\nSettled\nSaved\n"
+        "ULTIU. VIVVUTUVVIVUVVLTT\nVIUILULU\n.....\n"
+        "FANDUEL\nSPORTSBOOK\n"
+        "Colorado Rockies\n+184\nR\nMONEYLINE\n"
+        "Colorado Rockies (C...\n5 0 0 1 0 0 0 2\n9\n"
+        "Philadelphia Phillies (J...\n0 0 0 2 0 5 0 0 0\n7\n"
+        "$0.50\n$1.42\nTOTAL WAGER\nWON ON FANDUEL\n"
+        "BET ID: ML-NOISE-002\nPLACED: 5/8/2026 9:14AM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Colorado Rockies ML"
+    assert bet["odds"] == "+184"
+
+
+def test_fanduel_moneyline_reversed_layout_with_noise_line() -> None:
+    """Reversed odds/team layout combined with a noise line between team and
+    MONEYLINE. Real team is at odds_idx+1; verify we don't pick a stale
+    team-shaped line at odds_idx-1.
+    """
+    card = (
+        "FANDUEL\nSPORTSBOOK\n"
+        "+118\nTampa Bay Rays\nT\nMONEYLINE\n"
+        "Tampa Bay Rays (J Sc...\n0 0 1 0 0 0 0 0 0\n1\n"
+        "Boston Red Sox (C Ea...\n0 0 1 1 0 0 0 0 0\n2\n"
+        "$0.50\n$0.00\nTOTAL WAGER\nRETURNED\n"
+        "BET ID: ML-REV-NOISE-001\nPLACED: 5/8/2026 9:14AM ET\n"
+    )
+    bets = BOT._parse_fd_settled_cards(card)
+    actual = _actual_bets(bets)
+
+    assert len(actual) == 1
+    bet = actual[0]
+    assert bet["bet_type"] == "moneyline"
+    assert bet["line"] == "Tampa Bay Rays ML"
+    assert bet["odds"] == "+118"
+    assert bet["league"] == "mlb"
+
+
 def test_fanduel_moneyline_mlb_team_sets_league_mlb() -> None:
     """ML cards on a known MLB franchise should tag league=mlb."""
     card = (

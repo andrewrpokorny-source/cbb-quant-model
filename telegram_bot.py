@@ -1457,11 +1457,15 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                 continue
 
     # Moneyline parsing (when spread parsing failed). FanDuel ML cards
-    # place the team and American odds on the two lines preceding the
-    # "MONEYLINE" marker. The order of those two lines is not stable --
-    # most cards render team then odds, but some screenshots flip them.
-    # Identify each line by its content (odds regex vs team regex) rather
-    # than by position.
+    # render team/odds on the few lines preceding the "MONEYLINE" marker.
+    # Two complications observed in the wild:
+    #   * Order of team and odds isn't stable (most cards: team then odds;
+    #     some screenshots flip them).
+    #   * A spurious single-character OCR line (e.g. "R") can sit between
+    #     the team/odds pair and "MONEYLINE", pushing the anchor block to
+    #     i-3/i-2 instead of i-2/i-1.
+    # Locate odds first by scanning lines i-1, i-2, i-3, then take the
+    # team line as the immediate neighbor that matches the team regex.
     if not team:
         raw_lines = card_text.split("\n")
         odds_re = re.compile(r"^([+-]\d{3,4})$")
@@ -1469,16 +1473,30 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         for i in range(2, len(raw_lines)):
             if raw_lines[i].strip().upper() != "MONEYLINE":
                 continue
-            l1 = raw_lines[i - 2].strip()
-            l2 = raw_lines[i - 1].strip()
-            if odds_re.match(l2) and team_re.match(l1):
-                team_line, odds_line = l1, l2
-            elif odds_re.match(l1) and team_re.match(l2):
-                team_line, odds_line = l2, l1
-            else:
+            odds_idx = None
+            for offset in (1, 2, 3):
+                if i - offset < 0:
+                    break
+                if odds_re.match(raw_lines[i - offset].strip()):
+                    odds_idx = i - offset
+                    break
+            if odds_idx is None:
                 continue
-            team = team_line
-            odds = odds_re.match(odds_line).group(1)
+            # Team line is one of the two odds-neighbors. When both match
+            # team_re (rare; happens when noise above odds happens to look
+            # like a team name), prefer the candidate closer to MONEYLINE:
+            # in the reversed layout that's the real team, and the standard
+            # layout never makes odds_idx+1 a match (it's MONEYLINE itself,
+            # which is excluded by `cand < i`).
+            matches = [
+                cand for cand in (odds_idx - 1, odds_idx + 1)
+                if 0 <= cand < i and team_re.match(raw_lines[cand].strip())
+            ]
+            if not matches:
+                continue
+            team_idx = max(matches)
+            team = raw_lines[team_idx].strip()
+            odds = odds_re.match(raw_lines[odds_idx].strip()).group(1)
             bet_type = "moneyline"
             if re.search(r"\(W\)\s*$", team):
                 league = "womens"
