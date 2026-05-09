@@ -1482,13 +1482,19 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
                     break
             if odds_idx is None:
                 continue
-            team_idx = None
-            for cand in (odds_idx - 1, odds_idx + 1):
-                if 0 <= cand < i and team_re.match(raw_lines[cand].strip()):
-                    team_idx = cand
-                    break
-            if team_idx is None:
+            # Team line is one of the two odds-neighbors. When both match
+            # team_re (rare; happens when noise above odds happens to look
+            # like a team name), prefer the candidate closer to MONEYLINE:
+            # in the reversed layout that's the real team, and the standard
+            # layout never makes odds_idx+1 a match (it's MONEYLINE itself,
+            # which is excluded by `cand < i`).
+            matches = [
+                cand for cand in (odds_idx - 1, odds_idx + 1)
+                if 0 <= cand < i and team_re.match(raw_lines[cand].strip())
+            ]
+            if not matches:
                 continue
+            team_idx = max(matches)
             team = raw_lines[team_idx].strip()
             odds = odds_re.match(raw_lines[odds_idx].strip()).group(1)
             bet_type = "moneyline"
