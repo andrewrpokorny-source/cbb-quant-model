@@ -6,6 +6,22 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 
+def pilot_stake_units(model_units, cap: float = 0.5) -> float:
+    """Cap model-recommended units at the pilot stake limit.
+
+    The MLB pilot operates at 0.5U max while the model proves itself live.
+    NaN, None, or negative values collapse to 0.0 so the column is always a
+    safe number for display arithmetic.
+    """
+    try:
+        units = float(model_units)
+    except (TypeError, ValueError):
+        return 0.0
+    if pd.isna(units) or units <= 0:
+        return 0.0
+    return min(units, cap)
+
+
 def token_bet_candidate_mask(df) -> pd.Series:
     """Boolean mask of MLB slate rows passing the four mechanical token-bet
     conditions:

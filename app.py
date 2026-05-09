@@ -11,7 +11,7 @@ import mlb.predict as mlb_predict
 import io
 from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import csv
 import re
@@ -21,6 +21,7 @@ from league_config import get_league_artifact_paths, get_league_settings, get_sc
 from prediction_io import load_predictions_csv
 from dashboard_helpers import (
     filter_recent_kalshi,
+    pilot_stake_units,
     position_matches_game,
     token_bet_candidate_mask,
     utc_date_to_eastern,
@@ -1173,7 +1174,8 @@ with st.sidebar:
 }
 </style>
 <div class="nav-section-label">Navigate</div>
-<a href="#mlb-moneyline" class="nav-link">MLB Moneyline</a>
+<a href="#mlb-today" class="nav-link">MLB Today</a>
+<a href="#mlb-markets" class="nav-link">MLB Kalshi/Poly</a>
 <a href="#cbb-spread-bets" class="nav-link">CBB Spread Bets</a>
 <a href="#cbb-game-bets" class="nav-link">CBB Game Bets</a>
 <a href="#full-slates" class="nav-link">Full Slates</a>
@@ -1215,6 +1217,130 @@ with st.sidebar:
                         st.session_state[overrides_key] = overrides
                         st.session_state[f"predictions_loaded_{lg}"] = False
                         st.rerun()
+
+
+# ==========================================
+# TOP DECISION SURFACE: freshness + MLB Today
+# ==========================================
+
+
+def _render_freshness_banner():
+    """Show predictions-file mtime (ET) and an explicit Refresh button.
+
+    Auto-run on stale (above) is left intact so a cold page still loads with
+    fresh predictions. The banner gives the user visibility into what they're
+    looking at and a one-click way to regenerate.
+    """
+    paths = league_data["mlb"]["paths"]
+    pred_file = paths["predictions_file"]
+    eastern = pytz.timezone("US/Eastern")
+    if os.path.exists(pred_file):
+        # mtime is a POSIX timestamp; load it as UTC then convert to ET so
+        # the displayed time is correct regardless of host timezone.
+        ts = datetime.fromtimestamp(
+            os.path.getmtime(pred_file), tz=timezone.utc
+        ).astimezone(eastern)
+        ts_str = ts.strftime("%Y-%m-%d %H:%M ET")
+    else:
+        ts_str = "no predictions file yet"
+    col_ts, col_btn = st.columns([4, 1])
+    with col_ts:
+        st.caption(f"Predictions generated {ts_str}")
+    with col_btn:
+        if st.button("Refresh predictions", use_container_width=True, key="refresh_predictions"):
+            for lg in LEAGUES:
+                st.session_state[f"predictions_loaded_{lg}"] = False
+            st.rerun()
+
+
+def _render_mlb_today_panel():
+    """Primary decision surface: only token-bet confluence rows for MLB."""
+    st.markdown(
+        '<div class="section-title" id="mlb-today">MLB Today</div>',
+        unsafe_allow_html=True,
+    )
+    d = league_data.get("mlb")
+    if d is None:
+        st.caption("MLB predictions unavailable.")
+        return
+    game_df = d["game_df"]
+    if game_df.empty:
+        st.caption("No MLB games on today's slate.")
+        return
+
+    candidates = token_bet_candidate_mask(game_df)
+    n = int(candidates.sum())
+    if n == 0:
+        st.caption(
+            "No token-bet candidates today (Std_Rating GOOD/STRONG, "
+            "shadow ok, agrees with production, edge > 0)."
+        )
+        return
+
+    cand_df = game_df[candidates].copy()
+    if "Std_Units" in cand_df.columns:
+        cand_df["Pilot Stake"] = cand_df["Std_Units"].apply(
+            lambda x: f"{pilot_stake_units(x):.2f}U"
+        )
+    if "Conf" in cand_df.columns:
+        cand_df["Prod Conf"] = cand_df["Conf"].apply(
+            lambda x: f"{float(x):.1%}" if pd.notna(x) else ""
+        )
+    if "MarketV2_Edge_vs_Market" in cand_df.columns:
+        cand_df["Shadow Edge"] = cand_df["MarketV2_Edge_vs_Market"].apply(
+            lambda x: f"{float(x):+.1%}" if pd.notna(x) else ""
+        )
+    # Drop the Kalshi-side "Rating" column before renaming Std_Rating so the
+    # rename doesn't create a duplicate column name. MLB Today shows only DK
+    # rating (the gate that already qualified the row).
+    if "Rating" in cand_df.columns:
+        cand_df = cand_df.drop(columns=["Rating"])
+    cand_df = cand_df.rename(columns={
+        "Std_Odds": "Odds",
+        "Std_Rating": "Rating",
+        "Std_Units": "Model Units",
+    })
+
+    show_cols = [
+        "Date/Time", "Matchup", "Pick", "Odds", "Prod Conf",
+        "Shadow Edge", "Rating", "Model Units", "Pilot Stake",
+    ]
+    show_cols = [c for c in show_cols if c in cand_df.columns]
+
+    st.success(f"{n} token-bet candidate(s) on today's slate.")
+    st.caption(
+        "Manual checks before placing: live odds at or near the archived "
+        "Odds, and no stale lineup or pitcher info."
+    )
+    st.dataframe(cand_df[show_cols], use_container_width=True, hide_index=True)
+
+
+def _render_shadow_grader_panel():
+    """Show cumulative MLB shadow vs production summary if the ledger exists."""
+    from mlb.shadow_grader import (
+        DEFAULT_LEDGER,
+        aggregate_report,
+        format_report,
+    )
+
+    if not os.path.exists(DEFAULT_LEDGER):
+        return
+
+    try:
+        ledger = pd.read_csv(DEFAULT_LEDGER)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, FileNotFoundError):
+        return
+
+    report = aggregate_report(ledger)
+    if report.get("n_total", 0) == 0:
+        return
+
+    with st.expander(
+        f"Shadow vs Production -- {report.get('n_graded', 0)} graded "
+        f"of {report['n_total']} ledger rows",
+        expanded=False,
+    ):
+        st.code(format_report(report), language="text")
 
 
 # ==========================================
@@ -1483,6 +1609,15 @@ def _render_game_bets(col, lg, position_lookup=None):
 
 
 # ==========================================
+# TOP DECISION SURFACE: freshness + MLB Today + shadow grader
+# ==========================================
+_render_freshness_banner()
+_render_mlb_today_panel()
+_render_shadow_grader_panel()
+st.markdown("<hr>", unsafe_allow_html=True)
+
+
+# ==========================================
 # LIVE KALSHI POSITIONS (in-progress games)
 # ==========================================
 try:
@@ -1625,18 +1760,34 @@ if _recent_kalshi:
 
 _position_lookup = _build_position_lookup(_fetch_kalshi_positions())
 
-st.markdown('<div class="section-title" id="mlb-moneyline">MLB -- Moneyline Picks</div>', unsafe_allow_html=True)
+# MLB Kalshi/Polymarket value plays: secondary surface below the primary
+# decision panel above. Kept distinct because it filters to Kalshi/Poly value
+# ratings only (i.e. doesn't surface DK/MarketV2 token-bet candidates -- those
+# live in MLB Today).
+st.markdown(
+    '<div class="section-title" id="mlb-markets">MLB -- Kalshi/Poly Markets</div>',
+    unsafe_allow_html=True,
+)
 _render_game_bets(st.container(), "mlb", _position_lookup)
 
-st.markdown('<div class="section-title" id="cbb-spread-bets">CBB -- Spread Bets</div>', unsafe_allow_html=True)
-col_spread_m, col_spread_w = st.columns(2)
-_render_spread_bets(col_spread_m, "mens", _position_lookup)
-_render_spread_bets(col_spread_w, "womens", _position_lookup)
+# CBB sections: skip entirely when out-of-season for both leagues; otherwise
+# render in collapsed expanders so the in-season MLB content stays primary.
+_cbb_has_content = any(
+    not league_data[lg]["spread_df"].empty or not league_data[lg]["game_df"].empty
+    for lg in ("mens", "womens")
+)
+if _cbb_has_content:
+    with st.expander("CBB -- Spread Bets", expanded=False):
+        st.markdown('<div id="cbb-spread-bets"></div>', unsafe_allow_html=True)
+        col_spread_m, col_spread_w = st.columns(2)
+        _render_spread_bets(col_spread_m, "mens", _position_lookup)
+        _render_spread_bets(col_spread_w, "womens", _position_lookup)
 
-st.markdown('<div class="section-title" id="cbb-game-bets">CBB -- Kalshi Game Bets (ML)</div>', unsafe_allow_html=True)
-col_game_m, col_game_w = st.columns(2)
-_render_game_bets(col_game_m, "mens", _position_lookup)
-_render_game_bets(col_game_w, "womens", _position_lookup)
+    with st.expander("CBB -- Kalshi Game Bets (ML)", expanded=False):
+        st.markdown('<div id="cbb-game-bets"></div>', unsafe_allow_html=True)
+        col_game_m, col_game_w = st.columns(2)
+        _render_game_bets(col_game_m, "mens", _position_lookup)
+        _render_game_bets(col_game_w, "womens", _position_lookup)
 
 
 # ==========================================
@@ -1687,7 +1838,7 @@ st.markdown(f'''
     </div>
     <div class="kpi-card">
         <div class="kpi-value">{total_units:.1f}U</div>
-        <div class="kpi-label">To Deploy</div>
+        <div class="kpi-label">Model Units</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-value">{total_kalshi}</div>
@@ -1878,38 +2029,8 @@ st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown('<div class="section-title" id="full-slates">Full Slates</div>', unsafe_allow_html=True)
 
 
-def _render_shadow_grader_panel():
-    """Show cumulative MLB shadow vs production summary if the ledger exists."""
-    from mlb.shadow_grader import (
-        DEFAULT_LEDGER,
-        aggregate_report,
-        format_report,
-    )
-
-    if not os.path.exists(DEFAULT_LEDGER):
-        return
-
-    try:
-        ledger = pd.read_csv(DEFAULT_LEDGER)
-    except (pd.errors.EmptyDataError, pd.errors.ParserError, FileNotFoundError):
-        return
-
-    report = aggregate_report(ledger)
-    if report.get("n_total", 0) == 0:
-        return
-
-    with st.expander(
-        f"Shadow vs Production -- {report.get('n_graded', 0)} graded "
-        f"of {report['n_total']} ledger rows",
-        expanded=False,
-    ):
-        st.code(format_report(report), language="text")
-
-
 def _render_mlb_slate(game_df, lg):
     """Render the MLB full slate with moneyline picks and Kalshi links."""
-    _render_shadow_grader_panel()
-
     show_filter = st.selectbox(
         "Show",
         ["All Games", "Value Bets Only"],
