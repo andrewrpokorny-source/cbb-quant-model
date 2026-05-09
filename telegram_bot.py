@@ -139,20 +139,13 @@ JUNK_LINES = {
     "home", "account", "saved", "live now", "spread betting", "total wager",
 }
 
-# Full MLB team display names (lowercase) for league auto-detection on
-# moneyline cards. Sourced from mlb/data.py:MLB_TEAM_IDS keys.
-_MLB_TEAM_NAMES_LOWER = {
-    "arizona diamondbacks", "atlanta braves", "baltimore orioles",
-    "boston red sox", "chicago cubs", "chicago white sox",
-    "cincinnati reds", "cleveland guardians", "colorado rockies",
-    "detroit tigers", "houston astros", "kansas city royals",
-    "los angeles angels", "los angeles dodgers", "miami marlins",
-    "milwaukee brewers", "minnesota twins", "new york mets",
-    "new york yankees", "oakland athletics", "philadelphia phillies",
-    "pittsburgh pirates", "san diego padres", "san francisco giants",
-    "seattle mariners", "st. louis cardinals", "tampa bay rays",
-    "texas rangers", "toronto blue jays", "washington nationals",
-}
+@functools.lru_cache(maxsize=1)
+def _mlb_team_names_lower() -> frozenset[str]:
+    """Return canonical MLB franchise names for moneyline league detection."""
+    from mlb.data import MLB_TEAM_IDS
+
+    return frozenset(name.lower() for name in MLB_TEAM_IDS)
+
 
 # Regex patterns for junk OCR lines
 JUNK_PATTERNS = [
@@ -1552,7 +1545,7 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     # franchise name. CBB moneyline picks won't match (e.g. "Houston" alone
     # is not "Houston Astros") and women's bets are already tagged above.
     if bet_type == "moneyline" and not league and team:
-        if team.strip().lower() in _MLB_TEAM_NAMES_LOWER:
+        if team.strip().lower() in _mlb_team_names_lower():
             league = "mlb"
 
     # Wager: first dollar amount in range from cleaned text
