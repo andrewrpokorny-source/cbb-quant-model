@@ -1254,7 +1254,11 @@ def _render_freshness_banner():
 
 
 def _render_mlb_today_panel():
-    """Primary decision surface: only token-bet confluence rows for MLB."""
+    """Primary decision surface: MLB token-bet candidates with full context.
+
+    Brings the candidate summary + SP-aware candidate table up to the top of
+    the page so the user doesn't have to scroll to the bottom Full Slates tab.
+    """
     st.markdown(
         '<div class="section-title" id="mlb-today">MLB Today</div>',
         unsafe_allow_html=True,
@@ -1271,13 +1275,24 @@ def _render_mlb_today_panel():
     candidates = token_bet_candidate_mask(game_df)
     n = int(candidates.sum())
     if n == 0:
-        st.caption(
-            "No token-bet candidates today (Std_Rating GOOD/STRONG, "
-            "shadow ok, agrees with production, edge > 0)."
-        )
+        st.caption("No token-bet candidates today.")
         return
 
     cand_df = game_df[candidates].copy()
+
+    # Bulleted summary lines for the callout (one row per candidate).
+    summary_lines = [
+        f"- **{r.get('Matchup', '')}** -- pick **{r.get('Pick', '')}** "
+        f"@ `{r.get('Std_Odds', '?')}`, prod conf "
+        f"{float(r.get('Conf') or 0):.1%}, shadow edge "
+        f"{float(r.get('MarketV2_Edge_vs_Market') or 0):+.1%}"
+        for _, r in cand_df.iterrows()
+    ]
+    st.success(
+        f"**{n} token-bet candidate(s)** on today's slate:\n\n"
+        + "\n".join(summary_lines)
+    )
+
     if "Std_Units" in cand_df.columns:
         cand_df["Pilot Stake"] = cand_df["Std_Units"].apply(
             lambda x: f"{pilot_stake_units(x):.2f}U"
@@ -1296,23 +1311,21 @@ def _render_mlb_today_panel():
     if "Rating" in cand_df.columns:
         cand_df = cand_df.drop(columns=["Rating"])
     cand_df = cand_df.rename(columns={
+        "Pick": "Prod Pick",
         "Std_Odds": "Odds",
         "Std_Rating": "Rating",
-        "Std_Units": "Model Units",
     })
 
     show_cols = [
-        "Date/Time", "Matchup", "Pick", "Odds", "Prod Conf",
-        "Shadow Edge", "Rating", "Model Units", "Pilot Stake",
+        "Date/Time", "Matchup", "Home_SP", "Away_SP",
+        "Prod Pick", "Odds", "Prod Conf", "Shadow Edge",
+        "Rating", "Pilot Stake",
     ]
     show_cols = [c for c in show_cols if c in cand_df.columns]
-
-    st.success(f"{n} token-bet candidate(s) on today's slate.")
-    st.caption(
-        "Manual checks before placing: live odds at or near the archived "
-        "Odds, and no stale lineup or pitcher info."
-    )
     st.dataframe(cand_df[show_cols], use_container_width=True, hide_index=True)
+    st.caption(
+        "Verify before placing: live odds near archived; no stale lineup or pitcher."
+    )
 
 
 def _render_shadow_grader_panel():
@@ -2051,26 +2064,10 @@ def _render_mlb_slate(game_df, lg):
         st.caption("No matching picks.")
         return
 
-    # Token-bet confluence flag computed from raw columns before any rename.
+    # Token-bet confluence flag for sorting/highlighting. The verbose
+    # candidate summary lives in the MLB Today panel at the top of the page;
+    # the Full Slates tab is the diagnostic dataframe with all picks visible.
     candidates = token_bet_candidate_mask(display_df)
-    n_candidates = int(candidates.sum())
-    if n_candidates > 0:
-        lines = [
-            f"- **{r.get('Matchup', '')}** -- pick **{r.get('Pick', '')}** "
-            f"@ `{r.get('Std_Odds', '?')}`, prod conf "
-            f"{float(r.get('Conf') or 0):.1%}, shadow edge "
-            f"{float(r.get('MarketV2_Edge_vs_Market') or 0):+.1%}, "
-            f"DK rating {r.get('Std_Rating', '?')}"
-            for _, r in display_df[candidates].iterrows()
-        ]
-        st.success(
-            f"**{n_candidates} token-bet candidate(s)** "
-            "(Std_Rating GOOD/STRONG, shadow ok, shadow agrees with "
-            "production, shadow edge > 0):\n\n"
-            + "\n".join(lines)
-            + "\n\n_Still verify manually before betting:_ live odds near "
-            "the archived Std_Odds, and no stale lineup/pitcher."
-        )
     display_df["Bet?"] = candidates.map(lambda x: "yes" if x else "")
 
     # Production-model display columns
