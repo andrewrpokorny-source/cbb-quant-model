@@ -9,8 +9,6 @@ import predict
 import backtest
 import mlb.predict as mlb_predict
 import io
-import sys
-import threading
 from contextlib import redirect_stdout
 from concurrent.futures import (
     FIRST_COMPLETED,
@@ -27,7 +25,10 @@ from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
 from dashboard_helpers import (
+    CapturedStream,
+    THREAD_BUFFERS,
     filter_recent_kalshi,
+    install_stdout_dispatcher,
     pilot_stake_units,
     position_matches_game,
     token_bet_candidate_mask,
@@ -1256,75 +1257,11 @@ def _build_live_positions(positions, live_games) -> list[dict]:
 # ==========================================
 league_data = {}
 
-# Per-thread stdout splitter: each worker sets _THREAD_BUFFERS.stream to its
-# own _CapturedStream before running its prediction pipeline; print() calls
-# in that thread go to that stream (which also forwards to the real stdout
-# so terminal logs still work). The main thread polls the captured streams
-# between wait() calls to surface live progress in the loading panel.
-_THREAD_BUFFERS = threading.local()
-
-
-class _CapturedStream:
-    """Thread-safe line-buffered stream for one worker's stdout.
-
-    `write()` is called from a single worker thread; `consume_new()` is
-    called from the main thread between waits. Lines are only finalized
-    when `\\n` is seen, so the activity preview never shows a half-flushed
-    line.
-    """
-
-    def __init__(self, fallback):
-        self._fallback = fallback
-        self._lock = threading.Lock()
-        self._lines: list[str] = []
-        self._partial = ""
-
-    def write(self, s: str) -> int:
-        if not s:
-            return 0
-        self._fallback.write(s)
-        with self._lock:
-            self._partial += s
-            if "\n" in self._partial:
-                parts = self._partial.split("\n")
-                self._partial = parts[-1]
-                for line in parts[:-1]:
-                    stripped = line.strip()
-                    if stripped:
-                        self._lines.append(stripped)
-        return len(s)
-
-    def flush(self):
-        self._fallback.flush()
-
-    def isatty(self):
-        return False
-
-    def consume_new(self, offset: int) -> tuple[list[str], int]:
-        """Return new lines since `offset` and the new offset to remember."""
-        with self._lock:
-            return list(self._lines[offset:]), len(self._lines)
-
-
-class _ThreadDispatchStdout:
-    """Routes a worker thread's writes to its _CapturedStream; main-thread
-    writes (and writes from threads with no captured stream) pass through to
-    the original stdout."""
-
-    def __init__(self, fallback):
-        self._fallback = fallback
-
-    def write(self, s):
-        stream = getattr(_THREAD_BUFFERS, "stream", None)
-        if stream is not None:
-            return stream.write(s)
-        return self._fallback.write(s)
-
-    def flush(self):
-        self._fallback.flush()
-
-    def isatty(self):
-        return False
+# See dashboard_helpers.CapturedStream / ThreadDispatchStdout for details:
+# the dispatcher is installed once per process and always defers to
+# sys.__stdout__, so overlapping Streamlit sessions can't chain dispatchers
+# into a recursive fallback loop.
+install_stdout_dispatcher()
 
 
 def _run_predictions(lg, stream, spread_overrides=None):
@@ -1334,7 +1271,7 @@ def _run_predictions(lg, stream, spread_overrides=None):
     streamed live into the loading panel instead of waiting for the future
     to resolve.
     """
-    _THREAD_BUFFERS.stream = stream
+    THREAD_BUFFERS.stream = stream
     try:
         if lg == "mlb":
             mlb_predict.generate_predictions(lg)
@@ -1344,7 +1281,7 @@ def _run_predictions(lg, stream, spread_overrides=None):
                 league=lg,
             )
     finally:
-        _THREAD_BUFFERS.stream = None
+        THREAD_BUFFERS.stream = None
 
 
 # Determine which leagues need a prediction run
@@ -1434,10 +1371,12 @@ if _leagues_to_run:
     _add_log("system", "system", "Sources: ESPN schedules, Kalshi, Polymarket")
     _render_panel()
 
-    saved_stdout = sys.stdout
-    sys.stdout = _ThreadDispatchStdout(saved_stdout)
-    streams: dict[str, _CapturedStream] = {
-        lg: _CapturedStream(saved_stdout) for lg in _leagues_to_run
+    # The dispatcher is installed at module load; we just need to register
+    # a capture stream per worker via thread-local state inside
+    # _run_predictions. Main-thread writes still pass through to the real
+    # stdout because THREAD_BUFFERS.stream is unset on this thread.
+    streams: dict[str, CapturedStream] = {
+        lg: CapturedStream() for lg in _leagues_to_run
     }
     offsets: dict[str, int] = {lg: 0 for lg in _leagues_to_run}
 
@@ -1448,52 +1387,49 @@ if _leagues_to_run:
             _add_log(lg, lg, line)
             activities[lg] = line
 
-    try:
-        _errors = {}
-        with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
-            futures = {
-                executor.submit(_run_predictions, lg, streams[lg], _spread_overrides[lg]): lg
-                for lg in _leagues_to_run
-            }
-            for lg in _leagues_to_run:
-                statuses[lg] = "running"
-                activities[lg] = "starting"
+    _errors = {}
+    with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
+        futures = {
+            executor.submit(_run_predictions, lg, streams[lg], _spread_overrides[lg]): lg
+            for lg in _leagues_to_run
+        }
+        for lg in _leagues_to_run:
+            statuses[lg] = "running"
+            activities[lg] = "starting"
+        _render_panel()
+
+        pending = set(futures.keys())
+        while pending:
+            done, pending = wait(
+                pending, timeout=0.4, return_when=FIRST_COMPLETED
+            )
+            # Tail every running league's buffer first so the panel
+            # reflects any in-flight progress before flipping a future
+            # to done.
+            for f, lg in futures.items():
+                if statuses[lg] == "running":
+                    _drain(lg)
+
+            for future in done:
+                lg = futures[future]
+                pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
+                try:
+                    future.result()
+                    _drain(lg)
+                    if os.path.exists(pred_file):
+                        st.session_state[f"predictions_loaded_{lg}"] = True
+                    statuses[lg] = "done"
+                    _add_log(lg, lg, "done", line_class="done")
+                    if not activities[lg] or activities[lg] in ("starting", "running pipeline"):
+                        activities[lg] = "done"
+                except Exception as e:
+                    _errors[lg] = e
+                    statuses[lg] = "failed"
+                    activities[lg] = f"failed: {e}"
+                    _add_log(lg, lg, f"FAILED: {e}", line_class="failed")
             _render_panel()
-
-            pending = set(futures.keys())
-            while pending:
-                done, pending = wait(
-                    pending, timeout=0.4, return_when=FIRST_COMPLETED
-                )
-                # Tail every running league's buffer first so the panel
-                # reflects any in-flight progress before flipping a future
-                # to done.
-                for f, lg in futures.items():
-                    if statuses[lg] == "running":
-                        _drain(lg)
-
-                for future in done:
-                    lg = futures[future]
-                    pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
-                    try:
-                        future.result()
-                        _drain(lg)
-                        if os.path.exists(pred_file):
-                            st.session_state[f"predictions_loaded_{lg}"] = True
-                        statuses[lg] = "done"
-                        _add_log(lg, lg, "done", line_class="done")
-                        if not activities[lg] or activities[lg] in ("starting", "running pipeline"):
-                            activities[lg] = "done"
-                    except Exception as e:
-                        _errors[lg] = e
-                        statuses[lg] = "failed"
-                        activities[lg] = f"failed: {e}"
-                        _add_log(lg, lg, f"FAILED: {e}", line_class="failed")
-                _render_panel()
-        for lg, e in _errors.items():
-            st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
-    finally:
-        sys.stdout = saved_stdout
+    for lg, e in _errors.items():
+        st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
 
     # Loading complete; the freshness banner below already shows the
     # generated-at timestamp, so the live panel goes away to reduce noise.
