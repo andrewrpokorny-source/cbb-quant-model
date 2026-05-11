@@ -9,6 +9,8 @@ import predict
 import backtest
 import mlb.predict as mlb_predict
 import io
+import sys
+import threading
 from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -497,6 +499,181 @@ p, span, div, .stMarkdown {
     font-size: 0.85rem;
     margin: 0.5rem 0 0.75rem;
 }
+
+/* Live loading panel: light, Vercel-style build-log idiom. Per-league rows
+   with a spinner -> check transition, a thin animated progress rail, and a
+   collapsible full log. Replaces a generic "Loading..." spinner. */
+.loading-panel {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-100);
+    border-radius: 12px;
+    padding: 16px 20px 14px;
+    margin: 0.5rem 0 1rem;
+    box-shadow: 0 1px 3px rgba(20,40,30,0.04), 0 6px 20px rgba(20,40,30,0.05);
+    font-family: var(--font-body);
+}
+.loading-panel .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.loading-panel .panel-title {
+    font-weight: 700;
+    color: var(--neutral-900);
+    font-size: 0.92rem;
+    letter-spacing: -0.01em;
+}
+.loading-panel .panel-meta {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: var(--neutral-400);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.loading-panel .progress-rail {
+    height: 3px;
+    background: var(--neutral-100);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    position: relative;
+}
+.loading-panel .progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 35%;
+    background: linear-gradient(90deg,
+        var(--green-700) 0%, var(--green-600) 55%, var(--gold-600) 100%);
+    border-radius: 2px;
+    animation: rail-slide 1.4s ease-in-out infinite;
+}
+@keyframes rail-slide {
+    0% { left: -35%; }
+    100% { left: 100%; }
+}
+.loading-panel.complete .progress-fill {
+    left: 0;
+    width: 100%;
+    animation: none;
+    background: var(--green-700);
+}
+.lg-row {
+    display: grid;
+    grid-template-columns: 22px 88px 78px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 0;
+    border-top: 1px solid rgba(20,40,30,0.04);
+}
+.lg-row:first-of-type { border-top: 0; }
+.lg-icon { display: inline-flex; align-items: center; justify-content: center; }
+.lg-icon.running::after, .lg-icon.queued::after {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--neutral-200);
+    border-top-color: var(--green-700);
+    animation: spin 0.9s linear infinite;
+}
+.lg-icon.queued::after { border-top-color: var(--neutral-400); animation-duration: 1.6s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.lg-icon.done {
+    color: var(--green-700); font-weight: 700; font-size: 0.85rem;
+    font-family: var(--font-mono);
+}
+.lg-icon.failed {
+    color: #b3463a; font-weight: 700; font-size: 0.85rem;
+    font-family: var(--font-mono);
+}
+.lg-tag {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 9px;
+    border-radius: 4px;
+    color: #ffffff;
+    text-align: center;
+}
+.lg-tag.mlb { background: var(--gold-600); }
+.lg-tag.mens { background: #3b6bb5; }
+.lg-tag.womens { background: var(--purple-700); }
+.lg-status {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--neutral-500);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.lg-status.done { color: var(--green-700); }
+.lg-status.failed { color: #b3463a; }
+.lg-activity {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--neutral-500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.loading-panel .log-detail {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(20,40,30,0.08);
+}
+.loading-panel .log-detail-toggle {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--neutral-400);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    padding: 2px 0;
+}
+.loading-panel .log-detail-toggle::-webkit-details-marker { display: none; }
+.loading-panel .log-detail-toggle::before {
+    content: "+ ";
+    color: var(--neutral-400);
+}
+.loading-panel .log-detail[open] .log-detail-toggle::before { content: "- "; }
+.loading-panel .log-stream {
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--neutral-100);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: #334440;
+}
+.log-stream .log-line {
+    display: flex;
+    gap: 8px;
+    margin: 1px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.log-stream .log-prefix {
+    flex: 0 0 60px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.log-stream .log-prefix.mlb { color: #a76700; }
+.log-stream .log-prefix.mens { color: #3b6bb5; }
+.log-stream .log-prefix.womens { color: var(--purple-700); }
+.log-stream .log-prefix.system { color: var(--neutral-400); }
+.log-stream .log-line.done { color: var(--green-700); }
+.log-stream .log-line.failed { color: #b3463a; }
+.log-stream .log-text { flex: 1; }
 
 /* Refresh button (main area) */
 .main .stButton > button {
@@ -1074,16 +1251,48 @@ def _build_live_positions(positions, live_games) -> list[dict]:
 # ==========================================
 league_data = {}
 
+# Per-thread stdout splitter: each worker thread sets _THREAD_BUFFERS.buf to
+# a StringIO before running its prediction pipeline; print() calls in that
+# thread go to the buffer (and to the original stdout so terminal logs still
+# work). Main-thread writes pass through unchanged.
+_THREAD_BUFFERS = threading.local()
+
+
+class _ThreadDispatchStdout:
+    def __init__(self, fallback):
+        self._fallback = fallback
+
+    def write(self, s):
+        buf = getattr(_THREAD_BUFFERS, "buf", None)
+        if buf is not None:
+            buf.write(s)
+        return self._fallback.write(s)
+
+    def flush(self):
+        self._fallback.flush()
+
+    def isatty(self):
+        return False
+
 
 def _run_predictions(lg, spread_overrides=None):
-    """Run prediction pipeline for a single league. Thread-safe."""
-    if lg == "mlb":
-        mlb_predict.generate_predictions(lg)
-    else:
-        predict.main(
-            spread_overrides=spread_overrides or {},
-            league=lg,
-        )
+    """Run prediction pipeline for a single league. Thread-safe.
+
+    Captures the pipeline's stdout into a per-thread buffer so the dashboard
+    can stream the script's actual progress log instead of a blank spinner.
+    """
+    _THREAD_BUFFERS.buf = io.StringIO()
+    try:
+        if lg == "mlb":
+            mlb_predict.generate_predictions(lg)
+        else:
+            predict.main(
+                spread_overrides=spread_overrides or {},
+                league=lg,
+            )
+        return _THREAD_BUFFERS.buf.getvalue()
+    finally:
+        _THREAD_BUFFERS.buf = None
 
 
 # Determine which leagues need a prediction run
@@ -1111,25 +1320,110 @@ for lg in LEAGUES:
 
 # Run predictions in parallel (MLB is independent; mens/womens serialize via _RUNTIME_LOCK)
 if _leagues_to_run:
-    labels = [get_league_settings(lg)["label"] for lg in _leagues_to_run]
-    with st.spinner(f"Loading {', '.join(labels)}..."):
+    panel = st.empty()
+    statuses: dict[str, str] = {lg: "queued" for lg in _leagues_to_run}
+    activities: dict[str, str] = {lg: "queued" for lg in _leagues_to_run}
+    log_lines: list[str] = []
+
+    def _add_log(prefix_class: str, prefix: str, text: str, line_class: str = ""):
+        cls = f"log-line {line_class}".strip()
+        log_lines.append(
+            f'<div class="{cls}">'
+            f'<span class="log-prefix {prefix_class}">[{prefix}]</span>'
+            f'<span class="log-text">{html_mod.escape(text)}</span>'
+            f'</div>'
+        )
+
+    def _render_panel(running: bool = True):
+        n_done = sum(1 for s in statuses.values() if s in ("done", "failed"))
+        n_total = len(_leagues_to_run)
+        title = "Refreshing predictions" if running else "Predictions ready"
+        panel_cls = "loading-panel" + ("" if running else " complete")
+
+        rows = []
+        for lg in _leagues_to_run:
+            s = statuses[lg]
+            icon_glyph = {"done": "OK", "failed": "X"}.get(s, "")
+            activity = activities.get(lg) or s
+            rows.append(
+                f'<div class="lg-row">'
+                f'<span class="lg-icon {s}">{icon_glyph}</span>'
+                f'<span class="lg-tag {lg}">{lg}</span>'
+                f'<span class="lg-status {s}">{s}</span>'
+                f'<span class="lg-activity">{html_mod.escape(activity)}</span>'
+                f'</div>'
+            )
+        rows_html = "".join(rows)
+
+        details_html = ""
+        if log_lines:
+            stream = "".join(log_lines)
+            details_html = (
+                '<details class="log-detail">'
+                f'<summary class="log-detail-toggle">Full log ({len(log_lines)} lines)</summary>'
+                f'<div class="log-stream">{stream}</div>'
+                '</details>'
+            )
+
+        panel.markdown(
+            f'<div class="{panel_cls}">'
+            f'<div class="panel-header">'
+            f'<span class="panel-title">{html_mod.escape(title)}</span>'
+            f'<span class="panel-meta">{n_done} of {n_total} done</span>'
+            f'</div>'
+            f'<div class="progress-rail"><div class="progress-fill"></div></div>'
+            f'<div class="lg-rows">{rows_html}</div>'
+            f'{details_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    _add_log("system", "system", f"Spawning workers: {', '.join(_leagues_to_run)}")
+    _add_log("system", "system", "Sources: ESPN schedules, Kalshi, Polymarket")
+    _render_panel()
+
+    saved_stdout = sys.stdout
+    sys.stdout = _ThreadDispatchStdout(saved_stdout)
+    try:
         _errors = {}
         with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
             futures = {
                 executor.submit(_run_predictions, lg, _spread_overrides[lg]): lg
                 for lg in _leagues_to_run
             }
+            for lg in _leagues_to_run:
+                statuses[lg] = "running"
+                activities[lg] = "running pipeline"
+            _render_panel()
+
             for future in as_completed(futures):
                 lg = futures[future]
                 pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
                 try:
-                    future.result()
+                    captured = future.result() or ""
                     if os.path.exists(pred_file):
                         st.session_state[f"predictions_loaded_{lg}"] = True
+                    last = ""
+                    for raw in captured.splitlines():
+                        line = raw.strip()
+                        if line:
+                            _add_log(lg, lg, line)
+                            last = line
+                    statuses[lg] = "done"
+                    activities[lg] = last or "done"
+                    _add_log(lg, lg, "done", line_class="done")
                 except Exception as e:
                     _errors[lg] = e
+                    statuses[lg] = "failed"
+                    activities[lg] = f"failed: {e}"
+                    _add_log(lg, lg, f"FAILED: {e}", line_class="failed")
+                _render_panel()
         for lg, e in _errors.items():
             st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
+    finally:
+        sys.stdout = saved_stdout
+
+    _render_panel(running=False)
 
 # Build league_data from prediction CSVs
 for lg in LEAGUES:
