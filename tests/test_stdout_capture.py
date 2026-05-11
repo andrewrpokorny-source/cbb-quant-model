@@ -28,6 +28,7 @@ from dashboard_helpers import (
     THREAD_BUFFERS,
     ThreadDispatchStdout,
     install_stdout_dispatcher,
+    silenced_stdout,
 )
 
 
@@ -170,6 +171,72 @@ def test_worker_threads_isolate_captures(fresh_stdout):
     b_lines, _ = streams["b"].consume_new(0)
     assert a_lines == [f"a-{i}" for i in range(20)]
     assert b_lines == [f"b-{i}" for i in range(20)]
+
+
+def test_silenced_stdout_only_affects_calling_thread(fresh_stdout):
+    """The main thread can suppress its own stdout (e.g. while running the
+    backtest) without breaking a concurrent worker's capture in another
+    Streamlit session.
+
+    Pins the invariant that ruled out contextlib.redirect_stdout: a global
+    stdout swap would have routed *every* thread's writes into the
+    silencing sink, so the worker's CapturedStream would have collected
+    nothing.
+    """
+    install_stdout_dispatcher()
+
+    worker_stream = CapturedStream()
+    worker_started = threading.Event()
+    main_inside_silenced = threading.Event()
+    worker_done = threading.Event()
+    worker_lines: list[str] = []
+
+    def _worker() -> None:
+        THREAD_BUFFERS.stream = worker_stream
+        try:
+            worker_started.set()
+            # Hold here until the main thread is inside silenced_stdout(),
+            # then emit -- this is exactly the scenario the finding flagged.
+            assert main_inside_silenced.wait(timeout=2)
+            for i in range(10):
+                print(f"worker-{i}")
+        finally:
+            THREAD_BUFFERS.stream = None
+            worker_done.set()
+
+    t = threading.Thread(target=_worker)
+    t.start()
+    assert worker_started.wait(timeout=2)
+
+    with silenced_stdout():
+        main_inside_silenced.set()
+        # Anything we print on the main thread now must be swallowed.
+        print("main-should-be-silenced")
+        assert worker_done.wait(timeout=5)
+
+    t.join(timeout=5)
+    assert not t.is_alive()
+
+    worker_lines, _ = worker_stream.consume_new(0)
+    assert worker_lines == [f"worker-{i}" for i in range(10)]
+
+
+def test_silenced_stdout_restores_previous_thread_local(fresh_stdout):
+    """Nested or re-entrant silencing must not clobber a prior thread-local
+    stream set by an outer caller (e.g. a worker that already opted in)."""
+    install_stdout_dispatcher()
+    outer = CapturedStream()
+    THREAD_BUFFERS.stream = outer
+    try:
+        with silenced_stdout():
+            print("swallowed")
+        # After the context, the outer capture must be back in place.
+        assert THREAD_BUFFERS.stream is outer
+        print("after-silenced")
+        new, _ = outer.consume_new(0)
+        assert new == ["after-silenced"]
+    finally:
+        THREAD_BUFFERS.stream = None
 
 
 def test_captured_stream_concurrent_writer_and_reader(fresh_stdout):

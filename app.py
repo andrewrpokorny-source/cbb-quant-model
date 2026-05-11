@@ -8,12 +8,9 @@ import html as html_mod
 import predict
 import backtest
 import mlb.predict as mlb_predict
-import io
-from contextlib import redirect_stdout
 from concurrent.futures import (
     FIRST_COMPLETED,
     ThreadPoolExecutor,
-    as_completed,
     wait,
 )
 from datetime import datetime, timedelta, timezone
@@ -31,6 +28,7 @@ from dashboard_helpers import (
     install_stdout_dispatcher,
     pilot_stake_units,
     position_matches_game,
+    silenced_stdout,
     token_bet_candidate_mask,
     utc_date_to_eastern,
 )
@@ -2415,9 +2413,13 @@ with col_perf:
                 st.caption("No performance data yet.")
                 if st.button("Run Backtest", key=f"backtest_{lg}"):
                     with st.spinner("Training models..."):
-                        f = io.StringIO()
                         try:
-                            with redirect_stdout(f):
+                            # silenced_stdout() routes only this thread's
+                            # stdout through the dispatcher's thread-local
+                            # hook, so a concurrent prediction refresh in
+                            # another session still captures its workers'
+                            # output correctly.
+                            with silenced_stdout():
                                 backtest.run_backtest(league=lg)
                             if os.path.exists(perf_file):
                                 st.success("Done!")

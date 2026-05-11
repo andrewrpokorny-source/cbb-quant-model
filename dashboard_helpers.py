@@ -3,6 +3,7 @@
 import re
 import sys
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -90,6 +91,45 @@ def install_stdout_dispatcher() -> ThreadDispatchStdout:
     dispatcher = ThreadDispatchStdout()
     sys.stdout = dispatcher
     return dispatcher
+
+
+class _SilentSink:
+    """No-op write target used by silenced_stdout(). Implements the minimal
+    file-like protocol the dispatcher relies on."""
+
+    def write(self, s: str) -> int:
+        return len(s)
+
+    def flush(self) -> None:
+        pass
+
+    def isatty(self) -> bool:
+        return False
+
+
+@contextmanager
+def silenced_stdout():
+    """Suppress stdout on the *current thread only* via the installed
+    dispatcher's thread-local hook.
+
+    Use this instead of contextlib.redirect_stdout in the Streamlit app
+    path: redirect_stdout replaces process-global sys.stdout, which would
+    knock out ThreadDispatchStdout for every thread for the duration of
+    the context. A concurrent session refreshing predictions in another
+    tab would then lose its live worker capture and write into the
+    redirect buffer instead. This helper only changes the calling
+    thread's routing, so worker threads in other sessions are unaffected.
+    """
+    sentinel = object()
+    prior = getattr(THREAD_BUFFERS, "stream", sentinel)
+    THREAD_BUFFERS.stream = _SilentSink()
+    try:
+        yield
+    finally:
+        if prior is sentinel:
+            THREAD_BUFFERS.stream = None
+        else:
+            THREAD_BUFFERS.stream = prior
 
 
 def pilot_stake_units(model_units, cap: float = 0.5) -> float:
