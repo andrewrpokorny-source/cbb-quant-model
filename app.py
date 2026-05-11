@@ -1495,7 +1495,9 @@ if _leagues_to_run:
     finally:
         sys.stdout = saved_stdout
 
-    _render_panel(running=False)
+    # Loading complete; the freshness banner below already shows the
+    # generated-at timestamp, so the live panel goes away to reduce noise.
+    panel.empty()
 
 # Build league_data from prediction CSVs
 for lg in LEAGUES:
