@@ -8,9 +8,11 @@ import html as html_mod
 import predict
 import backtest
 import mlb.predict as mlb_predict
-import io
-from contextlib import redirect_stdout
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ThreadPoolExecutor,
+    wait,
+)
 from datetime import datetime, timedelta, timezone
 import pytz
 import csv
@@ -20,9 +22,13 @@ from betting import format_line_shopping_text, VALUE_RATINGS, RATING_RANK
 from league_config import get_league_artifact_paths, get_league_settings, get_scoreboard_base_url, normalize_league
 from prediction_io import load_predictions_csv
 from dashboard_helpers import (
+    CapturedStream,
+    THREAD_BUFFERS,
     filter_recent_kalshi,
+    install_stdout_dispatcher,
     pilot_stake_units,
     position_matches_game,
+    silenced_stdout,
     token_bet_candidate_mask,
     utc_date_to_eastern,
 )
@@ -460,6 +466,218 @@ p, span, div, .stMarkdown {
     font-size: 0.68rem;
     color: var(--neutral-400);
 }
+
+/* MLB Today extras: stake pill (the only high-contrast block per card so
+   the eye lands on stake size first) and pitcher subtitle. */
+.stake-pill {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--neutral-900);
+    color: #ffffff;
+    padding: 3px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    margin-left: 8px;
+}
+.pitcher-line {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--neutral-400);
+    margin: 2px 0 6px;
+}
+.bet-pick-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.bet-pick-row .bet-odds {
+    font-family: var(--font-mono);
+    font-size: 1.0rem;
+    font-weight: 500;
+    color: var(--neutral-900);
+}
+.mlb-today-summary {
+    font-family: var(--font-body);
+    color: var(--neutral-500);
+    font-size: 0.85rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+/* Live loading panel: light, Vercel-style build-log idiom. Per-league rows
+   with a spinner -> check transition, a thin animated progress rail, and a
+   collapsible full log. Replaces a generic "Loading..." spinner. */
+.loading-panel {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-100);
+    border-radius: 12px;
+    padding: 16px 20px 14px;
+    margin: 0.5rem 0 1rem;
+    box-shadow: 0 1px 3px rgba(20,40,30,0.04), 0 6px 20px rgba(20,40,30,0.05);
+    font-family: var(--font-body);
+}
+.loading-panel .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.loading-panel .panel-title {
+    font-weight: 700;
+    color: var(--neutral-900);
+    font-size: 0.92rem;
+    letter-spacing: -0.01em;
+}
+.loading-panel .panel-meta {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: var(--neutral-400);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.loading-panel .progress-rail {
+    height: 3px;
+    background: var(--neutral-100);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    position: relative;
+}
+.loading-panel .progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 35%;
+    background: linear-gradient(90deg,
+        var(--green-700) 0%, var(--green-600) 55%, var(--gold-600) 100%);
+    border-radius: 2px;
+    animation: rail-slide 1.4s ease-in-out infinite;
+}
+@keyframes rail-slide {
+    0% { left: -35%; }
+    100% { left: 100%; }
+}
+.loading-panel.complete .progress-fill {
+    left: 0;
+    width: 100%;
+    animation: none;
+    background: var(--green-700);
+}
+.lg-row {
+    display: grid;
+    grid-template-columns: 22px 88px 78px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 0;
+    border-top: 1px solid rgba(20,40,30,0.04);
+}
+.lg-row:first-of-type { border-top: 0; }
+.lg-icon { display: inline-flex; align-items: center; justify-content: center; }
+.lg-icon.running::after, .lg-icon.queued::after {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--neutral-200);
+    border-top-color: var(--green-700);
+    animation: spin 0.9s linear infinite;
+}
+.lg-icon.queued::after { border-top-color: var(--neutral-400); animation-duration: 1.6s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.lg-icon.done {
+    color: var(--green-700); font-weight: 700; font-size: 0.85rem;
+    font-family: var(--font-mono);
+}
+.lg-icon.failed {
+    color: #b3463a; font-weight: 700; font-size: 0.85rem;
+    font-family: var(--font-mono);
+}
+.lg-tag {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 9px;
+    border-radius: 4px;
+    color: #ffffff;
+    text-align: center;
+}
+.lg-tag.mlb { background: var(--gold-600); }
+.lg-tag.mens { background: #3b6bb5; }
+.lg-tag.womens { background: var(--purple-700); }
+.lg-status {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--neutral-500);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.lg-status.done { color: var(--green-700); }
+.lg-status.failed { color: #b3463a; }
+.lg-activity {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--neutral-500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.loading-panel .log-detail {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(20,40,30,0.08);
+}
+.loading-panel .log-detail-toggle {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--neutral-400);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    padding: 2px 0;
+}
+.loading-panel .log-detail-toggle::-webkit-details-marker { display: none; }
+.loading-panel .log-detail-toggle::before {
+    content: "+ ";
+    color: var(--neutral-400);
+}
+.loading-panel .log-detail[open] .log-detail-toggle::before { content: "- "; }
+.loading-panel .log-stream {
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--neutral-100);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: #334440;
+}
+.log-stream .log-line {
+    display: flex;
+    gap: 8px;
+    margin: 1px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.log-stream .log-prefix {
+    flex: 0 0 60px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.log-stream .log-prefix.mlb { color: #a76700; }
+.log-stream .log-prefix.mens { color: #3b6bb5; }
+.log-stream .log-prefix.womens { color: var(--purple-700); }
+.log-stream .log-prefix.system { color: var(--neutral-400); }
+.log-stream .log-line.done { color: var(--green-700); }
+.log-stream .log-line.failed { color: #b3463a; }
+.log-stream .log-text { flex: 1; }
 
 /* Refresh button (main area) */
 .main .stButton > button {
@@ -1037,16 +1255,31 @@ def _build_live_positions(positions, live_games) -> list[dict]:
 # ==========================================
 league_data = {}
 
+# See dashboard_helpers.CapturedStream / ThreadDispatchStdout for details:
+# the dispatcher is installed once per process and always defers to
+# sys.__stdout__, so overlapping Streamlit sessions can't chain dispatchers
+# into a recursive fallback loop.
+install_stdout_dispatcher()
 
-def _run_predictions(lg, spread_overrides=None):
-    """Run prediction pipeline for a single league. Thread-safe."""
-    if lg == "mlb":
-        mlb_predict.generate_predictions(lg)
-    else:
-        predict.main(
-            spread_overrides=spread_overrides or {},
-            league=lg,
-        )
+
+def _run_predictions(lg, stream, spread_overrides=None):
+    """Run prediction pipeline for a single league. Thread-safe.
+
+    Sets a thread-local capture target so the prediction script's stdout is
+    streamed live into the loading panel instead of waiting for the future
+    to resolve.
+    """
+    THREAD_BUFFERS.stream = stream
+    try:
+        if lg == "mlb":
+            mlb_predict.generate_predictions(lg)
+        else:
+            predict.main(
+                spread_overrides=spread_overrides or {},
+                league=lg,
+            )
+    finally:
+        THREAD_BUFFERS.stream = None
 
 
 # Determine which leagues need a prediction run
@@ -1074,25 +1307,131 @@ for lg in LEAGUES:
 
 # Run predictions in parallel (MLB is independent; mens/womens serialize via _RUNTIME_LOCK)
 if _leagues_to_run:
-    labels = [get_league_settings(lg)["label"] for lg in _leagues_to_run]
-    with st.spinner(f"Loading {', '.join(labels)}..."):
-        _errors = {}
-        with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
-            futures = {
-                executor.submit(_run_predictions, lg, _spread_overrides[lg]): lg
-                for lg in _leagues_to_run
-            }
-            for future in as_completed(futures):
+    panel = st.empty()
+    statuses: dict[str, str] = {lg: "queued" for lg in _leagues_to_run}
+    activities: dict[str, str] = {lg: "queued" for lg in _leagues_to_run}
+    log_lines: list[str] = []
+
+    def _add_log(prefix_class: str, prefix: str, text: str, line_class: str = ""):
+        cls = f"log-line {line_class}".strip()
+        log_lines.append(
+            f'<div class="{cls}">'
+            f'<span class="log-prefix {prefix_class}">[{prefix}]</span>'
+            f'<span class="log-text">{html_mod.escape(text)}</span>'
+            f'</div>'
+        )
+
+    def _render_panel(running: bool = True):
+        n_done = sum(1 for s in statuses.values() if s in ("done", "failed"))
+        n_total = len(_leagues_to_run)
+        title = "Refreshing predictions" if running else "Predictions ready"
+        panel_cls = "loading-panel" + ("" if running else " complete")
+
+        rows = []
+        for lg in _leagues_to_run:
+            s = statuses[lg]
+            icon_glyph = {"done": "OK", "failed": "X"}.get(s, "")
+            activity = activities.get(lg) or s
+            rows.append(
+                f'<div class="lg-row">'
+                f'<span class="lg-icon {s}">{icon_glyph}</span>'
+                f'<span class="lg-tag {lg}">{lg}</span>'
+                f'<span class="lg-status {s}">{s}</span>'
+                f'<span class="lg-activity">{html_mod.escape(activity)}</span>'
+                f'</div>'
+            )
+        rows_html = "".join(rows)
+
+        details_html = ""
+        if log_lines:
+            stream = "".join(log_lines)
+            details_html = (
+                '<details class="log-detail">'
+                f'<summary class="log-detail-toggle">Full log ({len(log_lines)} lines)</summary>'
+                f'<div class="log-stream">{stream}</div>'
+                '</details>'
+            )
+
+        panel.markdown(
+            f'<div class="{panel_cls}">'
+            f'<div class="panel-header">'
+            f'<span class="panel-title">{html_mod.escape(title)}</span>'
+            f'<span class="panel-meta">{n_done} of {n_total} done</span>'
+            f'</div>'
+            f'<div class="progress-rail"><div class="progress-fill"></div></div>'
+            f'<div class="lg-rows">{rows_html}</div>'
+            f'{details_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    _add_log("system", "system", f"Spawning workers: {', '.join(_leagues_to_run)}")
+    _add_log("system", "system", "Sources: ESPN schedules, Kalshi, Polymarket")
+    _render_panel()
+
+    # The dispatcher is installed at module load; we just need to register
+    # a capture stream per worker via thread-local state inside
+    # _run_predictions. Main-thread writes still pass through to the real
+    # stdout because THREAD_BUFFERS.stream is unset on this thread.
+    streams: dict[str, CapturedStream] = {
+        lg: CapturedStream() for lg in _leagues_to_run
+    }
+    offsets: dict[str, int] = {lg: 0 for lg in _leagues_to_run}
+
+    def _drain(lg: str) -> None:
+        new_lines, new_offset = streams[lg].consume_new(offsets[lg])
+        offsets[lg] = new_offset
+        for line in new_lines:
+            _add_log(lg, lg, line)
+            activities[lg] = line
+
+    _errors = {}
+    with ThreadPoolExecutor(max_workers=len(_leagues_to_run)) as executor:
+        futures = {
+            executor.submit(_run_predictions, lg, streams[lg], _spread_overrides[lg]): lg
+            for lg in _leagues_to_run
+        }
+        for lg in _leagues_to_run:
+            statuses[lg] = "running"
+            activities[lg] = "starting"
+        _render_panel()
+
+        pending = set(futures.keys())
+        while pending:
+            done, pending = wait(
+                pending, timeout=0.4, return_when=FIRST_COMPLETED
+            )
+            # Tail every running league's buffer first so the panel
+            # reflects any in-flight progress before flipping a future
+            # to done.
+            for f, lg in futures.items():
+                if statuses[lg] == "running":
+                    _drain(lg)
+
+            for future in done:
                 lg = futures[future]
                 pred_file = _league_artifacts[lg]["paths"]["predictions_file"]
                 try:
                     future.result()
+                    _drain(lg)
                     if os.path.exists(pred_file):
                         st.session_state[f"predictions_loaded_{lg}"] = True
+                    statuses[lg] = "done"
+                    _add_log(lg, lg, "done", line_class="done")
+                    if not activities[lg] or activities[lg] in ("starting", "running pipeline"):
+                        activities[lg] = "done"
                 except Exception as e:
                     _errors[lg] = e
-        for lg, e in _errors.items():
-            st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
+                    statuses[lg] = "failed"
+                    activities[lg] = f"failed: {e}"
+                    _add_log(lg, lg, f"FAILED: {e}", line_class="failed")
+            _render_panel()
+    for lg, e in _errors.items():
+        st.error(f"Failed to load {get_league_settings(lg)['label']} predictions: {e}")
+
+    # Loading complete; the freshness banner below already shows the
+    # generated-at timestamp, so the live panel goes away to reduce noise.
+    panel.empty()
 
 # Build league_data from prediction CSVs
 for lg in LEAGUES:
@@ -1254,7 +1593,11 @@ def _render_freshness_banner():
 
 
 def _render_mlb_today_panel():
-    """Primary decision surface: only token-bet confluence rows for MLB."""
+    """Primary decision surface: MLB token-bet candidates with full context.
+
+    Brings the candidate summary + SP-aware candidate table up to the top of
+    the page so the user doesn't have to scroll to the bottom Full Slates tab.
+    """
     st.markdown(
         '<div class="section-title" id="mlb-today">MLB Today</div>',
         unsafe_allow_html=True,
@@ -1271,48 +1614,107 @@ def _render_mlb_today_panel():
     candidates = token_bet_candidate_mask(game_df)
     n = int(candidates.sum())
     if n == 0:
-        st.caption(
-            "No token-bet candidates today (Std_Rating GOOD/STRONG, "
-            "shadow ok, agrees with production, edge > 0)."
-        )
+        st.caption("No token-bet candidates today.")
         return
 
     cand_df = game_df[candidates].copy()
-    if "Std_Units" in cand_df.columns:
-        cand_df["Pilot Stake"] = cand_df["Std_Units"].apply(
-            lambda x: f"{pilot_stake_units(x):.2f}U"
-        )
-    if "Conf" in cand_df.columns:
-        cand_df["Prod Conf"] = cand_df["Conf"].apply(
-            lambda x: f"{float(x):.1%}" if pd.notna(x) else ""
-        )
-    if "MarketV2_Edge_vs_Market" in cand_df.columns:
-        cand_df["Shadow Edge"] = cand_df["MarketV2_Edge_vs_Market"].apply(
-            lambda x: f"{float(x):+.1%}" if pd.notna(x) else ""
-        )
-    # Drop the Kalshi-side "Rating" column before renaming Std_Rating so the
-    # rename doesn't create a duplicate column name. MLB Today shows only DK
-    # rating (the gate that already qualified the row).
-    if "Rating" in cand_df.columns:
-        cand_df = cand_df.drop(columns=["Rating"])
-    cand_df = cand_df.rename(columns={
-        "Std_Odds": "Odds",
-        "Std_Rating": "Rating",
-        "Std_Units": "Model Units",
-    })
 
-    show_cols = [
-        "Date/Time", "Matchup", "Pick", "Odds", "Prod Conf",
-        "Shadow Edge", "Rating", "Model Units", "Pilot Stake",
-    ]
-    show_cols = [c for c in show_cols if c in cand_df.columns]
-
-    st.success(f"{n} token-bet candidate(s) on today's slate.")
-    st.caption(
-        "Manual checks before placing: live odds at or near the archived "
-        "Odds, and no stale lineup or pitcher info."
+    total_stake = sum(
+        pilot_stake_units(r.get("Std_Units")) for _, r in cand_df.iterrows()
     )
-    st.dataframe(cand_df[show_cols], use_container_width=True, hide_index=True)
+    st.markdown(
+        f'<div class="mlb-today-summary">{n} candidate'
+        f'{"" if n == 1 else "s"} &middot; {total_stake:.2f}U total</div>',
+        unsafe_allow_html=True,
+    )
+
+    for _, r in cand_df.iterrows():
+        rating = str(r.get("Std_Rating", "") or "").upper()
+        rating_class = rating.lower() if rating in ("STRONG", "GOOD") else "good"
+
+        stake = pilot_stake_units(r.get("Std_Units"))
+        stake_str = f"{stake:.2f}U"
+
+        pick = str(r.get("Pick", "") or "")
+        matchup = str(r.get("Matchup", "") or "")
+        opponent = ""
+        if " @ " in matchup:
+            away, home = matchup.split(" @ ", 1)
+            opponent = away if pick.strip() == home.strip() else home
+
+        odds_raw = r.get("Std_Odds", "")
+        try:
+            odds_int = int(float(odds_raw))
+            odds_str = f"{odds_int:+d}"
+        except (TypeError, ValueError):
+            odds_str = str(odds_raw) if odds_raw not in (None, "") else ""
+
+        conf_val = r.get("Conf")
+        try:
+            conf_str = f"{float(conf_val):.1%}" if pd.notna(conf_val) else ""
+        except (TypeError, ValueError):
+            conf_str = ""
+
+        edge_val = r.get("MarketV2_Edge_vs_Market")
+        try:
+            edge_str = f"{float(edge_val):+.1%}" if pd.notna(edge_val) else ""
+        except (TypeError, ValueError):
+            edge_str = ""
+
+        home_sp = str(r.get("Home_SP", "") or "").strip()
+        away_sp = str(r.get("Away_SP", "") or "").strip()
+        if home_sp and away_sp:
+            pitcher_line = f"SP: {away_sp} @ {home_sp}"
+        elif home_sp or away_sp:
+            pitcher_line = f"SP: {home_sp or away_sp}"
+        else:
+            pitcher_line = ""
+
+        game_time = str(r.get("Date/Time", "") or "")
+
+        opponent_html = (
+            f'<div class="bet-matchup">vs {_esc(opponent)}</div>'
+            if opponent
+            else ""
+        )
+        pitcher_html = (
+            f'<div class="pitcher-line">{_esc(pitcher_line)}</div>'
+            if pitcher_line
+            else ""
+        )
+
+        card_html = f"""
+        <div class="bet-card {rating_class}">
+            <div class="bet-header">
+                <div><span class="bet-badge {rating_class}">{_esc(rating)}</span></div>
+                <div>
+                    <span class="bet-time">{_esc(game_time)}</span>
+                    <span class="stake-pill">{_esc(stake_str)}</span>
+                </div>
+            </div>
+            <div class="bet-pick-row">
+                <div class="bet-pick">{_esc(pick)} ML</div>
+                <div class="bet-odds">{_esc(odds_str)}</div>
+            </div>
+            {opponent_html}
+            {pitcher_html}
+            <div class="bet-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Prod Conf</span>
+                    <span class="stat-value">{_esc(conf_str)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Shadow Edge</span>
+                    <span class="stat-value positive">{_esc(edge_str)}</span>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
+
+    st.caption(
+        "Verify before placing: live odds near archived; no stale lineup or pitcher."
+    )
 
 
 def _render_shadow_grader_panel():
@@ -2011,9 +2413,13 @@ with col_perf:
                 st.caption("No performance data yet.")
                 if st.button("Run Backtest", key=f"backtest_{lg}"):
                     with st.spinner("Training models..."):
-                        f = io.StringIO()
                         try:
-                            with redirect_stdout(f):
+                            # silenced_stdout() routes only this thread's
+                            # stdout through the dispatcher's thread-local
+                            # hook, so a concurrent prediction refresh in
+                            # another session still captures its workers'
+                            # output correctly.
+                            with silenced_stdout():
                                 backtest.run_backtest(league=lg)
                             if os.path.exists(perf_file):
                                 st.success("Done!")
@@ -2051,26 +2457,10 @@ def _render_mlb_slate(game_df, lg):
         st.caption("No matching picks.")
         return
 
-    # Token-bet confluence flag computed from raw columns before any rename.
+    # Token-bet confluence flag for sorting/highlighting. The verbose
+    # candidate summary lives in the MLB Today panel at the top of the page;
+    # the Full Slates tab is the diagnostic dataframe with all picks visible.
     candidates = token_bet_candidate_mask(display_df)
-    n_candidates = int(candidates.sum())
-    if n_candidates > 0:
-        lines = [
-            f"- **{r.get('Matchup', '')}** -- pick **{r.get('Pick', '')}** "
-            f"@ `{r.get('Std_Odds', '?')}`, prod conf "
-            f"{float(r.get('Conf') or 0):.1%}, shadow edge "
-            f"{float(r.get('MarketV2_Edge_vs_Market') or 0):+.1%}, "
-            f"DK rating {r.get('Std_Rating', '?')}"
-            for _, r in display_df[candidates].iterrows()
-        ]
-        st.success(
-            f"**{n_candidates} token-bet candidate(s)** "
-            "(Std_Rating GOOD/STRONG, shadow ok, shadow agrees with "
-            "production, shadow edge > 0):\n\n"
-            + "\n".join(lines)
-            + "\n\n_Still verify manually before betting:_ live odds near "
-            "the archived Std_Odds, and no stale lineup/pitcher."
-        )
     display_df["Bet?"] = candidates.map(lambda x: "yes" if x else "")
 
     # Production-model display columns

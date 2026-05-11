@@ -1,9 +1,135 @@
 """Helpers for the Streamlit dashboard that can be imported without Streamlit."""
 
 import re
+import sys
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+
+
+# Per-thread stdout splitter used by the dashboard's loading panel. Each
+# worker sets THREAD_BUFFERS.stream to its own CapturedStream so print()s
+# inside the prediction pipeline are tee'd into a per-league log. Both
+# classes always defer to sys.__stdout__ -- never to whatever sys.stdout
+# currently points at -- so overlapping sessions that each install a
+# dispatcher cannot form a recursive fallback chain.
+THREAD_BUFFERS = threading.local()
+
+
+class CapturedStream:
+    """Thread-safe line-buffered stream for one worker's stdout.
+
+    write() is called from a single worker thread; consume_new() is called
+    from the main thread between waits. Lines are only finalized when a
+    newline is seen, so the activity preview never shows a half-flushed
+    line.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._lines: list[str] = []
+        self._partial = ""
+
+    def write(self, s: str) -> int:
+        if not s:
+            return 0
+        sys.__stdout__.write(s)
+        with self._lock:
+            self._partial += s
+            if "\n" in self._partial:
+                parts = self._partial.split("\n")
+                self._partial = parts[-1]
+                for line in parts[:-1]:
+                    stripped = line.strip()
+                    if stripped:
+                        self._lines.append(stripped)
+        return len(s)
+
+    def flush(self) -> None:
+        sys.__stdout__.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def consume_new(self, offset: int) -> tuple[list[str], int]:
+        """Return new lines since `offset` and the new offset to remember."""
+        with self._lock:
+            return list(self._lines[offset:]), len(self._lines)
+
+
+class ThreadDispatchStdout:
+    """Routes a worker thread's writes to its CapturedStream; main-thread
+    writes (and writes from threads with no captured stream) pass through
+    to sys.__stdout__ -- never to a previously installed dispatcher, so
+    nested sessions can't form a recursive chain."""
+
+    def write(self, s: str) -> int:
+        stream = getattr(THREAD_BUFFERS, "stream", None)
+        if stream is not None:
+            return stream.write(s)
+        return sys.__stdout__.write(s)
+
+    def flush(self) -> None:
+        sys.__stdout__.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+
+def install_stdout_dispatcher() -> ThreadDispatchStdout:
+    """Install the dispatcher on sys.stdout once per process.
+
+    Streamlit reruns the script top-to-bottom on every interaction, so the
+    install has to be idempotent; we use isinstance to detect "already
+    installed" and skip the swap. Returns the installed dispatcher.
+    """
+    current = sys.stdout
+    if isinstance(current, ThreadDispatchStdout):
+        return current
+    dispatcher = ThreadDispatchStdout()
+    sys.stdout = dispatcher
+    return dispatcher
+
+
+class _SilentSink:
+    """No-op write target used by silenced_stdout(). Implements the minimal
+    file-like protocol the dispatcher relies on."""
+
+    def write(self, s: str) -> int:
+        return len(s)
+
+    def flush(self) -> None:
+        pass
+
+    def isatty(self) -> bool:
+        return False
+
+
+@contextmanager
+def silenced_stdout():
+    """Suppress stdout on the *current thread only* via the installed
+    dispatcher's thread-local hook.
+
+    Use this instead of contextlib.redirect_stdout in the Streamlit app
+    path: redirect_stdout replaces process-global sys.stdout, which would
+    knock out ThreadDispatchStdout for every thread for the duration of
+    the context. A concurrent session refreshing predictions in another
+    tab would then lose its live worker capture and write into the
+    redirect buffer instead. This helper only changes the calling
+    thread's routing, so worker threads in other sessions are unaffected.
+    """
+    sentinel = object()
+    prior = getattr(THREAD_BUFFERS, "stream", sentinel)
+    THREAD_BUFFERS.stream = _SilentSink()
+    try:
+        yield
+    finally:
+        if prior is sentinel:
+            THREAD_BUFFERS.stream = None
+        else:
+            THREAD_BUFFERS.stream = prior
 
 
 def pilot_stake_units(model_units, cap: float = 0.5) -> float:
