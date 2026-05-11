@@ -461,6 +461,43 @@ p, span, div, .stMarkdown {
     color: var(--neutral-400);
 }
 
+/* MLB Today extras: stake pill (the only high-contrast block per card so
+   the eye lands on stake size first) and pitcher subtitle. */
+.stake-pill {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--neutral-900);
+    color: #ffffff;
+    padding: 3px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    margin-left: 8px;
+}
+.pitcher-line {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--neutral-400);
+    margin: 2px 0 6px;
+}
+.bet-pick-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.bet-pick-row .bet-odds {
+    font-family: var(--font-mono);
+    font-size: 1.0rem;
+    font-weight: 500;
+    color: var(--neutral-900);
+}
+.mlb-today-summary {
+    font-family: var(--font-body);
+    color: var(--neutral-500);
+    font-size: 0.85rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
 /* Refresh button (main area) */
 .main .stButton > button {
     font-family: var(--font-body);
@@ -1280,49 +1317,99 @@ def _render_mlb_today_panel():
 
     cand_df = game_df[candidates].copy()
 
-    # Bulleted summary lines for the callout (one row per candidate).
-    summary_lines = [
-        f"- **{r.get('Matchup', '')}** -- pick **{r.get('Pick', '')}** "
-        f"@ `{r.get('Std_Odds', '?')}`, prod conf "
-        f"{float(r.get('Conf') or 0):.1%}, shadow edge "
-        f"{float(r.get('MarketV2_Edge_vs_Market') or 0):+.1%}"
-        for _, r in cand_df.iterrows()
-    ]
-    st.success(
-        f"**{n} token-bet candidate(s)** on today's slate:\n\n"
-        + "\n".join(summary_lines)
+    total_stake = sum(
+        pilot_stake_units(r.get("Std_Units")) for _, r in cand_df.iterrows()
+    )
+    st.markdown(
+        f'<div class="mlb-today-summary">{n} candidate'
+        f'{"" if n == 1 else "s"} &middot; {total_stake:.2f}U total</div>',
+        unsafe_allow_html=True,
     )
 
-    if "Std_Units" in cand_df.columns:
-        cand_df["Pilot Stake"] = cand_df["Std_Units"].apply(
-            lambda x: f"{pilot_stake_units(x):.2f}U"
-        )
-    if "Conf" in cand_df.columns:
-        cand_df["Prod Conf"] = cand_df["Conf"].apply(
-            lambda x: f"{float(x):.1%}" if pd.notna(x) else ""
-        )
-    if "MarketV2_Edge_vs_Market" in cand_df.columns:
-        cand_df["Shadow Edge"] = cand_df["MarketV2_Edge_vs_Market"].apply(
-            lambda x: f"{float(x):+.1%}" if pd.notna(x) else ""
-        )
-    # Drop the Kalshi-side "Rating" column before renaming Std_Rating so the
-    # rename doesn't create a duplicate column name. MLB Today shows only DK
-    # rating (the gate that already qualified the row).
-    if "Rating" in cand_df.columns:
-        cand_df = cand_df.drop(columns=["Rating"])
-    cand_df = cand_df.rename(columns={
-        "Pick": "Prod Pick",
-        "Std_Odds": "Odds",
-        "Std_Rating": "Rating",
-    })
+    for _, r in cand_df.iterrows():
+        rating = str(r.get("Std_Rating", "") or "").upper()
+        rating_class = rating.lower() if rating in ("STRONG", "GOOD") else "good"
 
-    show_cols = [
-        "Date/Time", "Matchup", "Home_SP", "Away_SP",
-        "Prod Pick", "Odds", "Prod Conf", "Shadow Edge",
-        "Rating", "Pilot Stake",
-    ]
-    show_cols = [c for c in show_cols if c in cand_df.columns]
-    st.dataframe(cand_df[show_cols], use_container_width=True, hide_index=True)
+        stake = pilot_stake_units(r.get("Std_Units"))
+        stake_str = f"{stake:.2f}U"
+
+        pick = str(r.get("Pick", "") or "")
+        matchup = str(r.get("Matchup", "") or "")
+        opponent = ""
+        if " @ " in matchup:
+            away, home = matchup.split(" @ ", 1)
+            opponent = away if pick.strip() == home.strip() else home
+
+        odds_raw = r.get("Std_Odds", "")
+        try:
+            odds_int = int(float(odds_raw))
+            odds_str = f"{odds_int:+d}"
+        except (TypeError, ValueError):
+            odds_str = str(odds_raw) if odds_raw not in (None, "") else ""
+
+        conf_val = r.get("Conf")
+        try:
+            conf_str = f"{float(conf_val):.1%}" if pd.notna(conf_val) else ""
+        except (TypeError, ValueError):
+            conf_str = ""
+
+        edge_val = r.get("MarketV2_Edge_vs_Market")
+        try:
+            edge_str = f"{float(edge_val):+.1%}" if pd.notna(edge_val) else ""
+        except (TypeError, ValueError):
+            edge_str = ""
+
+        home_sp = str(r.get("Home_SP", "") or "").strip()
+        away_sp = str(r.get("Away_SP", "") or "").strip()
+        if home_sp and away_sp:
+            pitcher_line = f"SP: {away_sp} @ {home_sp}"
+        elif home_sp or away_sp:
+            pitcher_line = f"SP: {home_sp or away_sp}"
+        else:
+            pitcher_line = ""
+
+        game_time = str(r.get("Date/Time", "") or "")
+
+        opponent_html = (
+            f'<div class="bet-matchup">vs {_esc(opponent)}</div>'
+            if opponent
+            else ""
+        )
+        pitcher_html = (
+            f'<div class="pitcher-line">{_esc(pitcher_line)}</div>'
+            if pitcher_line
+            else ""
+        )
+
+        card_html = f"""
+        <div class="bet-card {rating_class}">
+            <div class="bet-header">
+                <div><span class="bet-badge {rating_class}">{_esc(rating)}</span></div>
+                <div>
+                    <span class="bet-time">{_esc(game_time)}</span>
+                    <span class="stake-pill">{_esc(stake_str)}</span>
+                </div>
+            </div>
+            <div class="bet-pick-row">
+                <div class="bet-pick">{_esc(pick)} ML</div>
+                <div class="bet-odds">{_esc(odds_str)}</div>
+            </div>
+            {opponent_html}
+            {pitcher_html}
+            <div class="bet-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Prod Conf</span>
+                    <span class="stat-value">{_esc(conf_str)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Shadow Edge</span>
+                    <span class="stat-value positive">{_esc(edge_str)}</span>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
+
     st.caption(
         "Verify before placing: live odds near archived; no stale lineup or pitcher."
     )
