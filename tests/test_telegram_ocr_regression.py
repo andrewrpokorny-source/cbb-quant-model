@@ -943,3 +943,129 @@ def test_placed_date_validation_rejects_out_of_range() -> None:
     actual = _actual_bets(bets)
     assert len(actual) == 1
     assert actual[0]["date"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Hardened OCR confidence gating (RETURNED ambiguity + skip feedback)
+# ---------------------------------------------------------------------------
+
+
+def test_returned_with_zero_payout_and_one_in_range_amount_is_loss() -> None:
+    """RETURNED + $0.00 substring + only the wager in [0.25, 500]: confident loss.
+
+    Regression for FanDuel 'Finished' cards where the wager renders in-range
+    (e.g. $0.50) but $0.00 fails the range filter -- we still want a loss,
+    not an ambiguous skip.
+    """
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "$0.00",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999252",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "loss"
+    assert actual[0]["payout"] == 0.0
+    assert actual[0]["wager"] == 0.5
+
+
+def test_returned_with_one_amount_and_no_zero_marker_is_ambiguous() -> None:
+    """RETURNED + only one in-range amount AND no $0.00 anywhere: skip ambiguous.
+
+    Without an explicit $0.00 marker we can't tell if the missing dollar amount
+    was a payout (loss/void) or a winning return that OCR dropped. Better to
+    surface to the user than silently log as loss.
+    """
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999253",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    actual = _actual_bets(bets)
+
+    assert actual == []
+    assert len(skipped) == 1
+    assert skipped[0]["_skip_reason"] == "ambiguous_returned"
+    assert skipped[0]["bet_id"] == "0/0084650/9999253"
+    # BET ID must not be burned -- a cleaner re-screenshot should re-parse
+    assert "0/0084650/9999253" not in BOT._SEEN_FD_BET_IDS
+
+
+def test_ambiguous_returned_does_not_burn_bet_id() -> None:
+    """Ambiguous RETURNED skip lets a follow-up clean screenshot parse the bet."""
+    ambiguous_card = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins ML",
+        "+100",
+        "MONEYLINE",
+        "$0.50",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999254",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    clean_card = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins ML",
+        "+100",
+        "MONEYLINE",
+        "$0.50",
+        "$0.00",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999254",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets1 = BOT._parse_fd_settled_cards(ambiguous_card)
+    assert _actual_bets(bets1) == []
+
+    bets2 = BOT._parse_fd_settled_cards(clean_card)
+    actual2 = _actual_bets(bets2)
+    assert len(actual2) == 1
+    assert actual2[0]["result"] == "loss"
+    assert actual2[0]["bet_id"] == "0/0084650/9999254"
+
+
+def test_incomplete_skip_includes_line_for_user_feedback() -> None:
+    """Incomplete skip dicts should expose the parsed team line (when known).
+
+    Today's failure: an empty-bet_id partial card with line='Minnesota Twins ML'
+    and wager=0 produced no Telegram feedback because the skip dict only had
+    bet_id/wager/result/game -- none populated. Including `line` lets the
+    user know which card was missed.
+    """
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins ML",
+        "+100",
+        "MONEYLINE",
+        "Minnesota Twins ( Ryan) @ Cleveland Guardia...",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    # Card has no result keywords, no $ amounts -> unsettled/pending skip
+    assert len(skipped) == 1
+    s = skipped[0]
+    # team/line surface so the user can identify the missed bet
+    assert s.get("line") or s.get("team") or s.get("game")
