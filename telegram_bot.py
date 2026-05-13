@@ -1358,14 +1358,8 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
-        # RETURNED present -- distinguish loss ($0.00 payout) from void (wager
-        # refunded). FanDuel renders $0.00 alongside RETURNED for losses, but
-        # the [0.25, 500] range filter excludes it, so a real loss often shows
-        # only the wager amount in range. We accept that as a loss ONLY when an
-        # explicit "$0.00" / "$0.0" substring is also present. Without that
-        # confirming marker, partial OCR could just as easily have dropped a
-        # winning payout amount, so we mark the card ambiguous and skip the
-        # write -- the user is prompted to re-screenshot rather than risk a
+        # Without an explicit $0.00 marker, a missing second amount could
+        # equally be a dropped winning payout -- prefer ambiguous over a
         # silently-mislabeled loss.
         ret_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
         ret_in_range = [float(m) for m in ret_amts if 0.25 <= float(m) <= 500]
@@ -2465,6 +2459,93 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Message handlers ---
 
 
+# Skip reasons that should surface as "Missed: ..." cards in the user feedback.
+# Anything else (dedup, unsettled) is shown via aggregate footer lines instead.
+_NEEDS_REVIEW_REASONS = ("incomplete", "ambiguous_returned")
+_SKIP_REASON_LABELS = {
+    "incomplete": "incomplete",
+    "ambiguous_returned": "ambiguous (RETURNED w/o $0.00)",
+}
+
+
+def _format_missed_card_label(skip: dict) -> str:
+    """Render the identifying label for one missed/ambiguous skip dict."""
+    parts: list[str] = []
+    for key in ("line", "team", "game"):
+        if skip.get(key):
+            parts.append(str(skip[key]))
+            break
+    if skip.get("bet_id"):
+        parts.append(f"BET ID {skip['bet_id']}")
+    wager = skip.get("wager") or 0
+    if wager > 0:
+        parts.append(f"${wager:.2f}")
+    result = skip.get("result")
+    if result and result not in ("pending", "ambiguous_returned"):
+        parts.append(str(result).upper())
+    return ", ".join(parts) if parts else "card with no identifying fields"
+
+
+def _build_skip_feedback_messages(
+    skipped: list[dict],
+    has_actual_settled: bool,
+) -> list[str]:
+    """Build user-visible feedback for skipped settled-card entries.
+
+    One "Missed [reason]: label" line per needs-review skip so the user never
+    has to guess which card was dropped. Unknown _skip_reason values are
+    logged and treated as needs-review so a new failure mode can't slip
+    through silently.
+    """
+    msgs: list[str] = []
+    if not skipped:
+        return msgs
+
+    by_reason: dict[str, list[dict]] = {}
+    for s in skipped:
+        by_reason.setdefault(s.get("_skip_reason", "?"), []).append(s)
+    skipped_dedup = by_reason.pop("dedup", [])
+    skipped_unsettled = by_reason.pop("unsettled", [])
+    needs_review: list[dict] = []
+    for reason in _NEEDS_REVIEW_REASONS:
+        needs_review.extend(by_reason.pop(reason, []))
+    if by_reason:
+        logger.error(
+            "Unknown OCR _skip_reason value(s): %s", sorted(by_reason.keys())
+        )
+        for items in by_reason.values():
+            needs_review.extend(items)
+
+    if (
+        not has_actual_settled
+        and not needs_review
+        and not skipped_unsettled
+        and skipped_dedup
+    ):
+        msgs.append(
+            f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot."
+        )
+        return msgs
+
+    for s in needs_review:
+        reason_key = s.get("_skip_reason", "?")
+        reason_label = _SKIP_REASON_LABELS.get(reason_key, reason_key)
+        msgs.append(
+            f"Missed [{reason_label}]: {_format_missed_card_label(s)}"
+        )
+    if needs_review:
+        msgs.append("Scroll to show full cards and resend for missed bets.")
+
+    if skipped_unsettled:
+        n = len(skipped_unsettled)
+        lines = [s.get("line", "?") for s in skipped_unsettled]
+        msgs.append(
+            f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
+            "Send again after they settle."
+        )
+    return msgs
+
+
 @authorized_only
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bet slip screenshot via macOS OCR."""
@@ -2532,11 +2613,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if settled_all:
         actual_settled = [b for b in settled_all if not b.get("_skipped")]
         skipped = [b for b in settled_all if b.get("_skipped")]
-        skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
-        skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
-        skipped_unsettled = [s for s in skipped if s.get("_skip_reason") == "unsettled"]
-        skipped_ambiguous = [s for s in skipped if s.get("_skip_reason") == "ambiguous_returned"]
-        skipped_needs_review = skipped_incomplete + skipped_ambiguous
 
         msgs = []
         for bet in actual_settled:
@@ -2573,53 +2649,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.exception("Unexpected error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
                 msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
 
-        # Per-card skip feedback
-        if (
-            not actual_settled
-            and not skipped_needs_review
-            and not skipped_unsettled
-            and skipped_dedup
-        ):
-            # All cards were deduped, no new bets
-            msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
-        elif not actual_settled and not skipped:
-            # Nothing parsed at all
-            msgs.append(
-                "No bets could be parsed. Cards may be partially visible"
-                " -- try scrolling to show complete cards and resend."
+        msgs.extend(
+            _build_skip_feedback_messages(
+                skipped, has_actual_settled=bool(actual_settled)
             )
-        else:
-            # Show missed incomplete + ambiguous cards. Always emit one line per
-            # missed card so the user knows the count even when OCR captured
-            # almost nothing -- a silent skip is the failure mode we're trying
-            # to eliminate.
-            for s in skipped_needs_review:
-                parts = []
-                if s.get("line"):
-                    parts.append(s["line"])
-                elif s.get("team"):
-                    parts.append(s["team"])
-                elif s.get("game"):
-                    parts.append(s["game"])
-                if s.get("bet_id"):
-                    parts.append(f"BET ID {s['bet_id']}")
-                if s.get("wager") and s["wager"] > 0:
-                    parts.append(f"${s['wager']:.2f}")
-                if s.get("result") and s["result"] not in ("pending", "ambiguous_returned"):
-                    parts.append(s["result"].upper())
-                label = ", ".join(parts) if parts else "card with no identifying fields"
-                reason = "ambiguous (RETURNED w/o $0.00)" if s.get("_skip_reason") == "ambiguous_returned" else "incomplete"
-                msgs.append(f"Missed [{reason}]: {label}")
-            if skipped_needs_review:
-                msgs.append("Scroll to show full cards and resend for missed bets.")
-            # Show unsettled/open cards that were skipped
-            if skipped_unsettled:
-                n = len(skipped_unsettled)
-                lines = [s.get("line", "?") for s in skipped_unsettled]
-                msgs.append(
-                    f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
-                    "Send again after they settle."
-                )
+        )
 
         if msgs:
             await update.message.reply_text("\n".join(msgs))
