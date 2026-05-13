@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import importlib
 import importlib.util
+import logging
 import sys
 import types
 
@@ -943,3 +944,263 @@ def test_placed_date_validation_rejects_out_of_range() -> None:
     actual = _actual_bets(bets)
     assert len(actual) == 1
     assert actual[0]["date"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Hardened OCR confidence gating (RETURNED ambiguity + skip feedback)
+# ---------------------------------------------------------------------------
+
+
+def test_returned_with_zero_payout_and_one_in_range_amount_is_loss() -> None:
+    """$0.00 payout fails the in-range filter; explicit $0.00 substring confirms loss."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "$0.00",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999252",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "loss"
+    assert actual[0]["payout"] == 0.0
+    assert actual[0]["wager"] == 0.5
+
+
+def test_returned_with_one_amount_and_no_zero_marker_is_ambiguous() -> None:
+    """Missing payout amount could equally be a dropped winner -- skip, don't lock in loss."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999253",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    actual = _actual_bets(bets)
+
+    assert actual == []
+    assert len(skipped) == 1
+    assert skipped[0]["_skip_reason"] == "ambiguous_returned"
+    assert skipped[0]["bet_id"] == "0/0084650/9999253"
+    # BET ID must not be burned -- a cleaner re-screenshot should re-parse
+    assert "0/0084650/9999253" not in BOT._SEEN_FD_BET_IDS
+
+
+def test_ambiguous_returned_does_not_burn_bet_id() -> None:
+    """A re-screenshot with full data must still parse after an ambiguous skip."""
+    ambiguous_card = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins ML",
+        "+100",
+        "MONEYLINE",
+        "$0.50",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999254",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    clean_card = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins ML",
+        "+100",
+        "MONEYLINE",
+        "$0.50",
+        "$0.00",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999254",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets1 = BOT._parse_fd_settled_cards(ambiguous_card)
+    assert _actual_bets(bets1) == []
+
+    bets2 = BOT._parse_fd_settled_cards(clean_card)
+    actual2 = _actual_bets(bets2)
+    assert len(actual2) == 1
+    assert actual2[0]["result"] == "loss"
+    assert actual2[0]["bet_id"] == "0/0084650/9999254"
+
+
+def test_incomplete_skip_includes_line_for_user_feedback() -> None:
+    """Skip dict must expose the parsed team line so empty-bet_id cards aren't silent."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Minnesota Twins",
+        "+100",
+        "MONEYLINE",
+        "Minnesota Twins ( Ryan) @ Cleveland Guardia...",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    assert len(skipped) == 1
+    s = skipped[0]
+    assert s["line"] == "Minnesota Twins ML"
+    assert s["team"] == "Minnesota Twins"
+
+
+def test_returned_with_zero_in_range_amounts_and_no_marker_is_ambiguous() -> None:
+    """Zero usable amounts and no $0.00 marker -- can't even confirm a wager was placed."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "RETURNED",
+        "BET ID: 0/0084650/9999260",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    assert skipped and skipped[0]["_skip_reason"] == "ambiguous_returned"
+
+
+def test_returned_with_bare_zero_no_dollar_sign_is_ambiguous() -> None:
+    """Bare '0.00' without a $ prefix is not enough -- the marker contract requires $0.00."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "0.00",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999261",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    actual = _actual_bets(bets)
+    assert actual == []
+    assert skipped and skipped[0]["_skip_reason"] == "ambiguous_returned"
+
+
+def test_returned_with_zero_dollar_zero_single_decimal_is_loss() -> None:
+    """$0.0 (one trailing digit) is also a valid zero-payout marker."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Houston Astros ML",
+        "+116",
+        "MONEYLINE",
+        "$0.50",
+        "$0.0",
+        "TOTAL WAGER",
+        "RETURNED",
+        "BET ID: 0/0084650/9999262",
+        "PLACED: 5/10/2026 6:32PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "loss"
+
+
+# ---------------------------------------------------------------------------
+# Skip-feedback helper tests (extracted from handle_photo for testability)
+# ---------------------------------------------------------------------------
+
+
+def test_format_missed_card_label_prefers_line_over_team() -> None:
+    label = BOT._format_missed_card_label(
+        {"line": "Drexel -1.5", "team": "Drexel", "game": "Drexel vs Towson"}
+    )
+    assert label.startswith("Drexel -1.5")
+    assert "Drexel vs Towson" not in label  # game not appended once line is present
+
+
+def test_format_missed_card_label_falls_back_to_team_then_game() -> None:
+    assert BOT._format_missed_card_label({"team": "Drexel"}) == "Drexel"
+    assert BOT._format_missed_card_label({"game": "Drexel vs Towson"}) == "Drexel vs Towson"
+
+
+def test_format_missed_card_label_handles_all_empty_fields() -> None:
+    assert BOT._format_missed_card_label({}) == "card with no identifying fields"
+    assert (
+        BOT._format_missed_card_label({"line": "", "team": "", "bet_id": "", "wager": 0})
+        == "card with no identifying fields"
+    )
+
+
+def test_format_missed_card_label_hides_internal_result_values() -> None:
+    """`pending` and `ambiguous_returned` are internal sentinels -- don't surface them."""
+    pending = BOT._format_missed_card_label({"line": "X ML", "result": "pending"})
+    ambiguous = BOT._format_missed_card_label({"line": "X ML", "result": "ambiguous_returned"})
+    assert "PENDING" not in pending
+    assert "AMBIGUOUS_RETURNED" not in ambiguous
+
+
+def test_build_skip_feedback_emits_one_line_per_needs_review_card() -> None:
+    skipped = [
+        {"_skip_reason": "incomplete", "line": "Drexel -1.5"},
+        {"_skip_reason": "ambiguous_returned", "line": "Houston Astros ML",
+         "bet_id": "BID-9", "wager": 0.5},
+    ]
+    msgs = BOT._build_skip_feedback_messages(skipped, has_actual_settled=False)
+    missed = [m for m in msgs if m.startswith("Missed [")]
+    assert len(missed) == 2
+    assert any("Drexel -1.5" in m and "[incomplete]" in m for m in missed)
+    assert any("Houston Astros ML" in m and "ambiguous" in m for m in missed)
+
+
+def test_build_skip_feedback_uses_no_identifying_fields_label_when_empty() -> None:
+    msgs = BOT._build_skip_feedback_messages(
+        [{"_skip_reason": "incomplete"}], has_actual_settled=False
+    )
+    assert any("card with no identifying fields" in m for m in msgs)
+
+
+def test_build_skip_feedback_collapses_all_dedup_only_into_summary() -> None:
+    msgs = BOT._build_skip_feedback_messages(
+        [
+            {"_skip_reason": "dedup", "bet_id": "A"},
+            {"_skip_reason": "dedup", "bet_id": "B"},
+        ],
+        has_actual_settled=False,
+    )
+    assert msgs == ["2 bet(s) already processed from a previous screenshot."]
+
+
+def test_build_skip_feedback_emits_unsettled_footer() -> None:
+    msgs = BOT._build_skip_feedback_messages(
+        [{"_skip_reason": "unsettled", "line": "Drexel -1.5"}],
+        has_actual_settled=False,
+    )
+    joined = "\n".join(msgs)
+    assert "Drexel -1.5" in joined
+    assert "open/unsettled" in joined
+
+
+def test_build_skip_feedback_surfaces_unknown_skip_reasons(caplog) -> None:
+    """An unrecognized _skip_reason must be logged AND shown to the user."""
+    caplog.set_level(logging.ERROR, logger="telegram_bot")
+    msgs = BOT._build_skip_feedback_messages(
+        [{"_skip_reason": "future_reason_we_have_not_added_yet", "line": "X ML"}],
+        has_actual_settled=False,
+    )
+    assert any("Unknown OCR _skip_reason" in r.getMessage() for r in caplog.records)
+    assert any("X ML" in m for m in msgs)  # surfaced, not silently dropped
+
+
+def test_build_skip_feedback_empty_input_returns_empty() -> None:
+    assert BOT._build_skip_feedback_messages([], has_actual_settled=True) == []
+    assert BOT._build_skip_feedback_messages([], has_actual_settled=False) == []

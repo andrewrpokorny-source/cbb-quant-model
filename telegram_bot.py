@@ -1358,18 +1358,22 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
     elif "lost on fanduel" in lower or re.search(r"^\s*lost\s*$", lower, re.MULTILINE):
         result = "loss"
     elif re.search(r"^\s*returned\s*$", lower, re.MULTILINE):
-        # RETURNED present -- distinguish loss ($0.00 payout) from void (wager refunded).
-        # Extract dollar amounts in betting range; if two found and approximately
-        # equal, wager was refunded (void). Otherwise loss.
+        # Without an explicit $0.00 marker, a missing second amount could
+        # equally be a dropped winning payout -- prefer ambiguous over a
+        # silently-mislabeled loss.
         ret_amts = re.findall(r"\$(\d+\.?\d{0,2})", card_text)
         ret_in_range = [float(m) for m in ret_amts if 0.25 <= float(m) <= 500]
+        zero_payout_marker = bool(re.search(r"\$0+\.0{1,2}\b", card_text))
         if len(ret_in_range) >= 2 and abs(ret_in_range[1] - ret_in_range[0]) < 0.01:
             result = "void"
-        else:
+        elif len(ret_in_range) >= 2 or zero_payout_marker:
             result = "loss"
+        else:
+            result = "ambiguous_returned"
         logger.info(
-            "FD settled card: RETURNED -> %s (bet_id=%s, amounts_in_range=%s)",
-            result, bet_id, ret_in_range,
+            "FD settled card: RETURNED -> %s "
+            "(bet_id=%s, amounts_in_range=%s, zero_marker=%s)",
+            result, bet_id, ret_in_range, zero_payout_marker,
         )
     else:
         # No keyword markers found.  If there's no BET ID either, this is
@@ -1621,6 +1625,19 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
             game_date, bet_id,
         )
 
+    if result == "ambiguous_returned":
+        logger.warning(
+            "FD settled card: RETURNED with no $0.00 marker and < 2 in-range "
+            "amounts, skipping as ambiguous (bet_id=%s line=%r wager=%s)",
+            bet_id, line, wager,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "ambiguous_returned", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result,
+            "game": game, "line": line, "team": team,
+        }
+
     if not line or wager <= 0:
         logger.warning(
             "FD settled card parse incomplete: line=%r wager=%s bet_id=%s",
@@ -1629,7 +1646,8 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         return {
             "_skipped": True, "_skip_reason": "incomplete", "_settled": True,
             "platform": "FanDuel",
-            "bet_id": bet_id, "wager": wager, "result": result, "game": game,
+            "bet_id": bet_id, "wager": wager, "result": result,
+            "game": game, "line": line, "team": team,
         }
 
     if result == "pending":
@@ -2441,6 +2459,93 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Message handlers ---
 
 
+# Skip reasons that should surface as "Missed: ..." cards in the user feedback.
+# Anything else (dedup, unsettled) is shown via aggregate footer lines instead.
+_NEEDS_REVIEW_REASONS = ("incomplete", "ambiguous_returned")
+_SKIP_REASON_LABELS = {
+    "incomplete": "incomplete",
+    "ambiguous_returned": "ambiguous (RETURNED w/o $0.00)",
+}
+
+
+def _format_missed_card_label(skip: dict) -> str:
+    """Render the identifying label for one missed/ambiguous skip dict."""
+    parts: list[str] = []
+    for key in ("line", "team", "game"):
+        if skip.get(key):
+            parts.append(str(skip[key]))
+            break
+    if skip.get("bet_id"):
+        parts.append(f"BET ID {skip['bet_id']}")
+    wager = skip.get("wager") or 0
+    if wager > 0:
+        parts.append(f"${wager:.2f}")
+    result = skip.get("result")
+    if result and result not in ("pending", "ambiguous_returned"):
+        parts.append(str(result).upper())
+    return ", ".join(parts) if parts else "card with no identifying fields"
+
+
+def _build_skip_feedback_messages(
+    skipped: list[dict],
+    has_actual_settled: bool,
+) -> list[str]:
+    """Build user-visible feedback for skipped settled-card entries.
+
+    One "Missed [reason]: label" line per needs-review skip so the user never
+    has to guess which card was dropped. Unknown _skip_reason values are
+    logged and treated as needs-review so a new failure mode can't slip
+    through silently.
+    """
+    msgs: list[str] = []
+    if not skipped:
+        return msgs
+
+    by_reason: dict[str, list[dict]] = {}
+    for s in skipped:
+        by_reason.setdefault(s.get("_skip_reason", "?"), []).append(s)
+    skipped_dedup = by_reason.pop("dedup", [])
+    skipped_unsettled = by_reason.pop("unsettled", [])
+    needs_review: list[dict] = []
+    for reason in _NEEDS_REVIEW_REASONS:
+        needs_review.extend(by_reason.pop(reason, []))
+    if by_reason:
+        logger.error(
+            "Unknown OCR _skip_reason value(s): %s", sorted(by_reason.keys())
+        )
+        for items in by_reason.values():
+            needs_review.extend(items)
+
+    if (
+        not has_actual_settled
+        and not needs_review
+        and not skipped_unsettled
+        and skipped_dedup
+    ):
+        msgs.append(
+            f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot."
+        )
+        return msgs
+
+    for s in needs_review:
+        reason_key = s.get("_skip_reason", "?")
+        reason_label = _SKIP_REASON_LABELS.get(reason_key, reason_key)
+        msgs.append(
+            f"Missed [{reason_label}]: {_format_missed_card_label(s)}"
+        )
+    if needs_review:
+        msgs.append("Scroll to show full cards and resend for missed bets.")
+
+    if skipped_unsettled:
+        n = len(skipped_unsettled)
+        lines = [s.get("line", "?") for s in skipped_unsettled]
+        msgs.append(
+            f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
+            "Send again after they settle."
+        )
+    return msgs
+
+
 @authorized_only
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bet slip screenshot via macOS OCR."""
@@ -2508,9 +2613,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if settled_all:
         actual_settled = [b for b in settled_all if not b.get("_skipped")]
         skipped = [b for b in settled_all if b.get("_skipped")]
-        skipped_incomplete = [s for s in skipped if s.get("_skip_reason") == "incomplete"]
-        skipped_dedup = [s for s in skipped if s.get("_skip_reason") == "dedup"]
-        skipped_unsettled = [s for s in skipped if s.get("_skip_reason") == "unsettled"]
 
         msgs = []
         for bet in actual_settled:
@@ -2547,38 +2649,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.exception("Unexpected error logging settled bet %s: %s", bet.get("bet_id", "?"), e)
                 msgs.append(f"Unexpected error processing {bet.get('line', '?')}. Check bot logs.")
 
-        # Per-card skip feedback
-        if not actual_settled and not skipped_incomplete and not skipped_unsettled and skipped_dedup:
-            # All cards were deduped, no new bets
-            msgs.append(f"{len(skipped_dedup)} bet(s) already processed from a previous screenshot.")
-        elif not actual_settled and not skipped:
-            # Nothing parsed at all
-            msgs.append(
-                "No bets could be parsed. Cards may be partially visible"
-                " -- try scrolling to show complete cards and resend."
+        msgs.extend(
+            _build_skip_feedback_messages(
+                skipped, has_actual_settled=bool(actual_settled)
             )
-        else:
-            # Show missed incomplete cards
-            for s in skipped_incomplete:
-                parts = []
-                if s.get("bet_id"):
-                    parts.append(f"BET ID {s['bet_id']}")
-                if s.get("wager") and s["wager"] > 0:
-                    parts.append(f"${s['wager']:.2f}")
-                if s.get("result") and s["result"] != "pending":
-                    parts.append(s["result"].upper())
-                if parts:
-                    msgs.append(f"Missed: {', '.join(parts)}")
-            if skipped_incomplete:
-                msgs.append("Scroll to show full cards and resend for missed bets.")
-            # Show unsettled/open cards that were skipped
-            if skipped_unsettled:
-                n = len(skipped_unsettled)
-                lines = [s.get("line", "?") for s in skipped_unsettled]
-                msgs.append(
-                    f"Skipped {n} open/unsettled card(s): {', '.join(lines)}. "
-                    "Send again after they settle."
-                )
+        )
 
         if msgs:
             await update.message.reply_text("\n".join(msgs))
