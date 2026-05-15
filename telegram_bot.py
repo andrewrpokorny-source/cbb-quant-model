@@ -1582,25 +1582,16 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
 
     # 7. Result-specific payout override
     if result == "win":
-        # Sanity check: a winning payout must exceed the wager. If OCR
-        # produced a bogus second dollar amount, recalculate from odds.
-        if payout <= wager and odds and wager > 0:
-            try:
-                odds_val = int(float(odds))
-                if odds_val < 0:
-                    calc_profit = wager * 100.0 / abs(odds_val)
-                else:
-                    calc_profit = wager * odds_val / 100.0
-                payout = round(wager + calc_profit, 2)
-                logger.warning(
-                    "FD settled card: OCR payout ($%.2f) <= wager ($%.2f), "
-                    "recalculated from odds %s -> $%.2f (bet_id=%s)",
-                    raw_amounts[1] if len(raw_amounts) >= 2 else 0.0,
-                    wager, odds, payout, bet_id,
-                )
-            except (ValueError, TypeError):
-                pass
-        profit = round(payout - wager, 2)
+        # If a winning payout doesn't exceed the wager, one of the two amounts
+        # is corrupt (e.g. "$1.17" OCR'd as "$1:17" -- colon stops the regex,
+        # so the won amount becomes the wager and the wager becomes the
+        # payout). Recalculating from odds trusts the wager and produces a
+        # confidently-wrong ledger row; skip as ambiguous instead so the user
+        # can re-screenshot.
+        if payout <= wager and wager > 0:
+            result = "ambiguous_recalc"
+        else:
+            profit = round(payout - wager, 2)
     elif result == "void":
         payout = wager  # void = wager refunded; override raw $0.00 from OCR
         profit = 0.0
@@ -1633,6 +1624,20 @@ def _parse_single_fd_settled_card(card_text: str) -> dict | None:
         )
         return {
             "_skipped": True, "_skip_reason": "ambiguous_returned", "_settled": True,
+            "platform": "FanDuel",
+            "bet_id": bet_id, "wager": wager, "result": result,
+            "game": game, "line": line, "team": team,
+        }
+
+    if result == "ambiguous_recalc":
+        logger.warning(
+            "FD settled card: WON but parsed payout ($%.2f) <= parsed wager "
+            "($%.2f) -- one amount is OCR-corrupt, skipping as ambiguous "
+            "(bet_id=%s line=%r odds=%s)",
+            payout, wager, bet_id, line, odds,
+        )
+        return {
+            "_skipped": True, "_skip_reason": "ambiguous_recalc", "_settled": True,
             "platform": "FanDuel",
             "bet_id": bet_id, "wager": wager, "result": result,
             "game": game, "line": line, "team": team,
@@ -2461,10 +2466,11 @@ async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Skip reasons that should surface as "Missed: ..." cards in the user feedback.
 # Anything else (dedup, unsettled) is shown via aggregate footer lines instead.
-_NEEDS_REVIEW_REASONS = ("incomplete", "ambiguous_returned")
+_NEEDS_REVIEW_REASONS = ("incomplete", "ambiguous_returned", "ambiguous_recalc")
 _SKIP_REASON_LABELS = {
     "incomplete": "incomplete",
     "ambiguous_returned": "ambiguous (RETURNED w/o $0.00)",
+    "ambiguous_recalc": "ambiguous (WON but payout <= wager, OCR corrupt)",
 }
 
 
@@ -2481,7 +2487,7 @@ def _format_missed_card_label(skip: dict) -> str:
     if wager > 0:
         parts.append(f"${wager:.2f}")
     result = skip.get("result")
-    if result and result not in ("pending", "ambiguous_returned"):
+    if result and result not in ("pending", "ambiguous_returned", "ambiguous_recalc"):
         parts.append(str(result).upper())
     return ", ".join(parts) if parts else "card with no identifying fields"
 

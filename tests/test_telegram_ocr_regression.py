@@ -447,25 +447,33 @@ def test_fanduel_finished_date_falls_back_to_placed(tmp_path, monkeypatch) -> No
 
 
 def test_fanduel_finished_multi_card() -> None:
-    """Multi-card Finished screenshot should parse each card correctly."""
+    """Multi-card Finished screenshot should parse each card correctly.
+
+    UTSA card in the fixture has WON/TOTAL WAGER labels swapped vs the dollar
+    amounts (wager=$1.00 visually, but OCR ordered the amounts as $1.91 then
+    $1.00). That's an OCR-corrupt reading that now skips as ambiguous_recalc
+    rather than being silently "rescued" by recalculating from odds.
+    """
     raw = _read_fixture("fanduel_finished_multi.txt")
     bets = BOT._parse_fd_settled_cards(raw)
     actual = _actual_bets(bets)
+    skipped = [b for b in bets if b.get("_skipped")]
 
     by_id = {b["bet_id"]: b for b in actual if b.get("bet_id")}
+    skipped_by_id = {b["bet_id"]: b for b in skipped if b.get("bet_id")}
 
-    # Alabama -14.5 should be win
+    # Alabama -14.5 should be win (payout > wager, no recalc needed)
     assert "0/0084650/0000187" in by_id
     assert by_id["0/0084650/0000187"]["result"] == "win"
     assert by_id["0/0084650/0000187"]["line"] == "Alabama -14.5"
 
-    # UTSA +4.5 should be win (spread header now captured with >= 0.5 threshold)
-    assert "0/0084650/0000189" in by_id
-    assert by_id["0/0084650/0000189"]["result"] == "win"
-    assert by_id["0/0084650/0000189"]["line"] == "UTSA +4.5"
+    # UTSA +4.5: payout <= wager after parse -> ambiguous_recalc skip
+    assert "0/0084650/0000189" in skipped_by_id
+    assert skipped_by_id["0/0084650/0000189"]["_skip_reason"] == "ambiguous_recalc"
+    assert skipped_by_id["0/0084650/0000189"]["line"] == "UTSA +4.5"
 
-    # Cleveland State card is truncated (no bet_id), so only 2 cards parse fully
-    assert len(actual) == 2, f"Expected 2 parseable cards, got {len(actual)}"
+    # Only Alabama parses fully; UTSA is skipped, Cleveland State is truncated
+    assert len(actual) == 1, f"Expected 1 parseable card, got {len(actual)}"
 
 
 def test_fanduel_finished_is_detected_as_settled() -> None:
@@ -1115,6 +1123,113 @@ def test_returned_with_zero_dollar_zero_single_decimal_is_loss() -> None:
     assert actual[0]["result"] == "loss"
 
 
+def test_won_card_with_corrupted_payout_amount_is_ambiguous() -> None:
+    """Reproduce bet 0/0084650/0000254: OCR misread "$1.17" as "$1:17" (colon for period).
+
+    The dollar regex stops at the colon, so:
+      - parsed wager = $1 (from "$1:17")
+      - parsed payout = $0.50 (the actual wager)
+    The win-sanity recalc then "rescues" the bad payout from odds, producing a
+    confidently-wrong ledger row ($1.00 stake / $2.34 payout for a bet that was
+    actually $0.50 / $1.17). When the recalc fires we know one amount is
+    already corrupt -- skip the card so the user can re-screenshot.
+    """
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "+134",
+        "Washington Nationals",
+        "MONEYLINE",
+        "Washington Nationals...",
+        "Cincinnati Reds (N Lo...",
+        "$1:17",
+        "$0.50",
+        "TOTAL WAGER",
+        "WON ON FANDUEL",
+        "BET ID: 0/0084650/9999254",
+        "PLACED: 5/12/2026 10:35PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    skipped = [b for b in bets if b.get("_skipped")]
+    actual = _actual_bets(bets)
+
+    assert actual == []
+    assert len(skipped) == 1
+    assert skipped[0]["_skip_reason"] == "ambiguous_recalc"
+    assert skipped[0]["bet_id"] == "0/0084650/9999254"
+    # BET ID must not be burned -- a cleaner re-screenshot should re-parse
+    assert "0/0084650/9999254" not in BOT._SEEN_FD_BET_IDS
+
+
+def test_ambiguous_recalc_does_not_burn_bet_id() -> None:
+    """A clean re-screenshot must still parse after an ambiguous_recalc skip."""
+    corrupted = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "+134",
+        "Washington Nationals",
+        "MONEYLINE",
+        "Washington Nationals...",
+        "Cincinnati Reds (N Lo...",
+        "$1:17",
+        "$0.50",
+        "TOTAL WAGER",
+        "WON ON FANDUEL",
+        "BET ID: 0/0084650/9999264",
+        "PLACED: 5/12/2026 10:35PM ET",
+    ])
+    clean = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "+134",
+        "Washington Nationals",
+        "MONEYLINE",
+        "Washington Nationals...",
+        "Cincinnati Reds (N Lo...",
+        "$0.50",
+        "$1.17",
+        "TOTAL WAGER",
+        "WON ON FANDUEL",
+        "BET ID: 0/0084650/9999264",
+        "PLACED: 5/12/2026 10:35PM ET",
+    ])
+    bets1 = BOT._parse_fd_settled_cards(corrupted)
+    assert _actual_bets(bets1) == []
+
+    bets2 = BOT._parse_fd_settled_cards(clean)
+    actual2 = _actual_bets(bets2)
+    assert len(actual2) == 1
+    assert actual2[0]["result"] == "win"
+    assert actual2[0]["wager"] == 0.5
+    assert actual2[0]["payout"] == 1.17
+    assert actual2[0]["bet_id"] == "0/0084650/9999264"
+
+
+def test_normal_winning_card_still_parses_after_recalc_change() -> None:
+    """Regression: an ordinary winning card (payout > wager) must keep parsing."""
+    card_text = "\n".join([
+        "FANDUEL",
+        "SPORTSBOOK",
+        "Boston Red Sox",
+        "-132",
+        "MONEYLINE",
+        "Philadelphia Phillies (...",
+        "Boston Red Sox (S Gr...",
+        "$0.50",
+        "$0.88",
+        "TOTAL WAGER",
+        "WON ON FANDUEL",
+        "BET ID: 0/0084650/9999255",
+        "PLACED: 5/12/2026 10:35PM ET",
+    ])
+    bets = BOT._parse_fd_settled_cards(card_text)
+    actual = _actual_bets(bets)
+    assert len(actual) == 1
+    assert actual[0]["result"] == "win"
+    assert actual[0]["wager"] == 0.5
+    assert actual[0]["payout"] == 0.88
+
+
 # ---------------------------------------------------------------------------
 # Skip-feedback helper tests (extracted from handle_photo for testability)
 # ---------------------------------------------------------------------------
@@ -1142,11 +1257,13 @@ def test_format_missed_card_label_handles_all_empty_fields() -> None:
 
 
 def test_format_missed_card_label_hides_internal_result_values() -> None:
-    """`pending` and `ambiguous_returned` are internal sentinels -- don't surface them."""
+    """`pending`, `ambiguous_returned`, and `ambiguous_recalc` are internal sentinels."""
     pending = BOT._format_missed_card_label({"line": "X ML", "result": "pending"})
     ambiguous = BOT._format_missed_card_label({"line": "X ML", "result": "ambiguous_returned"})
+    recalc = BOT._format_missed_card_label({"line": "X ML", "result": "ambiguous_recalc"})
     assert "PENDING" not in pending
     assert "AMBIGUOUS_RETURNED" not in ambiguous
+    assert "AMBIGUOUS_RECALC" not in recalc
 
 
 def test_build_skip_feedback_emits_one_line_per_needs_review_card() -> None:
