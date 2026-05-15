@@ -1257,11 +1257,13 @@ def test_format_missed_card_label_handles_all_empty_fields() -> None:
 
 
 def test_format_missed_card_label_hides_internal_result_values() -> None:
-    """`pending` and `ambiguous_returned` are internal sentinels -- don't surface them."""
+    """`pending`, `ambiguous_returned`, and `ambiguous_recalc` are internal sentinels."""
     pending = BOT._format_missed_card_label({"line": "X ML", "result": "pending"})
     ambiguous = BOT._format_missed_card_label({"line": "X ML", "result": "ambiguous_returned"})
+    recalc = BOT._format_missed_card_label({"line": "X ML", "result": "ambiguous_recalc"})
     assert "PENDING" not in pending
     assert "AMBIGUOUS_RETURNED" not in ambiguous
+    assert "AMBIGUOUS_RECALC" not in recalc
 
 
 def test_build_skip_feedback_emits_one_line_per_needs_review_card() -> None:
