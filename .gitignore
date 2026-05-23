@@ -39,6 +39,7 @@ betting_history.csv
 draft_results.csv
 
 telegram_bot.log
+streamlit.log
 .telegram_bot.lock
 .kalshi_sync_state.json
 
