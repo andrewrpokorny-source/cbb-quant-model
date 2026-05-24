@@ -28,12 +28,6 @@ Predictions now include both spread picks and Kalshi game-market picks when avai
 uv run streamlit run app.py
 ```
 Use the in-app league selector to switch between Men's CBB, Women's CBB, and MLB.
-
-### Run Dashboard + Telegram Bot Together
-```bash
-./scripts/run-stack.sh
-```
-Starts Streamlit in the background (logs to `streamlit.log`) and the Telegram bot in the foreground. Ctrl-C stops both.
 Use the in-app **Jump to section** control to quickly navigate directly to:
 - Spread Value Bets
 - Kalshi Game Markets
@@ -41,6 +35,12 @@ Use the in-app **Jump to section** control to quickly navigate directly to:
 - Betting Log
 - Performance History
 - System
+
+### Run Dashboard + Telegram Bot Together
+```bash
+./scripts/run-stack.sh
+```
+Starts both services as background process groups (Streamlit logs to `streamlit.log`, the bot logs to `telegram_bot.log`). Cleanup runs on Ctrl-C, SIGTERM, or normal exit, so neither service is left orphaned. If Streamlit crashes immediately, the last 20 lines of `streamlit.log` are printed before the script aborts.
 
 ### Multi-League Commands
 
