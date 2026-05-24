@@ -36,6 +36,12 @@ Use the in-app **Jump to section** control to quickly navigate directly to:
 - Performance History
 - System
 
+### Run Dashboard + Telegram Bot Together
+```bash
+./scripts/run-stack.sh
+```
+Starts both services as background process groups (Streamlit logs to `streamlit.log`, the bot logs to `telegram_bot.log`). Cleanup runs on Ctrl-C, SIGTERM, or normal exit, so neither service is left orphaned. If Streamlit crashes immediately, the last 20 lines of `streamlit.log` are printed before the script aborts.
+
 ### Multi-League Commands
 
 All major scripts support `--league` with `mens` (default), `womens`, or `mlb`.
